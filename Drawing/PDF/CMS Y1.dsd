@@ -1,0 +1,139 @@
+[DWF6Version]
+Ver=1
+[DWF6MinorVersion]
+MinorVer=1
+[DWF6Sheet:CMS Y1-Page1]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page1
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page2]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page2
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page3]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page3
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page4]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page4
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page5]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page5
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page6]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page6
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page7]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page7
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page8]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page8
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page9]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page9
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page10]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page10
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page11]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page11
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Page12]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Page12
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Panel]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Panel
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Print1]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Print1
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[DWF6Sheet:CMS Y1-Print2]
+DWG=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Layout=Print2
+Setup=
+OriginalSheetPath=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\CMS Y1.dwg
+Has Plot Port=0
+Has3DDWF=0
+[Target]
+Type=6
+DWF=CMS Y1
+OUT=C:\Users\syafiq_suhaimi\VSC projects\CMS\Drawing\PDF
+PWD=
+[AutoCAD Block Data]
+IncludeBlockInfo=TRUE
+BlockTmplFilePath=
+[SheetSet Properties]
+IsSheetSet=FALSE
+IsHomogeneous=FALSE
+SheetSet Name=
+NoOfCopies=1
+PlotStampOn=FALSE
+ViewFile=FALSE
+JobID=0
+SelectionSetName=
+GcadProfile=
+CategoryName=
+LogFilePath=
+IncludeLayer=FALSE
+LineMerge=FALSE
+CurrentPrecision=
+PromptForDwfName=FALSE
+PwdProtectPublishedDWF=FALSE
+PromptForPwd=FALSE
+RepublishingMarkups=FALSE
+PublishSheetSetMetadata=FALSE
+PublishSheetMetadata=FALSE
+3DDWFOptions=
