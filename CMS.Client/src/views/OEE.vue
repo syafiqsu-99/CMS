@@ -15,6 +15,7 @@
                       hide-details
                       display-format="fullDate" />
       </v-col>
+
       <v-col cols="12" md="4">
         <v-date-input v-model="endDate"
                       label="End Date"
@@ -82,7 +83,7 @@
             <div v-else class="d-flex flex-column align-center justify-center w-100 h-100">
               <v-icon size="48" color="grey-lighten-1">mdi-chart-bar</v-icon>
               <span class="text-grey text-body-2 mt-2">No reject data available</span>
-            </div>
+          </div>
           </div>
         </v-card>
       </v-col>
@@ -94,7 +95,7 @@
             <div v-else class="d-flex flex-column align-center justify-center w-100 h-100">
               <v-icon size="48" color="grey-lighten-1">mdi-chart-bar</v-icon>
               <span class="text-grey text-body-2 mt-2">No output data available</span>
-            </div>
+          </div>
           </div>
         </v-card>
       </v-col>
@@ -106,7 +107,7 @@
             <div v-else class="d-flex flex-column align-center justify-center w-100 h-100">
               <v-icon size="48" color="grey-lighten-1">mdi-chart-timeline-variant</v-icon>
               <span class="text-grey text-body-2 mt-2">No downtime data available</span>
-            </div>
+          </div>
           </div>
         </v-card>
       </v-col>
@@ -124,6 +125,7 @@
 
 <script setup>
   import MachineOEE from '@/components/MachineOEE.vue';
+  import { useRouter } from "vue-router";
   import { ref, onMounted, watch, nextTick } from "vue";
   import {
     Chart, ArcElement, DoughnutController, BarController, BarElement,
@@ -137,10 +139,12 @@
     Tooltip, Legend
   );
 
+  const router = useRouter();
   const doughnutRefs = ref([]);
   const outputChart = ref(null);
   const downtimeChart = ref(null);
   const rejectChart = ref(null);
+  const hourlyChart = ref(null);
   const detailDialog = ref(false);
   const selectedMachine = ref(null);
 
@@ -321,6 +325,33 @@
           x: { title: { display: true, text: xAxisLabel, font: { size: 12 } }, ticks: { autoSkip: false, maxRotation: 45, minRotation: 45, font: { size: 10 } } },
           y: { beginAtZero: true, position: 'left', title: { display: true, text: yAxisLabel, font: { size: 12 } } },
           y1: { beginAtZero: true, max: 100, position: 'right', title: { display: true, text: 'Cumulative %', font: { size: 12 } }, grid: { drawOnChartArea: false }, ticks: { callback: v => v + '%' } }
+            }
+          },
+          y: {
+            beginAtZero: true,
+            position: 'left',
+            title: {
+              display: true,
+              text: yAxisLabel,
+              font: { size: 12 }
+            }
+          },
+          y1: {
+            beginAtZero: true,
+            max: 100,
+            position: 'right',
+            title: {
+              display: true,
+              text: 'Cumulative %',
+              font: { size: 12 }
+            },
+            grid: {
+              drawOnChartArea: false,
+            },
+            ticks: {
+              callback: (value) => value + '%'
+            }
+          }
         }
       });
 
@@ -394,7 +425,8 @@
 
   onMounted(async () => {
     await fetchOEEData();
-  });
+    });
+  };
 
   const destroyDetailCharts = () => {
     Object.values(detailChartInstances).forEach(chart => {
@@ -409,6 +441,129 @@
       hourly: null
     };
   };
+
+  const createDetailCharts = async (machine) => {
+    try {
+      destroyDetailCharts();
+
+      await nextTick();
+
+      const params = new URLSearchParams({
+        start_date: startDate.value.toISOString().split("T")[0],
+        end_date: endDate.value.toISOString().split("T")[0],
+      });
+
+      if (outputChart.value) {
+        const ctx = outputChart.value.getContext('2d');
+        detailChartInstances.output = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: ['Target', 'Actual', 'Good', 'Reject'],
+            datasets: [{
+              label: 'Output Quantity',
+              data: [
+                machine.target_output || 1000,
+                machine.actual_output || 850,
+                machine.good_output || 820,
+                machine.reject_output || 30
+              ],
+              backgroundColor: ['#2196F3', '#4CAF50', '#8BC34A', '#F44336']
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: true }
+            },
+            scales: {
+              y: { beginAtZero: true }
+            }
+          }
+        });
+      }
+
+      if (downtimeChart.value) {
+        const ctx = downtimeChart.value.getContext('2d');
+        detailChartInstances.downtime = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: ['Setup', 'Breakdown', 'Maintenance', 'Material Wait', 'Other'],
+            datasets: [{
+              data: [
+                machine.setup_time || 25,
+                machine.breakdown_time || 40,
+                machine.maintenance_time || 20,
+                machine.material_wait_time || 10,
+                machine.other_downtime || 5
+              ],
+              backgroundColor: ['#FF6384', '#FF9800', '#FFCE56', '#4BC0C0', '#9C27B0']
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'right' }
+            }
+          }
+        });
+      }
+
+      if (hourlyChart.value) {
+        const ctx = hourlyChart.value.getContext('2d');
+        const hours = currentShift === 1
+          ? ['8AM', '9AM', '10AM', '11AM', '12PM', '1PM', '2PM', '3PM', '4PM', '5PM', '6PM', '7PM']
+          : ['8PM', '9PM', '10PM', '11PM', '12AM', '1AM', '2AM', '3AM', '4AM', '5AM', '6AM', '7AM'];
+
+        detailChartInstances.hourly = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: hours,
+            datasets: [{
+              label: 'Units Produced',
+              data: hours.map(() => Math.floor(Math.random() * 30) + 40),
+              borderColor: '#2196F3',
+              backgroundColor: 'rgba(33, 150, 243, 0.1)',
+              fill: true,
+              tension: 0.4
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: true }
+            },
+            scales: {
+              y: { beginAtZero: true }
+            }
+          }
+        });
+      }
+    } catch (err) {
+      console.error("Error creating detail charts:", err);
+    }
+  };
+
+  watch([startDate, endDate], () => {
+    fetchOEEData();
+    if (detailDialog.value) {
+      detailDialog.value = false;
+      destroyDetailCharts();
+    }
+  });
+
+  watch(detailDialog, (newVal) => {
+    if (!newVal) {
+      destroyDetailCharts();
+    }
+  });
+
+  onMounted(async () => {
+    await fetchOEEData();
+  });
 
   const getMetricColor = (metricType, value) => {
     const v = Number(value);

@@ -2,6 +2,7 @@
 using Microsoft.Data.SqlClient;
 using System.Collections.Concurrent;
 using System.Text.Json;
+using System.Xml.Linq;
 
 namespace CMS.server.Services
 {
@@ -555,6 +556,8 @@ namespace CMS.server.Services
                             SUM(run_time) AS run_time,
                             SUM(down_time) AS down_time,
                             SUM(unallocated) AS unallocated,
+                            ISNULL(SUM(act_ct * run_time) / NULLIF(SUM(run_time),0),0) AS act_ct,
+                            MAX(sap_ct) AS sap_ct,
                             SUM(material_used) AS material_used,
                             SUM(reject_weight) AS reject_weight,
                             SUM(total_sap_time) AS total_sap_time,
@@ -568,17 +571,20 @@ namespace CMS.server.Services
                         run_time,
                         down_time,
                         unallocated,
+                        act_ct,
+                        sap_ct,
                         material_used,
                         reject_weight,
 
                         -- AVAILABILITY
-                        CASE
+                        CASE 
                             WHEN (run_time + down_time) = 0 THEN 0
+                            WHEN (run_time * 1.0 / (run_time + down_time)) < 0 THEN 0
                             ELSE (run_time * 1.0 / (run_time + down_time)) * 100
                         END AS availability,
 
                         -- PERFORMANCE
-                        CASE
+                        CASE 
                             WHEN total_actual_time = 0 THEN 0
                             ELSE (total_sap_time * 1.0 / total_actual_time) * 100
                         END AS performance,
@@ -586,20 +592,21 @@ namespace CMS.server.Services
                         -- QUALITY
                         CASE
                             WHEN material_used = 0 THEN 0
+                            WHEN ((material_used - reject_weight) * 1.0 / material_used) < 0 THEN 0
                             ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100
                         END AS quality,
 
                         -- OEE
-                        CASE
-                            WHEN (run_time + down_time) = 0
+                        CASE 
+                            WHEN (run_time + down_time) = 0 
                               OR total_actual_time = 0
                               OR material_used = 0
                             THEN 0
                             ELSE
                                 (
-                                    (run_time * 1.0 / (run_time + down_time)) *
+                                (run_time * 1.0 / (run_time + down_time)) *
                                     (total_sap_time * 1.0 / total_actual_time) *
-                                    ((material_used - reject_weight) * 1.0 / material_used)
+                                ((material_used - reject_weight) * 1.0 / material_used)
                                 ) * 100
                         END AS oee
                     FROM MachineSummary
@@ -640,18 +647,31 @@ namespace CMS.server.Services
             var (productionDate, current_shift) = GetProductionDate(time);
 
             var sql = @"
-                SELECT TOP 10
-	                reject.id_type,
+                    SELECT TOP 10
+	                    reject.id_type,
                     reject.mould
-                    type, 
-                    COALESCE(SUM(total_weight), 0) AS total_reject
-                FROM reject
-                LEFT JOIN sap 
-                    ON sap.id_type = reject.id_type AND sap.mould = reject.mould
+                        type, 
+                        COALESCE(SUM(total_weight), 0) AS total_reject
+                    FROM reject
+                    LEFT JOIN sap 
+                        ON sap.id_type = reject.id_type AND sap.mould = reject.mould
                 WHERE production_date BETWEEN @start_date AND @end_date AND reject.id_type <> 123456
                 GROUP BY reject.id_type, reject.mould, type
                 HAVING COALESCE(SUM(total_weight), 0) > 0
-                ORDER BY COALESCE(SUM(total_weight), 0) DESC;";
+                    ORDER BY COALESCE(SUM(total_weight), 0) DESC;";
+            }
+            else
+            {
+                sql = @"
+                    SELECT TOP 10
+                        id_type,
+                        type,
+                        COALESCE(SUM(reject_startup + reject_prod + reject_purging + reject_preform), 0) AS total_reject
+                    FROM report
+                    WHERE production_date BETWEEN @start_date AND @end_date AND id_type <> 123456
+                    GROUP BY id_type, type
+                    ORDER BY COALESCE(SUM(reject_startup + reject_prod + reject_purging + reject_preform), 0) DESC;";
+            }
 
             var result = new List<object>();
             using var conn = await CreateConnection();
@@ -936,6 +956,7 @@ namespace CMS.server.Services
 	                sap_ct = @sap_ct,
 	                remark = @remark,
 	                part_scrap = @part_scrap,
+	                reject_labelling = @reject_labelling,
 	                reject_purging = @reject_purging,
 	                reject_preform = @reject_preform,
 	                reject_total_pcs = @reject_total_pcs
@@ -988,6 +1009,7 @@ namespace CMS.server.Services
                 cmd.Parameters.AddWithValue("@unallocated", (float)row["unallocated"].GetDouble());
                 cmd.Parameters.AddWithValue("@remark", row["remark"].GetString());
                 cmd.Parameters.AddWithValue("@part_scrap", (float)row["part_scrap"].GetDouble());
+                cmd.Parameters.AddWithValue("@reject_labelling", (float)row["reject_labelling"].GetDouble());
                 cmd.Parameters.AddWithValue("@reject_purging", (float)row["reject_purging"].GetDouble());
                 cmd.Parameters.AddWithValue("@reject_preform", (float)row["reject_preform"].GetDouble());
                 cmd.Parameters.AddWithValue("@reject_total_pcs", row["reject_total_pcs"].GetInt32());
@@ -2805,7 +2827,7 @@ namespace CMS.server.Services
                 foreach (var util in util_changed)
                     await updateUtilities(plcData, util.utility_name, util.status);
 
-            }
+                }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Machine {plcData.id_machine}] ERROR: {ex.Message}");
@@ -3212,7 +3234,7 @@ namespace CMS.server.Services
                                  AND COALESCE(@mould_category, '') <> ''
                             THEN @mould_category
                             ELSE 0
-                        END
+                    END
                 WHERE finish IS NULL";
 
             using var conn = await CreateConnection();

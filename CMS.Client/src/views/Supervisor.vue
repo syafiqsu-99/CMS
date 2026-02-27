@@ -74,4 +74,4 @@
   async function handleRefreshSAP() {
     await store.loadSAP();
   }
-</script>
+  </script>

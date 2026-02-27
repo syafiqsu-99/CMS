@@ -6,7 +6,7 @@
                style="z-index: 10;">
       <div class="d-flex flex-column align-center ga-3">
         <v-progress-circular indeterminate color="primary" size="56" width="5" />
-        <span class="text-body-2 text-white font-weight-medium">Loading machine data…</span>
+        <span class="text-body-2 text-white font-weight-medium">Loading machine data�</span>
       </div>
     </v-overlay>
 
@@ -46,8 +46,23 @@
             </v-card>
           </transition>
         </v-col>
+        <v-col cols="12" md="4">
+          <v-text-field v-model="endDate"
+                        label="End Date"
+                        type="date"
+                        variant="outlined"
+                        density="compact"
+                        hide-details></v-text-field>
+        </v-col>
+        <v-col cols="12" md="4">
+          <v-btn color="primary" block @click="fetchData">
+            <v-icon left>mdi-refresh</v-icon>
+            Update Data
+          </v-btn>
+        </v-col>
       </v-row>
 
+      <!-- KPI Summary Cards -->
       <v-row class="mb-4">
         <v-col cols="12" md="12">
           <v-skeleton-loader v-if="isFetching" type="card" height="96" />
@@ -62,201 +77,244 @@
               <div class="text-subtitle-2 mt-1">
                 {{ 'OEE Score' }}
               </div>
-            </v-card>
+          </v-card>
           </transition>
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-card elevation="2" class="pa-3 text-center" color="error" variant="tonal">
+            <div class="text-h4 font-weight-bold">{{ kpiData.totalRejects.toLocaleString() }}</div>
+            <div class="text-subtitle-2 mt-1">Total Rejects (kg)</div>
+          </v-card>
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-card elevation="2" class="pa-3 text-center" color="warning" variant="tonal">
+            <div class="text-h4 font-weight-bold">{{ kpiData.totalDowntime }}</div>
+            <div class="text-subtitle-2 mt-1">Total Downtime (hrs)</div>
+          </v-card>
+        </v-col>
+        <v-col cols="12" md="3">
+          <v-card elevation="2" class="pa-3 text-center" color="info" variant="tonal">
+            <div class="text-h4 font-weight-bold">{{ kpiData.oeePercentage }}%</div>
+            <div class="text-subtitle-2 mt-1">OEE Score</div>
+          </v-card>
         </v-col>
       </v-row>
 
+      <!-- Product Output Table and Chart -->
       <v-row class="mb-4">
         <v-col cols="12">
           <v-skeleton-loader v-if="isFetching" type="table-tbody" />
           <transition v-else name="fade">
-            <v-card elevation="2">
-              <v-card-title class="bg-grey-lighten-3">
-                <v-icon left>mdi-package-variant</v-icon>
-                Product Output Summary
-              </v-card-title>
-              <v-card-text>
+          <v-card elevation="2">
+            <v-card-title class="bg-grey-lighten-3">
+              <v-icon left>mdi-package-variant</v-icon>
+              Product Output Summary
+            </v-card-title>
+            <v-card-text>
                 <v-data-table-virtual :headers="productHeaders"
-                                      :items="productData"
-                                      density="compact"
-                                      :items-per-page="5"
+                            :items="productData"
+                            density="compact"
+                            :items-per-page="5"
                                       class="elevation-0"
                                       style="max-height: 500px;">
                   <template v-slot:item.shift_output="{ item }">
                     <span class="font-weight-bold text-success">{{ item.shift_output.toLocaleString() }}</span>
-                  </template>
-                  <template v-slot:item.efficiency="{ item }">
-                    <v-chip :color="getEfficiencyColor(item.efficiency)" size="small">
-                      {{ item.efficiency }}%
-                    </v-chip>
-                  </template>
+                </template>
+                <template v-slot:item.shots="{ item }">
+                  {{ item.shots.toLocaleString() }}
+                </template>
+                <template v-slot:item.cycleTime="{ item }">
+                  {{ item.cycleTime }} sec
+                </template>
+                <template v-slot:item.efficiency="{ item }">
+                  <v-chip :color="getEfficiencyColor(item.efficiency)" size="small">
+                    {{ item.efficiency }}%
+                  </v-chip>
+                </template>
                 </v-data-table-virtual>
-              </v-card-text>
-            </v-card>
+            </v-card-text>
+          </v-card>
           </transition>
         </v-col>
       </v-row>
 
+      <!-- Charts Row 1: Output & Downtime -->
       <v-row class="mb-4">
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
           <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Daily Production Output</h4>
-              <div style="height: 300px;">
-                <canvas ref="outputChart"></canvas>
-              </div>
-            </v-card>
+          <v-card elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Daily Production Output</h4>
+            <div style="height: 300px;">
+              <canvas ref="outputChart"></canvas>
+            </div>
+          </v-card>
           </transition>
         </v-col>
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
           <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Downtime Analysis by Category</h4>
-              <div style="height: 300px;">
-                <canvas ref="downtimeChart"></canvas>
-              </div>
-            </v-card>
+          <v-card elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Downtime Analysis by Category</h4>
+            <div style="height: 300px;">
+              <canvas ref="downtimeChart"></canvas>
+            </div>
+          </v-card>
           </transition>
         </v-col>
       </v-row>
 
+      <!-- Downtime Details Table -->
       <v-row class="mb-4">
         <v-col cols="12">
           <v-skeleton-loader v-if="isFetching" type="table-tbody" />
           <transition v-else name="fade">
-            <v-card elevation="2">
-              <v-card-title class="bg-grey-lighten-3">
-                <v-icon left>mdi-clock-alert-outline</v-icon>
-                Downtime Events Details
-              </v-card-title>
-              <v-card-text>
+          <v-card elevation="2">
+            <v-card-title class="bg-grey-lighten-3">
+              <v-icon left>mdi-clock-alert-outline</v-icon>
+              Downtime Events Details
+            </v-card-title>
+            <v-card-text>
                 <v-data-table-virtual :headers="downtimeHeaders"
                                       :items="downtimeEvents"
-                                      density="compact"
-                                      :items-per-page="5"
+                            density="compact"
+                            :items-per-page="5"
                                       class="elevation-0"
                                       style="max-height: 500px;">
-                  <template v-slot:item.duration="{ item }">
-                    <span class="font-weight-bold">{{ item.duration }} hrs</span>
-                  </template>
-                  <template v-slot:item.category="{ item }">
-                    <v-chip :color="getCategoryColor(item.category)" size="small">
-                      {{ item.category }}
-                    </v-chip>
-                  </template>
+                <template v-slot:item.duration="{ item }">
+                  <span class="font-weight-bold">{{ item.duration }} hrs</span>
+                </template>
+                <template v-slot:item.category="{ item }">
+                  <v-chip :color="getCategoryColor(item.category)" size="small">
+                    {{ item.category }}
+                  </v-chip>
+                </template>
                 </v-data-table-virtual>
-              </v-card-text>
-            </v-card>
+            </v-card-text>
+          </v-card>
           </transition>
         </v-col>
       </v-row>
 
+      <!-- Charts Row 2: Reject Analysis -->
       <v-row class="mb-4">
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
           <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Reject Types Distribution</h4>
-              <div style="height: 300px;">
-                <canvas ref="rejectChart"></canvas>
-              </div>
-            </v-card>
+          <v-card elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Reject Types Distribution</h4>
+            <div style="height: 300px;">
+              <canvas ref="rejectChart"></canvas>
+            </div>
+          </v-card>
           </transition>
         </v-col>
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
           <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Daily Reject Trend</h4>
-              <div style="height: 300px;">
-                <canvas ref="rejectTrendChart"></canvas>
-              </div>
-            </v-card>
+          <v-card elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Daily Reject Trend</h4>
+            <div style="height: 300px;">
+              <canvas ref="rejectTrendChart"></canvas>
+            </div>
+          </v-card>
           </transition>
         </v-col>
       </v-row>
 
+      <!-- Reject Details Table -->
       <v-row class="mb-4">
         <v-col cols="12">
           <v-skeleton-loader v-if="isFetching" type="table-tbody" />
           <transition v-else name="fade">
-            <v-card elevation="2">
-              <v-card-title class="bg-grey-lighten-3">
-                <v-icon left>mdi-alert-circle-outline</v-icon>
-                Reject Analysis by Type
-              </v-card-title>
-              <v-card-text>
+          <v-card elevation="2">
+            <v-card-title class="bg-grey-lighten-3">
+              <v-icon left>mdi-alert-circle-outline</v-icon>
+              Reject Analysis by Type
+            </v-card-title>
+            <v-card-text>
                 <v-data-table-virtual :headers="rejectSummaryHeaders"
                                       :items="rejectSummaryData"
-                                      density="compact"
+                            density="compact"
                                       :items-per-page="10"
                                       class="elevation-0"
                                       style="max-height: 500px;">
                   <template v-slot:item.total_weight="{ item }">
                     <span class="font-weight-bold text-error">{{ item.total_weight }} kg</span>
-                  </template>
+                </template>
                 </v-data-table-virtual>
-              </v-card-text>
-            </v-card>
+            </v-card-text>
+          </v-card>
           </transition>
         </v-col>
       </v-row>
 
+      <!-- Hourly Production Chart -->
+      <v-row class="mb-4">
+        <v-col cols="12">
+          <v-card elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Hourly Production Pattern</h4>
+            <div style="height: 300px;">
+              <canvas ref="hourlyChart"></canvas>
+            </div>
+          </v-card>
+        </v-col>
+      </v-row>
+
+      <!-- Cycle Time Analysis -->
       <v-row class="mb-4">
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
           <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
+          <v-card elevation="2" class="pa-3">
               <h4 class="mb-3 text-center">Actual vs SAP Cycle Time</h4>
-              <div style="height: 300px;">
-                <canvas ref="cycleTimeChart"></canvas>
-              </div>
-            </v-card>
+            <div style="height: 300px;">
+              <canvas ref="cycleTimeChart"></canvas>
+            </div>
+          </v-card>
           </transition>
         </v-col>
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
           <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Shift Performance Comparison</h4>
-              <div style="height: 300px;">
-                <canvas ref="shiftChart"></canvas>
-              </div>
-            </v-card>
+          <v-card elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Shift Performance Comparison</h4>
+            <div style="height: 300px;">
+              <canvas ref="shiftChart"></canvas>
+            </div>
+          </v-card>
           </transition>
         </v-col>
       </v-row>
 
+      <!-- Utilities Usage -->
       <v-row class="mb-4">
         <v-col cols="12">
           <v-skeleton-loader v-if="isFetching" type="table-tbody" />
           <transition v-else name="fade">
-            <v-card elevation="2">
-              <v-card-title class="bg-grey-lighten-3">
-                <v-icon left>mdi-flash</v-icon>
-                Utilities Usage Timeline
-              </v-card-title>
-              <v-card-text>
+          <v-card elevation="2">
+            <v-card-title class="bg-grey-lighten-3">
+              <v-icon left>mdi-flash</v-icon>
+              Utilities Usage Timeline
+            </v-card-title>
+            <v-card-text>
                 <v-data-table-virtual :headers="utilityHeaders"
-                                      :items="utilityData"
-                                      density="compact"
-                                      :items-per-page="5"
+                            :items="utilityData"
+                            density="compact"
+                            :items-per-page="5"
                                       class="elevation-0"
                                       style="max-height: 500px;">
-                  <template v-slot:item.status="{ item }">
-                    <v-chip :color="item.status === 'Running' ? 'success' : 'error'" size="small">
-                      {{ item.status }}
-                    </v-chip>
-                  </template>
-                  <template v-slot:item.duration="{ item }">
-                    {{ item.duration }} hrs
-                  </template>
+                <template v-slot:item.status="{ item }">
+                  <v-chip :color="item.status === 'Running' ? 'success' : 'error'" size="small">
+                    {{ item.status }}
+                  </v-chip>
+                </template>
+                <template v-slot:item.duration="{ item }">
+                  {{ item.duration }} hrs
+                </template>
                 </v-data-table-virtual>
-              </v-card-text>
-            </v-card>
+            </v-card-text>
+          </v-card>
           </transition>
         </v-col>
       </v-row>
@@ -265,6 +323,12 @@
 
     <v-card-actions class="pa-4 bg-grey-lighten-4">
       <v-spacer></v-spacer>
+      <v-btn color="primary" variant="elevated" prepend-icon="mdi-download">
+        Export Report
+      </v-btn>
+      <v-btn color="secondary" variant="elevated" prepend-icon="mdi-printer">
+        Print
+      </v-btn>
       <v-btn variant="text" @click="closeDialog">Close</v-btn>
     </v-card-actions>
   </v-card>
@@ -368,6 +432,41 @@
     { title: 'Efficiency (%)', key: 'efficiency' }
   ]
 
+  // Product Data (dummy)
+  const productData = ref([
+    {
+      productType: 'Bottle Cap 28mm',
+      mouldNo: 'M-2801',
+      shots: 12450,
+      qtyPerShot: 2,
+      output: 24900,
+      partWeight: 2.3,
+      cycleTime: 8.2,
+      efficiency: 94
+    },
+    {
+      productType: 'Bottle Cap 38mm',
+      mouldNo: 'M-3802',
+      shots: 8920,
+      qtyPerShot: 2,
+      output: 17840,
+      partWeight: 3.1,
+      cycleTime: 10.5,
+      efficiency: 87
+    },
+    {
+      productType: 'Preform 500ml',
+      mouldNo: 'P-5004',
+      shots: 1520,
+      qtyPerShot: 2,
+      output: 3040,
+      partWeight: 18.5,
+      cycleTime: 15.3,
+      efficiency: 78
+    }
+  ]);
+
+  // Downtime Headers
   const downtimeHeaders = [
     { title: 'Start Time', key: 'start' },
     { title: 'Finish Time', key: 'finish' },
@@ -383,6 +482,18 @@
     { title: '% of Total', key: 'percentage' }
   ]
 
+  // Reject Detail Data (dummy)
+  const rejectDetailData = ref([
+    { date: '2026-01-27', shift: 'Day', rejectType: 'Panelling', totalWeight: 45.2, percentage: 13.2 },
+    { date: '2026-01-27', shift: 'Day', rejectType: 'Black Dot', totalWeight: 32.8, percentage: 9.6 },
+    { date: '2026-01-27', shift: 'Night', rejectType: 'Lumpy', totalWeight: 28.5, percentage: 8.3 },
+    { date: '2026-01-26', shift: 'Day', rejectType: 'Start Up', totalWeight: 52.3, percentage: 15.3 },
+    { date: '2026-01-26', shift: 'Night', rejectType: 'Burst', totalWeight: 18.7, percentage: 5.5 },
+    { date: '2026-01-25', shift: 'Day', rejectType: 'Preform', totalWeight: 38.9, percentage: 11.4 },
+    { date: '2026-01-25', shift: 'Night', rejectType: 'Purging', totalWeight: 41.2, percentage: 12.0 }
+  ]);
+
+  // Utility Headers
   const utilityHeaders = [
     { title: 'Utility Name', key: 'utility_name' },
     { title: 'Start Time', key: 'start' },
@@ -445,7 +556,7 @@
   function destroyAll() {
     Object.values(charts).forEach(c => c?.destroy())
     charts = {}
-  }
+    }
 
   function buildCharts() {
     buildOutputChart()
@@ -478,7 +589,7 @@
         scales: { y: { beginAtZero: true, title: { display: true, text: 'Output (pcs)' } } }
       }
     })
-  }
+    }
 
   function buildDowntimeChart() {
     const ctx = downtimeChart.value?.getContext('2d')
@@ -502,7 +613,7 @@
         }
       }
     })
-  }
+    }
 
   function buildRejectChart() {
     const ctx = rejectChart.value?.getContext('2d')
@@ -526,7 +637,7 @@
         }
       }
     })
-  }
+    }
 
   function buildRejectTrendChart() {
     const ctx = rejectTrendChart.value?.getContext('2d')
@@ -556,7 +667,7 @@
         scales: { y: { beginAtZero: true, title: { display: true, text: 'Reject (kg)' } } }
       }
     })
-  }
+    }
 
   function buildCycleTimeChart() {
     const ctx = cycleTimeChart.value?.getContext('2d')
@@ -592,7 +703,7 @@
         }
       }
     })
-  }
+    }
 
   function buildShiftChart() {
     const ctx = shiftChart.value?.getContext('2d')
@@ -627,10 +738,10 @@
         scales: {
           y: { type: 'linear', position: 'left', title: { display: true, text: 'Output (pcs)' } },
           y1: { type: 'linear', position: 'right', title: { display: true, text: 'Reject (pcs)' }, grid: { drawOnChartArea: false } }
+          }
         }
-      }
     })
-  }
+      }
 
   // ── Colour helpers ────────────────────────────────────────────────────────────
   const getEfficiencyColor = v => v >= 90 ? 'success' : v >= 75 ? 'warning' : 'error'
@@ -640,7 +751,7 @@
     'SCHEDULED MAINTENANCE': 'info', 'QUALITY ISSUE': 'warning',
     'OTHERS MAIN': 'orange', 'OTHERS TECH': 'deep-orange',
     'NO OPERATOR': 'grey', 'MATERIAL DRYING': 'teal'
-  }
+    }
   const getCategoryColor = cat => CATEGORY_COLORS[cat] || 'grey'
 
   // ── Watcher ───────────────────────────────────────────────────────────────────
@@ -654,7 +765,7 @@
       if (!isOpen) {
         destroyAll()
         isFetching.value = false
-      }
+    }
     },
     { immediate: true }
   )

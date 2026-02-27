@@ -38,7 +38,7 @@ namespace CMS.server.Services
                 try
                 {
                     _iterationCount++;
-
+                    
                     if (_iterationCount % 60 == 0)
                     {
                         _logger.LogInformation("PlcMonitorService heartbeat - Iteration: {Count}, Time: {Time}",
@@ -64,37 +64,37 @@ namespace CMS.server.Services
                         int Woffset = i * 3;
 
                         // Read D Memory values
-                        int id_machine = i + 1;
-                        int shot = Math.Min(ReadIntFromD(dRaw, 30 + Doffset), 10000);
-                        int shot_accum = Math.Min(ReadIntFromD(dRaw, 32 + Doffset), 10000);
-                        float act_ct = Math.Min(ReadFloatFromD(dRaw, 60 + Doffset), 1000f);
-                        int mould_category_no = Math.Min(ReadIntFromD(dRaw, 90 + Doffset), 10);
-                        string stop_category = ReadStringFromD(dRaw, 300 + Doffset);
-                        string remark = ReadStringFromD(dRaw, 400 + Doffset);
+                        int id_machine          = i + 1;
+                        int shot                = Math.Min(ReadIntFromD(dRaw, 30 + Doffset), 10000);
+                        int shot_accum          = Math.Min(ReadIntFromD(dRaw, 32 + Doffset), 10000);
+                        float act_ct            = Math.Min(ReadFloatFromD(dRaw, 60 + Doffset), 1000f);
+                        int mould_category_no   = Math.Min(ReadIntFromD(dRaw, 90 + Doffset), 10);
+                        string stop_category    = ReadStringFromD(dRaw, 300 + Doffset);
+                        string remark           = ReadStringFromD(dRaw, 400 + Doffset);
 
-                        float reject_panelling = Math.Min(ReadFloatFromD(dRaw, 250 + Doffset), 10000f);
-                        float reject_lumpy = Math.Min(ReadFloatFromD(dRaw, 255 + Doffset), 10000f);
-                        float reject_black_dot = Math.Min(ReadFloatFromD(dRaw, 260 + Doffset), 10000f);
-                        float reject_burst = Math.Min(ReadFloatFromD(dRaw, 265 + Doffset), 10000f);
-                        float reject_startup = Math.Min(ReadFloatFromD(dRaw, 270 + Doffset), 10000f);
-                        float reject_preform = Math.Min(ReadFloatFromD(dRaw, 275 + Doffset), 10000f);
-                        float reject_purging = Math.Min(ReadFloatFromD(dRaw, 280 + Doffset), 10000f);
-                        float reject_others = Math.Min(ReadFloatFromD(dRaw, 285 + Doffset), 10000f);
+                        float reject_panelling  = Math.Min(ReadFloatFromD(dRaw, 250 + Doffset), 10000f);
+                        float reject_lumpy      = Math.Min(ReadFloatFromD(dRaw, 255 + Doffset), 10000f);
+                        float reject_black_dot  = Math.Min(ReadFloatFromD(dRaw, 260 + Doffset), 10000f);
+                        float reject_burst      = Math.Min(ReadFloatFromD(dRaw, 265 + Doffset), 10000f);
+                        float reject_startup    = Math.Min(ReadFloatFromD(dRaw, 270 + Doffset), 10000f);
+                        float reject_preform    = Math.Min(ReadFloatFromD(dRaw, 275 + Doffset), 10000f);
+                        float reject_purging    = Math.Min(ReadFloatFromD(dRaw, 280 + Doffset), 10000f);
+                        float reject_others     = Math.Min(ReadFloatFromD(dRaw, 285 + Doffset), 10000f);
 
                         // Read W Memory values (bits)
-                        bool status_start = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 0);
-                        bool status_off = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 1);
+                        bool status_start       = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 0);
+                        bool status_off         = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 1);
                         bool production_running = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 2);
-                        bool visual_qc = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 3);
-                        bool remark_signal = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 5);
-                        bool reject_signal = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 6);
+                        bool visual_qc          = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 3);
+                        bool remark_signal      = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 5);
+                        bool reject_signal      = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 6);
 
-                        bool util_barrel = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 0);
-                        bool util_hyd_motor = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 1);
-                        bool util_dehumidifier = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 2);
-                        bool util_chiller = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 3);
-                        bool util_material = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 4);
-                        bool util_dry_cycle = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 5);
+                        bool util_barrel        = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 0);
+                        bool util_hyd_motor     = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 1);
+                        bool util_dehumidifier  = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 2);
+                        bool util_chiller       = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 3);
+                        bool util_material      = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 4);
+                        bool util_dry_cycle     = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 5);
 
                         var plcData = new
                         {

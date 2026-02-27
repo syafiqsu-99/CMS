@@ -307,7 +307,9 @@
 
   async function loadReportData() {
     if (!production_date.value || !shift.value) return;
+
     loading.value = true;
+
     try {
       const selectedDate = formatDate(production_date.value);
       const isCurrentShift = selectedDate === formatDate(getDate()) && shift.value === getShift();
@@ -327,23 +329,54 @@
     }
   }
 
+  const isEditable = (key) => {
+    const nonEditable = ['shift_output', 'inward', 'qty_balance', 'material_used', 'runner', 'reject_startup_per', 'reject_prod_per', 'production_running', 'sap_ct', 'change_full_set', 'change_half_set', 'change_parts', 'maintenance_dt', 'technician_dt', 'production_dt', 'reject_prod_pcs']
+    return !nonEditable.includes(key)
+  }
+
+  const getColumnColor = (key) => {
+    const map = {
+      change_full_set: '#FFFF99',
+      change_half_set: '#FFFF99',
+      change_parts: '#FFFF99',
+      maintenance_dt: '#FFFF99',
+      technician_dt: '#FFFF99',
+      production_dt: '#FFFF99',
+      remark: '#FFFF99',
+      part_scrap: '#FFFF99',
+      reject_purging: '#FFFF99',
+      reject_preform: '#FFFF99',
+    }
+    return map[key] || 'transparent'
+  }
+
   async function saveReport() {
     if (!production_date.value || !shift.value) return;
     loading.value = true;
     try {
+      loading.value = true
+
       const selectedDate = formatDate(production_date.value);
       const isCurrentShift = selectedDate === formatDate(getDate()) && shift.value === getShift();
       const endpoint = isCurrentShift ? '/api/MachineLog/DailyReport' : '/api/MachineLog/PrevReport';
 
       const response = await fetch(endpoint, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           production_date: selectedDate,
           shift: shift.value,
           reportList: dailyReport.value.map(sanitizeRow)
         })
-      });
+        });
+      }
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const updatedData = await response.json();
+      dailyReport.value = updatedData;
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const updated = await response.json();
@@ -363,13 +396,16 @@
   async function exportProducts() {
     loading.value = true;
     try {
+      loading.value = true;
+    
       const selectedDate = formatDate(production_date.value);
       const response = await fetch(
         `/api/MachineLog/ExportReport?productionDate=${selectedDate}&shift=${shift.value}`,
         { method: 'GET' }
       );
+    
       if (!response.ok) throw new Error('Export failed');
-
+    
       const url = window.URL.createObjectURL(await response.blob());
       const link = Object.assign(document.createElement('a'), {
         href: url,
@@ -395,9 +431,9 @@
   function parseCsv(text) {
     const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
     if (lines.length < 2) return [];
-
+    
     const headers = lines[0].split(',').map(h => h.trim());
-
+    
     return lines.slice(1).map(line => {
       const values = [];
       let current = '';
@@ -412,7 +448,7 @@
         } else {
           current += ch;
         }
-      }
+    }
       values.push(current.trim());
 
       const row = {};
@@ -474,7 +510,7 @@
       if (!rawRows.length) {
         showSnackbar('CSV file is empty or could not be parsed.', 'error');
         return;
-      }
+  }
 
       const rows = rawRows.map(sanitiseCsvRow)
 
@@ -487,7 +523,7 @@
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.message || `HTTP error! status: ${response.status}`);
-      }
+    }
 
       const updated = await response.json();
 
@@ -503,8 +539,10 @@
       showSnackbar(`Import failed: ${err.message}`, 'error');
     } finally {
       importing.value = false;
+      }
+      const parsedDate = new Date(date);
+      return parsedDate.toLocaleDateString('en-CA');
     }
-  }
 
   function showSnackbar(message, color = 'success') {
     snackbar.value = { show: true, message, color };
