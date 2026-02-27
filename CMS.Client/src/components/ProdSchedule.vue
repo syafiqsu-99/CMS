@@ -329,33 +329,10 @@
     }
   }
 
-  const isEditable = (key) => {
-    const nonEditable = ['shift_output', 'inward', 'qty_balance', 'material_used', 'runner', 'reject_startup_per', 'reject_prod_per', 'production_running', 'sap_ct', 'change_full_set', 'change_half_set', 'change_parts', 'maintenance_dt', 'technician_dt', 'production_dt', 'reject_prod_pcs']
-    return !nonEditable.includes(key)
-  }
-
-  const getColumnColor = (key) => {
-    const map = {
-      change_full_set: '#FFFF99',
-      change_half_set: '#FFFF99',
-      change_parts: '#FFFF99',
-      maintenance_dt: '#FFFF99',
-      technician_dt: '#FFFF99',
-      production_dt: '#FFFF99',
-      remark: '#FFFF99',
-      part_scrap: '#FFFF99',
-      reject_purging: '#FFFF99',
-      reject_preform: '#FFFF99',
-    }
-    return map[key] || 'transparent'
-  }
-
   async function saveReport() {
     if (!production_date.value || !shift.value) return;
     loading.value = true;
     try {
-      loading.value = true
-
       const selectedDate = formatDate(production_date.value);
       const isCurrentShift = selectedDate === formatDate(getDate()) && shift.value === getShift();
       const endpoint = isCurrentShift ? '/api/MachineLog/DailyReport' : '/api/MachineLog/PrevReport';
@@ -368,15 +345,7 @@
           shift: shift.value,
           reportList: dailyReport.value.map(sanitizeRow)
         })
-        });
-      }
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const updatedData = await response.json();
-      dailyReport.value = updatedData;
+      });
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const updated = await response.json();

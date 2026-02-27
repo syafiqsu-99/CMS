@@ -452,7 +452,7 @@ namespace CMS.server.Services
                         SELECT
                             m.*,
                             COALESCE(s.sap_ct,0) AS sap_ct,
-                            COALESCE(m.shot * s.qty_perct * s.part_weight,0) AS material_used,
+                            COALESCE((m.shot * s.qty_perct * s.part_weight) / 1000.0,0) AS material_used,
                             COALESCE(m.shot * s.sap_ct,0) AS total_sap_time,
                             COALESCE(m.shot * m.act_ct,0) AS total_actual_time
                         FROM MachineAgg m
@@ -556,8 +556,6 @@ namespace CMS.server.Services
                             SUM(run_time) AS run_time,
                             SUM(down_time) AS down_time,
                             SUM(unallocated) AS unallocated,
-                            ISNULL(SUM(act_ct * run_time) / NULLIF(SUM(run_time),0),0) AS act_ct,
-                            MAX(sap_ct) AS sap_ct,
                             SUM(material_used) AS material_used,
                             SUM(reject_weight) AS reject_weight,
                             SUM(total_sap_time) AS total_sap_time,
@@ -571,8 +569,6 @@ namespace CMS.server.Services
                         run_time,
                         down_time,
                         unallocated,
-                        act_ct,
-                        sap_ct,
                         material_used,
                         reject_weight,
 
@@ -645,33 +641,20 @@ namespace CMS.server.Services
         {
             var time = DateTime.Now;
             var (productionDate, current_shift) = GetProductionDate(time);
-
             var sql = @"
-                    SELECT TOP 10
-	                    reject.id_type,
-                    reject.mould
-                        type, 
-                        COALESCE(SUM(total_weight), 0) AS total_reject
-                    FROM reject
-                    LEFT JOIN sap 
-                        ON sap.id_type = reject.id_type AND sap.mould = reject.mould
+
+                SELECT TOP 10
+	                reject.id_type,
+                reject.mould
+                    type, 
+                    COALESCE(SUM(total_weight), 0) AS total_reject
+                FROM reject
+                LEFT JOIN sap 
+                    ON sap.id_type = reject.id_type AND sap.mould = reject.mould
                 WHERE production_date BETWEEN @start_date AND @end_date AND reject.id_type <> 123456
                 GROUP BY reject.id_type, reject.mould, type
                 HAVING COALESCE(SUM(total_weight), 0) > 0
                     ORDER BY COALESCE(SUM(total_weight), 0) DESC;";
-            }
-            else
-            {
-                sql = @"
-                    SELECT TOP 10
-                        id_type,
-                        type,
-                        COALESCE(SUM(reject_startup + reject_prod + reject_purging + reject_preform), 0) AS total_reject
-                    FROM report
-                    WHERE production_date BETWEEN @start_date AND @end_date AND id_type <> 123456
-                    GROUP BY id_type, type
-                    ORDER BY COALESCE(SUM(reject_startup + reject_prod + reject_purging + reject_preform), 0) DESC;";
-            }
 
             var result = new List<object>();
             using var conn = await CreateConnection();
