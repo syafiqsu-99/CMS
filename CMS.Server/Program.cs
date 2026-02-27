@@ -3,7 +3,7 @@ using CMS.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -14,7 +14,7 @@ builder.Services.AddSingleton<MachineLogService>(provider =>
     var plcService = provider.GetRequiredService<PlcService>();
     return new MachineLogService(connectionString, plcService);
 });
-builder.Services.AddSingleton(new SchemaInitializerService(builder.Configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddSingleton(new SchemaInitializerService(connectionString));
 
 if (!builder.Environment.IsDevelopment())
 {

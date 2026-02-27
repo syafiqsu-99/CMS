@@ -4,13 +4,13 @@
     {
         public int IdMachine { get; set; }
         public int Shift { get; set; }
-        public string MachineName { get; set; }
-        public string Packer { get; set; }
-        public string Material { get; set; }
+        public required string MachineName { get; set; }
+        public string? Packer { get; set; }
+        public required string Material { get; set; }
         public int IdType { get; set; }
         public int Mould { get; set; }
-        public string Type { get; set; }
-        public string JoNo { get; set; }
+        public required string Type { get; set; }
+        public string? JoNo { get; set; }
         public int QtyPerct { get; set; }
         public double GrossWeight { get; set; }
         public double PartWeight { get; set; }
@@ -38,7 +38,7 @@
         public double MaintenanceDt { get; set; }
         public double TechnicianDt { get; set; }
         public double ProductionDt { get; set; }
-        public string Remark { get; set; }
+        public string? Remark { get; set; }
         public double Unallocated { get; set; }
         public double PartScrap { get; set; }
         public double RejectPurging { get; set; }

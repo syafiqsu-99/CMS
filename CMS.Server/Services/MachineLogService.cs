@@ -84,14 +84,14 @@ namespace CMS.server.Services
                         ml.id_machine,
                         ml.id_type,
                         ml.mould,
-                        ROUND(SUM(CASE WHEN ml.category = 'PRODUCTION RUNNING' THEN DATEDIFF(SECOND, ml.start, ISNULL(ml.finish, GETDATE())) END)/3600.0, 2) AS production_running,
-                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 1 THEN DATEDIFF(SECOND, ml.start, ISNULL(ml.finish, GETDATE())) END)/3600.0, 2) AS change_full_set,
-                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 2 THEN DATEDIFF(SECOND, ml.start, ISNULL(ml.finish, GETDATE())) END)/3600.0, 2) AS change_half_set,
-                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 3 THEN DATEDIFF(SECOND, ml.start, ISNULL(ml.finish, GETDATE())) END)/3600.0, 2) AS change_parts,
-                        ROUND(SUM(CASE WHEN ml.category IN ('MACHINE BREAKDOWN', 'SCHEDULED MAINTENANCE', 'OTHERS MAIN') THEN DATEDIFF(SECOND, ml.start, ISNULL(ml.finish, GETDATE())) END)/3600.0, 2) AS maintenance_dt,
-                        ROUND(SUM(CASE WHEN ml.category IN ('QUALITY ISSUE', 'SAMPLE RUNNING', 'OTHERS TECH') THEN DATEDIFF(SECOND, ml.start, ISNULL(ml.finish, GETDATE())) END)/3600.0, 2) AS technician_dt,
-                        ROUND(SUM(CASE WHEN ml.category IN ('NO OPERATOR', 'NO SCHEDULE', 'PRODUCT BUYOFF', 'MATERIAL DRYING', 'OTHERS PROD') THEN DATEDIFF(SECOND, ml.start, ISNULL(ml.finish, GETDATE())) END)/3600.0, 2) AS production_dt,
-                        ROUND(SUM(CASE WHEN category IS NULL THEN DATEDIFF(SECOND, start, ISNULL(finish, GETDATE())) END)/3600.0, 2) AS unallocated,
+                        ROUND(SUM(CASE WHEN ml.category = 'PRODUCTION RUNNING' THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS production_running,
+                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 1 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_full_set,
+                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 2 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_half_set,
+                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 3 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_parts,
+                        ROUND(SUM(CASE WHEN ml.category IN ('MACHINE BREAKDOWN', 'SCHEDULED MAINTENANCE', 'OTHERS MAIN') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS maintenance_dt,
+                        ROUND(SUM(CASE WHEN ml.category IN ('QUALITY ISSUE', 'SAMPLE RUNNING', 'OTHERS TECH') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS technician_dt,
+                        ROUND(SUM(CASE WHEN ml.category IN ('NO OPERATOR', 'NO SCHEDULE', 'PRODUCT BUYOFF', 'MATERIAL DRYING', 'OTHERS PROD') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS production_dt,
+                        ROUND(SUM(CASE WHEN category IS NULL THEN DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) END)/3600.0, 2) AS unallocated,
                         STUFF((
                             SELECT ', ' + FORMAT(m2.start, 'h:mmtt') + ' - ' + FORMAT(m2.finish, 'h:mmtt') + ': ' + m2.problem
                             FROM all_logs m2
@@ -289,48 +289,48 @@ namespace CMS.server.Services
         {
             var sql = @"
                 SELECT 
-                    ISNULL(id_machine, 1) AS id_machine,
-                    ISNULL(shift, 1) AS shift,
-                    ISNULL(machine_name, '') AS machine_name,
-                    ISNULL(packer, '') AS packer,
-                    ISNULL(material, '') AS material,
-                    ISNULL(id_type, 123456) AS id_type,
-                    ISNULL(mould, 0) AS mould,
-                    ISNULL(type, '') AS type,
-                    ISNULL(jo_no, '') AS jo_no,
-                    ISNULL(qty_perct, 1) AS qty_perct,
-                    ISNULL(gross_weight, 0.0) AS gross_weight,
-                    ISNULL(part_weight, 0.0) AS part_weight,
-                    ISNULL(shot, 0) AS shot,
-                    ISNULL(qty_order, 0) AS qty_order,
-                    ISNULL(wip_opening, 0) AS wip_opening,
-                    ISNULL(wip_closing, 0) AS wip_closing,
-                    ISNULL(shift_output, 0) AS shift_output,
-                    ISNULL(finish_good, 0) AS finish_good,
-                    ISNULL(inward, 0.0) AS inward,
-                    ISNULL(qty_accum, 0) AS qty_accum,
-                    ISNULL(qty_balance, 0) AS qty_balance,
-                    ISNULL(material_used, 0.0) AS material_used,
-                    ISNULL(runner, 0.0) AS runner,
-                    ISNULL(reject_startup, 0.0) AS reject_startup,
-                    ISNULL(reject_startup_per, 0.0) AS reject_startup_per,
-                    ISNULL(reject_prod, 0.0) AS reject_prod,
-                    ISNULL(reject_prod_per, 0.0) AS reject_prod_per,
-                    ISNULL(act_ct, 0.0) AS act_ct,
-                    ISNULL(production_running, 0.0) AS production_running,
-                    ISNULL(sap_ct, 0.0) AS sap_ct,
-                    ISNULL(change_full_set, 0.0) AS change_full_set,
-                    ISNULL(change_half_set, 0.0) AS change_half_set,
-                    ISNULL(change_parts, 0.0) AS change_parts,
-                    ISNULL(maintenance_dt, 0.0) AS maintenance_dt,
-                    ISNULL(technician_dt, 0.0) AS technician_dt,
-                    ISNULL(production_dt, 0.0) AS production_dt,
-                    ISNULL(remark, '') AS remark,
-                    ISNULL(unallocated, 0.0) AS unallocated,
-                    ISNULL(part_scrap, 0.0) AS part_scrap,
-                    ISNULL(reject_purging, 0.0) AS reject_purging,
-                    ISNULL(reject_preform, 0.0) AS reject_preform,
-                    ISNULL(reject_total_pcs, 0) AS reject_total_pcs
+                    COALESCE(id_machine, 1) AS id_machine,
+                    COALESCE(shift, 1) AS shift,
+                    COALESCE(machine_name, '') AS machine_name,
+                    COALESCE(packer, '') AS packer,
+                    COALESCE(material, '') AS material,
+                    COALESCE(id_type, 123456) AS id_type,
+                    COALESCE(mould, 0) AS mould,
+                    COALESCE(type, '') AS type,
+                    COALESCE(jo_no, '') AS jo_no,
+                    COALESCE(qty_perct, 1) AS qty_perct,
+                    COALESCE(gross_weight, 0.0) AS gross_weight,
+                    COALESCE(part_weight, 0.0) AS part_weight,
+                    COALESCE(shot, 0) AS shot,
+                    COALESCE(qty_order, 0) AS qty_order,
+                    COALESCE(wip_opening, 0) AS wip_opening,
+                    COALESCE(wip_closing, 0) AS wip_closing,
+                    COALESCE(shift_output, 0) AS shift_output,
+                    COALESCE(finish_good, 0) AS finish_good,
+                    COALESCE(inward, 0.0) AS inward,
+                    COALESCE(qty_accum, 0) AS qty_accum,
+                    COALESCE(qty_balance, 0) AS qty_balance,
+                    COALESCE(material_used, 0.0) AS material_used,
+                    COALESCE(runner, 0.0) AS runner,
+                    COALESCE(reject_startup, 0.0) AS reject_startup,
+                    COALESCE(reject_startup_per, 0.0) AS reject_startup_per,
+                    COALESCE(reject_prod, 0.0) AS reject_prod,
+                    COALESCE(reject_prod_per, 0.0) AS reject_prod_per,
+                    COALESCE(act_ct, 0.0) AS act_ct,
+                    COALESCE(production_running, 0.0) AS production_running,
+                    COALESCE(sap_ct, 0.0) AS sap_ct,
+                    COALESCE(change_full_set, 0.0) AS change_full_set,
+                    COALESCE(change_half_set, 0.0) AS change_half_set,
+                    COALESCE(change_parts, 0.0) AS change_parts,
+                    COALESCE(maintenance_dt, 0.0) AS maintenance_dt,
+                    COALESCE(technician_dt, 0.0) AS technician_dt,
+                    COALESCE(production_dt, 0.0) AS production_dt,
+                    COALESCE(remark, '') AS remark,
+                    COALESCE(unallocated, 0.0) AS unallocated,
+                    COALESCE(part_scrap, 0.0) AS part_scrap,
+                    COALESCE(reject_purging, 0.0) AS reject_purging,
+                    COALESCE(reject_preform, 0.0) AS reject_preform,
+                    COALESCE(reject_total_pcs, 0) AS reject_total_pcs
                 FROM report
                 WHERE production_date = @production_date 
                 AND shift = @shift";
@@ -349,12 +349,12 @@ namespace CMS.server.Services
                 {
                     IdMachine = Convert.ToInt32(reader["id_machine"]),
                     Shift = Convert.ToInt32(reader["shift"]),
-                    MachineName = Convert.ToString(reader["machine_name"]),
+                    MachineName = Convert.ToString(reader["machine_name"]) ?? string.Empty,
                     Packer = Convert.ToString(reader["packer"]),
-                    Material = Convert.ToString(reader["material"]),
+                    Material = Convert.ToString(reader["material"]) ?? string.Empty,
                     IdType = Convert.ToInt32(reader["id_type"]),
                     Mould = Convert.ToInt32(reader["mould"]),
-                    Type = Convert.ToString(reader["type"]),
+                    Type = Convert.ToString(reader["type"]) ?? string.Empty,
                     JoNo = Convert.ToString(reader["jo_no"]),
                     QtyPerct = Convert.ToInt32(reader["qty_perct"]),
                     GrossWeight = Convert.ToDouble(reader["gross_weight"]),
@@ -405,31 +405,31 @@ namespace CMS.server.Services
             {
                 sql = @"
                     WITH CombinedLogs AS (
-                        SELECT 1 AS id_machine, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_1
-                        UNION ALL SELECT 2, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_2
-                        UNION ALL SELECT 3, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_3
-                        UNION ALL SELECT 4, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_4
-                        UNION ALL SELECT 5, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_5
-                        UNION ALL SELECT 6, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_6
-                        UNION ALL SELECT 7, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_7
-                        UNION ALL SELECT 8, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_8
-                        UNION ALL SELECT 9, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_9
-                        UNION ALL SELECT 10, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_10
-                        UNION ALL SELECT 11, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_11
-                        UNION ALL SELECT 12, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_12
-                        UNION ALL SELECT 13, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_13
-                        UNION ALL SELECT 14, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_14
-                        UNION ALL SELECT 15, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_15
-                        UNION ALL SELECT 16, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_16
-                        UNION ALL SELECT 17, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_17
-                        UNION ALL SELECT 18, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_18
-                        UNION ALL SELECT 19, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_19
-                        UNION ALL SELECT 20, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_20
-                        UNION ALL SELECT 21, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_21
-                        UNION ALL SELECT 22, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_22
-                        UNION ALL SELECT 23, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_23
-                        UNION ALL SELECT 24, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_24
-                        UNION ALL SELECT 25, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date FROM machine_log_25
+                        SELECT 1 AS id_machine, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_1
+                        UNION ALL SELECT 2, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_2
+                        UNION ALL SELECT 3, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_3
+                        UNION ALL SELECT 4, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_4
+                        UNION ALL SELECT 5, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_5
+                        UNION ALL SELECT 6, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_6
+                        UNION ALL SELECT 7, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_7
+                        UNION ALL SELECT 8, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_8
+                        UNION ALL SELECT 9, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_9
+                        UNION ALL SELECT 10, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_10
+                        UNION ALL SELECT 11, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_11
+                        UNION ALL SELECT 12, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_12
+                        UNION ALL SELECT 13, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_13
+                        UNION ALL SELECT 14, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_14
+                        UNION ALL SELECT 15, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_15
+                        UNION ALL SELECT 16, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_16
+                        UNION ALL SELECT 17, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_17
+                        UNION ALL SELECT 18, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_18
+                        UNION ALL SELECT 19, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_19
+                        UNION ALL SELECT 20, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_20
+                        UNION ALL SELECT 21, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_21
+                        UNION ALL SELECT 22, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_22
+                        UNION ALL SELECT 23, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_23
+                        UNION ALL SELECT 24, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_24
+                        UNION ALL SELECT 25, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_25
                     ),
                     MachineAgg AS (
                         SELECT
@@ -438,70 +438,87 @@ namespace CMS.server.Services
                             id_type,
                             mould,
                             SUM(shot) as shot,
-                            ISNULL(SUM(CASE WHEN category='PRODUCTION RUNNING' THEN (DATEDIFF(SECOND, start, ISNULL(finish, GETDATE())) / 3600.0) ELSE 0 END),0) AS run_time,
-                            ISNULL(SUM(CASE WHEN category NOT IN ('PRODUCTION RUNNING') THEN (DATEDIFF(SECOND, start, ISNULL(finish, GETDATE())) / 3600.0) ELSE 0 END),0) AS down_time,
-                            AVG(NULLIF(act_ct, 0)) AS act_ct
+                            SUM(CASE WHEN category='PRODUCTION RUNNING' AND status_start=1
+                                     THEN DATEDIFF(SECOND,start,COALESCE(finish,GETDATE()))/3600.0 ELSE 0 END) AS run_time,
+                            SUM(CASE WHEN category<>'PRODUCTION RUNNING'
+                                     THEN DATEDIFF(SECOND,start,COALESCE(finish,GETDATE()))/3600.0 ELSE 0 END) AS down_time,
+                            AVG(NULLIF(act_ct,0)) AS act_ct
                         FROM CombinedLogs
                         WHERE production_date=@today AND shift=@shift
                         GROUP BY id_machine, machine_name, id_type, mould
                     ),
-                    JoinedWithSap AS (
+                    WithSAP AS (
                         SELECT
-                            m.id_machine,
-                            m.machine_name,
-                            m.id_type,
-                            m.mould,
-                            m.run_time,
-                            m.down_time,
-                            ISNULL(m.act_ct,0) AS act_ct,
-                            ISNULL(s.sap_ct,0) AS sap_ct,
-                            ISNULL(m.shot * s.qty_perct * s.part_weight,0) AS material_used
+                            m.*,
+                            COALESCE(s.sap_ct,0) AS sap_ct,
+                            COALESCE(m.shot * s.qty_perct * s.part_weight,0) AS material_used,
+                            COALESCE(m.shot * s.sap_ct,0) AS total_sap_time,
+                            COALESCE(m.shot * m.act_ct,0) AS total_actual_time
                         FROM MachineAgg m
-                        LEFT JOIN sap s ON s.id_type=m.id_type AND s.mould=m.mould
+                        LEFT JOIN sap s
+                            ON s.id_type=m.id_type AND s.mould=m.mould
                     ),
-                    JoinedWithReject AS (
+                    WithReject AS (
                         SELECT
-                            j.id_machine,
-                            j.machine_name,
-                            j.id_type,
-                            j.mould,
-                            ISNULL(j.run_time,0) AS run_time,
-                            ISNULL(j.down_time,0) AS down_time,
-                            ISNULL(j.act_ct,0) AS act_ct,
-                            ISNULL(j.sap_ct,0) AS sap_ct,
-                            ISNULL(j.material_used,0) AS material_used,
-                            ISNULL(r.total_weight,0) AS reject_weight
-                        FROM JoinedWithSap j
+                            w.*,
+                            COALESCE(r.reject_black_dot + r.reject_burst + r.reject_lumpy + r.reject_others + r.reject_panelling,0) AS reject_weight
+                        FROM WithSAP w
                         LEFT JOIN reject r
-                            ON r.id_machine=j.id_machine AND r.id_type=j.id_type AND r.mould=j.mould
-                            AND r.production_date=@today AND r.shift=@shift
+                            ON r.id_machine=w.id_machine
+                            AND r.id_type=w.id_type
+                            AND r.mould=w.mould
+                            AND r.production_date=@today
+                            AND r.shift=@shift
+                    ),
+                    MachineSummary AS (
+                        SELECT
+                            id_machine,
+                            machine_name,
+                            SUM(run_time) AS run_time,
+                            SUM(down_time) AS down_time,
+                            0 AS unallocated,
+                            SUM(material_used) AS material_used,
+                            SUM(reject_weight) AS reject_weight,
+                            SUM(total_sap_time) AS total_sap_time,
+                            SUM(total_actual_time) AS total_actual_time
+                        FROM WithReject
+                        GROUP BY id_machine, machine_name
                     )
                     SELECT
                         id_machine,
                         machine_name,
-                        ISNULL(SUM(run_time),0) AS run_time,
-                        ISNULL(SUM(down_time),0) AS down_time,
-                        CASE 
-                            WHEN (SUM(down_time) + SUM(run_time)) = 0 OR id_type = 123456 THEN 0 
-                            WHEN (SUM(run_time) * 100.0 / (SUM(down_time) + SUM(run_time))) < 0 THEN 0
-                            ELSE (SUM(run_time) * 100.0 / (SUM(down_time) + SUM(run_time))) 
+                        run_time,
+                        down_time,
+                        unallocated,
+                        material_used,
+                        reject_weight,
+
+                        CASE WHEN (run_time + down_time)=0
+                             THEN 0
+                             ELSE (run_time*1.0/(run_time+down_time))*100
                         END AS availability,
-                        CASE 
-                            WHEN AVG(act_ct) = 0 OR id_type = 123456 THEN 0 
-                            WHEN (MAX(sap_ct) * 100.0 / AVG(act_ct)) < 0 THEN 0
-                            ELSE (MAX(sap_ct) * 100.0 / AVG(act_ct)) 
+
+                        CASE WHEN total_actual_time=0
+                             THEN 0
+                             ELSE (total_sap_time*1.0/total_actual_time)*100
                         END AS performance,
-                        CASE 
-                            WHEN SUM(run_time) = 0 OR SUM(material_used) = 0 OR id_type = 123456 THEN 0
-                            WHEN ((SUM(material_used) - SUM(reject_weight)) * 1.0 / SUM(material_used)) < 0 THEN 0
-                            ELSE ((SUM(material_used) - SUM(reject_weight)) * 1.0 / SUM(material_used)) * 100
+
+                        CASE WHEN material_used=0
+                             THEN 0
+                             ELSE ((material_used-reject_weight)*1.0/material_used)*100
                         END AS quality,
-                        CASE 
-                            WHEN (SUM(run_time) + SUM(down_time)) = 0 OR AVG(act_ct) = 0 OR SUM(material_used) = 0 OR id_type = 123456 THEN 0
-                            ELSE ((SUM(run_time)*1.0/(SUM(down_time) + SUM(run_time)))*(MAX(sap_ct)/AVG(act_ct))*((SUM(material_used)-SUM(reject_weight))*1.0/SUM(material_used))*100)
+
+                        CASE WHEN (run_time + down_time)=0
+                              OR total_actual_time=0
+                              OR material_used=0
+                             THEN 0
+                             ELSE
+                                (run_time*1.0/(run_time+down_time)) *
+                                (total_sap_time*1.0/total_actual_time) *
+                                ((material_used-reject_weight)*1.0/material_used) * 100
                         END AS oee
-                    FROM JoinedWithReject
-                    GROUP BY id_machine, machine_name, id_type
+
+                    FROM MachineSummary
                     ORDER BY id_machine;";
             }
             else
@@ -513,25 +530,20 @@ namespace CMS.server.Services
                             r.machine_name,
                             r.id_type,
                             r.mould,
-                            ISNULL(SUM(r.production_running), 0) AS run_time,
-                            ISNULL(SUM(
-                                ISNULL(r.change_full_set,0) +
-                                ISNULL(r.change_half_set,0) +
-                                ISNULL(r.change_parts,0) +
-                                ISNULL(r.maintenance_dt,0) +
-                                ISNULL(r.technician_dt,0) +
-                                ISNULL(r.production_dt,0)
+                            COALESCE(SUM(r.production_running), 0) AS run_time,
+                            COALESCE(SUM(
+                                COALESCE(r.change_full_set,0) +
+                                COALESCE(r.change_half_set,0) +
+                                COALESCE(r.change_parts,0) +
+                                COALESCE(r.maintenance_dt,0) +
+                                COALESCE(r.technician_dt,0) +
+                                COALESCE(r.production_dt,0)
                             ), 0) AS down_time,
-                            ISNULL(SUM(r.unallocated), 0) AS unallocated,
-                            ISNULL(AVG(NULLIF(r.act_ct,0)), 0) AS act_ct,
-                            ISNULL(MAX(r.sap_ct), 0) AS sap_ct,
-                            ISNULL(SUM(r.material_used), 0) AS material_used,
-                            ISNULL(SUM(
-                                ISNULL(r.reject_startup,0) +
-                                ISNULL(r.reject_prod,0) +
-                                ISNULL(r.reject_purging,0) +
-                                ISNULL(r.reject_preform,0)
-                            ), 0) AS reject_weight
+                            COALESCE(SUM(r.unallocated), 0) AS unallocated,
+                            SUM(COALESCE(r.material_used,0) * COALESCE(r.sap_ct,0)) AS total_sap_time,
+                            SUM(COALESCE(r.material_used,0) * COALESCE(r.act_ct,0)) AS total_actual_time,
+                            COALESCE(SUM(r.material_used), 0) AS material_used,
+                            COALESCE(SUM(r.reject_prod), 0) as reject_weight
                         FROM report r
                         WHERE r.production_date BETWEEN @start_date AND @end_date AND id_machine <> 26
                         GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould
@@ -543,10 +555,10 @@ namespace CMS.server.Services
                             SUM(run_time) AS run_time,
                             SUM(down_time) AS down_time,
                             SUM(unallocated) AS unallocated,
-                            ISNULL(SUM(act_ct * run_time) / NULLIF(SUM(run_time),0),0) AS act_ct,
-                            MAX(sap_ct) AS sap_ct,
                             SUM(material_used) AS material_used,
-                            SUM(reject_weight) AS reject_weight
+                            SUM(reject_weight) AS reject_weight,
+                            SUM(total_sap_time) AS total_sap_time,
+                            SUM(total_actual_time) AS total_actual_time
                         FROM ReportAgg
                         GROUP BY id_machine, machine_name
                     )
@@ -556,38 +568,39 @@ namespace CMS.server.Services
                         run_time,
                         down_time,
                         unallocated,
-                        act_ct,
-                        sap_ct,
                         material_used,
                         reject_weight,
-                        CASE 
+
+                        -- AVAILABILITY
+                        CASE
                             WHEN (run_time + down_time) = 0 THEN 0
-                            WHEN (run_time * 1.0 / (run_time + down_time)) < 0 THEN 0
                             ELSE (run_time * 1.0 / (run_time + down_time)) * 100
                         END AS availability,
-                        CASE 
-                            WHEN act_ct = 0 THEN 0
-                            WHEN (sap_ct * 1.0 / act_ct) < 0 THEN 0
-                            ELSE (sap_ct * 1.0 / act_ct) * 100
+
+                        -- PERFORMANCE
+                        CASE
+                            WHEN total_actual_time = 0 THEN 0
+                            ELSE (total_sap_time * 1.0 / total_actual_time) * 100
                         END AS performance,
+
+                        -- QUALITY
                         CASE
                             WHEN material_used = 0 THEN 0
-                            WHEN ((material_used - reject_weight) * 1.0 / material_used) < 0 THEN 0
                             ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100
                         END AS quality,
-                        CASE 
-                            WHEN (run_time + down_time) = 0 
-                              OR act_ct = 0 
-                              OR material_used = 0 THEN 0
-                            WHEN (
-                                (run_time * 1.0 / (run_time + down_time)) *
-                                (sap_ct * 1.0 / act_ct) *
-                                ((material_used - reject_weight) * 1.0 / material_used)
-                            ) < 0 THEN 0
+
+                        -- OEE
+                        CASE
+                            WHEN (run_time + down_time) = 0
+                              OR total_actual_time = 0
+                              OR material_used = 0
+                            THEN 0
                             ELSE
-                                (run_time * 1.0 / (run_time + down_time)) *
-                                (sap_ct * 1.0 / act_ct) *
-                                ((material_used - reject_weight) * 1.0 / material_used) * 100
+                                (
+                                    (run_time * 1.0 / (run_time + down_time)) *
+                                    (total_sap_time * 1.0 / total_actual_time) *
+                                    ((material_used - reject_weight) * 1.0 / material_used)
+                                ) * 100
                         END AS oee
                     FROM MachineSummary
                     ORDER BY id_machine;";
@@ -608,8 +621,11 @@ namespace CMS.server.Services
                 {
                     id_machine = Convert.ToInt32(reader["id_machine"]),
                     machine_name = Convert.ToString(reader["machine_name"]),
-                    run_time = Convert.ToInt32(reader["run_time"]),
-                    down_time = Convert.ToInt32(reader["down_time"]),
+                    run_time = Convert.ToSingle(reader["run_time"]),
+                    down_time = Convert.ToSingle(reader["down_time"]),
+                    unallocated = Convert.ToSingle(reader["unallocated"]),
+                    material_used = Convert.ToSingle(reader["material_used"]),
+                    reject_weight = Convert.ToSingle(reader["reject_weight"]),
                     availability = Convert.ToSingle(reader["availability"]),
                     performance = Convert.ToSingle(reader["performance"]),
                     quality = Convert.ToSingle(reader["quality"]),
@@ -623,34 +639,19 @@ namespace CMS.server.Services
             var time = DateTime.Now;
             var (productionDate, current_shift) = GetProductionDate(time);
 
-            var sql = "";
-
-            if (start_date == productionDate && end_date == productionDate)
-            {
-                sql = @"
-                    SELECT TOP 10
-	                    reject.id_type,
-                        type, 
-                        COALESCE(SUM(total_weight), 0) AS total_reject
-                    FROM reject
-                    LEFT JOIN sap 
-                        ON sap.id_type = reject.id_type AND sap.mould = reject.mould
-                    WHERE production_date = @today AND shift = @shift AND reject.id_type <> 123456
-                    GROUP BY reject.id_type, type
-                    ORDER BY COALESCE(SUM(total_weight), 0) DESC;";
-            }
-            else
-            {
-                sql = @"
-                    SELECT TOP 10
-                        id_type,
-                        type,
-                        COALESCE(SUM(reject_startup + reject_prod + reject_purging + reject_preform), 0) AS total_reject
-                    FROM report
-                    WHERE production_date BETWEEN @start_date AND @end_date AND id_type <> 123456
-                    GROUP BY id_type, type
-                    ORDER BY COALESCE(SUM(reject_startup + reject_prod + reject_purging + reject_preform), 0) DESC;";
-            }
+            var sql = @"
+                SELECT TOP 10
+	                reject.id_type,
+                    reject.mould
+                    type, 
+                    COALESCE(SUM(total_weight), 0) AS total_reject
+                FROM reject
+                LEFT JOIN sap 
+                    ON sap.id_type = reject.id_type AND sap.mould = reject.mould
+                WHERE production_date BETWEEN @start_date AND @end_date AND reject.id_type <> 123456
+                GROUP BY reject.id_type, reject.mould, type
+                HAVING COALESCE(SUM(total_weight), 0) > 0
+                ORDER BY COALESCE(SUM(total_weight), 0) DESC;";
 
             var result = new List<object>();
             using var conn = await CreateConnection();
@@ -771,14 +772,14 @@ namespace CMS.server.Services
                 SELECT TOP 10
                     sap.id_type,
                     sap.type,
-                    SUM(DATEDIFF(SECOND, start, ISNULL(finish, GETDATE()))) / 3600.0 AS hours
+                    SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE()))) / 3600.0 AS hours
                 FROM CombinedLogs ml
                 LEFT JOIN sap 
                     ON sap.id_type = ml.id_type 
                     AND sap.mould = ml.mould
                 WHERE production_date BETWEEN @start_date AND @end_date
                     AND ml.id_type <> 123456
-                    AND category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE', 'SCHEDULED DOWNTIME', '')
+                    AND category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE', 'SCHEDULED MAINTENANCE')
                 GROUP BY sap.id_type, sap.type
                 ORDER BY hours DESC;";
 
@@ -806,48 +807,48 @@ namespace CMS.server.Services
         {
             var sql = @"
                 SELECT 
-                    ISNULL(id_machine, 1) AS id_machine,
-                    ISNULL(shift, 1) AS shift,
-                    ISNULL(machine_name, '') AS machine_name,
-                    ISNULL(packer, '') AS packer,
-                    ISNULL(material, '') AS material,
-                    ISNULL(id_type, 123456) AS id_type,
-                    ISNULL(mould, 0) AS mould,
-                    ISNULL(type, '') AS type,
-                    ISNULL(jo_no, '') AS jo_no,
-                    ISNULL(qty_perct, 1) AS qty_perct,
-                    ISNULL(gross_weight, 0.0) AS gross_weight,
-                    ISNULL(part_weight, 0.0) AS part_weight,
-                    ISNULL(shot, 0) AS shot,
-                    ISNULL(qty_order, 0) AS qty_order,
-                    ISNULL(wip_opening, 0) AS wip_opening,
-                    ISNULL(wip_closing, 0) AS wip_closing,
-                    ISNULL(shift_output, 0) AS shift_output,
-                    ISNULL(finish_good, 0) AS finish_good,
-                    ISNULL(inward, 0.0) AS inward,
-                    ISNULL(qty_accum, 0) AS qty_accum,
-                    ISNULL(qty_balance, 0) AS qty_balance,
-                    ISNULL(material_used, 0.0) AS material_used,
-                    ISNULL(runner, 0.0) AS runner,
-                    ISNULL(reject_startup, 0.0) AS reject_startup,
-                    ISNULL(reject_startup_per, 0.0) AS reject_startup_per,
-                    ISNULL(reject_prod, 0.0) AS reject_prod,
-                    ISNULL(reject_prod_per, 0.0) AS reject_prod_per,
-                    ISNULL(act_ct, 0.0) AS act_ct,
-                    ISNULL(production_running, 0.0) AS production_running,
-                    ISNULL(sap_ct, 0.0) AS sap_ct,
-                    ISNULL(change_full_set, 0.0) AS change_full_set,
-                    ISNULL(change_half_set, 0.0) AS change_half_set,
-                    ISNULL(change_parts, 0.0) AS change_parts,
-                    ISNULL(maintenance_dt, 0.0) AS maintenance_dt,
-                    ISNULL(technician_dt, 0.0) AS technician_dt,
-                    ISNULL(production_dt, 0.0) AS production_dt,
-                    ISNULL(remark, '') AS remark,
-                    ISNULL(unallocated, 0.0) AS unallocated,
-                    ISNULL(part_scrap, 0.0) AS part_scrap,
-                    ISNULL(reject_purging, 0.0) AS reject_purging,
-                    ISNULL(reject_preform, 0.0) AS reject_preform,
-                    ISNULL(reject_total_pcs, 0) AS reject_total_pcs
+                    COALESCE(id_machine, 1) AS id_machine,
+                    COALESCE(shift, 1) AS shift,
+                    COALESCE(machine_name, '') AS machine_name,
+                    COALESCE(packer, '') AS packer,
+                    COALESCE(material, '') AS material,
+                    COALESCE(id_type, 123456) AS id_type,
+                    COALESCE(mould, 0) AS mould,
+                    COALESCE(type, '') AS type,
+                    COALESCE(jo_no, '') AS jo_no,
+                    COALESCE(qty_perct, 1) AS qty_perct,
+                    COALESCE(gross_weight, 0.0) AS gross_weight,
+                    COALESCE(part_weight, 0.0) AS part_weight,
+                    COALESCE(shot, 0) AS shot,
+                    COALESCE(qty_order, 0) AS qty_order,
+                    COALESCE(wip_opening, 0) AS wip_opening,
+                    COALESCE(wip_closing, 0) AS wip_closing,
+                    COALESCE(shift_output, 0) AS shift_output,
+                    COALESCE(finish_good, 0) AS finish_good,
+                    COALESCE(inward, 0.0) AS inward,
+                    COALESCE(qty_accum, 0) AS qty_accum,
+                    COALESCE(qty_balance, 0) AS qty_balance,
+                    COALESCE(material_used, 0.0) AS material_used,
+                    COALESCE(runner, 0.0) AS runner,
+                    COALESCE(reject_startup, 0.0) AS reject_startup,
+                    COALESCE(reject_startup_per, 0.0) AS reject_startup_per,
+                    COALESCE(reject_prod, 0.0) AS reject_prod,
+                    COALESCE(reject_prod_per, 0.0) AS reject_prod_per,
+                    COALESCE(act_ct, 0.0) AS act_ct,
+                    COALESCE(production_running, 0.0) AS production_running,
+                    COALESCE(sap_ct, 0.0) AS sap_ct,
+                    COALESCE(change_full_set, 0.0) AS change_full_set,
+                    COALESCE(change_half_set, 0.0) AS change_half_set,
+                    COALESCE(change_parts, 0.0) AS change_parts,
+                    COALESCE(maintenance_dt, 0.0) AS maintenance_dt,
+                    COALESCE(technician_dt, 0.0) AS technician_dt,
+                    COALESCE(production_dt, 0.0) AS production_dt,
+                    COALESCE(remark, '') AS remark,
+                    COALESCE(unallocated, 0.0) AS unallocated,
+                    COALESCE(part_scrap, 0.0) AS part_scrap,
+                    COALESCE(reject_purging, 0.0) AS reject_purging,
+                    COALESCE(reject_preform, 0.0) AS reject_preform,
+                    COALESCE(reject_total_pcs, 0) AS reject_total_pcs
                 FROM report
                 WHERE production_date = @production_date 
                 AND shift = @shift";
@@ -996,6 +997,207 @@ namespace CMS.server.Services
             }
 
             return result;
+        }
+        public async Task<object> ImportReport(List<Dictionary<string, JsonElement>> reportList, DateOnly production_date, int shift)
+        {
+            const string checkSql = @"
+                SELECT id_type, mould
+                FROM   report
+                WHERE  id_machine      = @id_machine
+                  AND  production_date = @production_date
+                  AND  shift           = @shift;";
+
+            const string sapSql = @"
+                SELECT material, type, qty_perct, gross_weight, part_weight, sap_ct
+                FROM   sap
+                WHERE  id_type = @id_type
+                  AND  mould   = @mould;";
+
+            const string updateSql = @"
+                UPDATE report
+                SET
+                    packer             = @packer,
+                    jo_no              = CASE WHEN jo_no = '0' THEN @jo_no ELSE jo_no END,
+                    id_type            = @new_id_type,
+                    mould              = @new_mould,
+                    material           = @material,
+                    type               = @type,
+                    qty_perct          = @qty_perct,
+                    gross_weight       = @gross_weight,
+                    part_weight        = @part_weight,
+                    sap_ct             = @sap_ct,
+                    shot               = @shot_accum,
+                    qty_order          = @qty_order,
+                    wip_opening        = @wip_opening,
+                    wip_closing        = @wip_closing,
+                    finish_good        = @finish_good,
+                    qty_accum          = @qty_accum,
+                    reject_startup     = @reject_startup,
+                    reject_prod        = @reject_prod,
+                    act_ct             = @act_ct,
+                    production_running = @production_running,
+                    change_full_set    = @change_full_set,
+                    change_half_set    = @change_half_set,
+                    change_parts       = @change_parts,
+                    maintenance_dt     = @maintenance_dt,
+                    technician_dt      = @technician_dt,
+                    production_dt      = @production_dt,
+                    unallocated        = 0,
+                    remark             = @remark,
+                    reject_purging     = @reject_purging,
+                    reject_preform     = @reject_preform,
+                    reject_total_pcs   = @reject_total_pcs
+                WHERE  id_machine      = @id_machine
+                  AND  id_type         = @orig_id_type
+                  AND  mould           = @orig_mould
+                  AND  production_date = @production_date
+                  AND  shift           = @shift
+                  AND  (jo_no = '0' OR jo_no = @jo_no);";
+
+            const string insertSql = @"
+                INSERT INTO report (
+                    id_machine, production_date, shift,
+                    packer, jo_no,
+                    id_type, mould, material, type,
+                    qty_perct, gross_weight, part_weight, sap_ct,
+                    shot, qty_order, wip_opening, wip_closing,
+                    finish_good, qty_accum,
+                    reject_startup, reject_prod,
+                    act_ct, production_running,
+                    change_full_set, change_half_set, change_parts,
+                    maintenance_dt, technician_dt, unallocated,
+                    remark, reject_purging, reject_preform, reject_total_pcs
+                ) VALUES (
+                    @id_machine, @production_date, @shift,
+                    @packer, @jo_no,
+                    @new_id_type, @new_mould, @material, @type,
+                    @qty_perct, @gross_weight, @part_weight, @sap_ct,
+                    @shot_accum, @qty_order, @wip_opening, @wip_closing,
+                    @finish_good, @qty_accum,
+                    @reject_startup, @reject_prod,
+                    @act_ct, @production_running,
+                    @change_full_set, @change_half_set, @change_parts,
+                    @maintenance_dt, @technician_dt, 0,
+                    @remark, @reject_purging, @reject_preform, @reject_total_pcs
+                );";
+
+            using var conn = await CreateConnection();
+
+            var grouped = reportList
+                .GroupBy(r => (
+                    IdMachine: Convert.ToInt32(r["id_machine"].GetDouble()),
+                    Date: DateOnly.TryParse(r["production_date"].GetString(), out var date) ? date : DateOnly.MinValue,
+                    Shift: Convert.ToInt32(r["shift"].GetDouble())
+                ))
+                .ToList();
+
+            foreach (var group in grouped)
+            {
+                int idMachine = group.Key.IdMachine;
+                DateOnly rowDate = group.Key.Date;
+                int rowShift = group.Key.Shift;
+
+                List<Dictionary<string, JsonElement>> csvRows = group.ToList();
+
+                var dbRows = new List<(int IdType, int Mould)>();
+
+                await using (var checkCmd = new SqlCommand(checkSql, conn))
+                {
+                    checkCmd.Parameters.AddWithValue("@id_machine", idMachine);
+                    checkCmd.Parameters.AddWithValue("@production_date", rowDate);
+                    checkCmd.Parameters.AddWithValue("@shift", rowShift);
+
+                    await using var reader = await checkCmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        dbRows.Add((Convert.ToInt32(reader["id_type"]), Convert.ToInt32(reader["mould"])));
+                }
+
+                foreach (var csvRow in csvRows)
+                {
+                    int csvIdType = Convert.ToInt32(csvRow["id_type"].GetDouble());
+                    int csvMould = Convert.ToInt32(csvRow["mould"].GetDouble());
+
+                    var matchedDb = dbRows.FirstOrDefault(db => db.IdType == csvIdType && db.Mould == csvMould);
+                    bool hasMatch = matchedDb != default;
+
+                    string material = Convert.ToString(csvRow["material"].GetString()) ?? string.Empty;
+                    string type = Convert.ToString(csvRow["type"].GetString()) ?? string.Empty;
+                    int qtyPerct = Convert.ToInt32(csvRow["qty_perct"].GetDouble());
+                    float grossWeight = Convert.ToSingle(csvRow["gross_weight"].GetDouble());
+                    float partWeight = Convert.ToSingle(csvRow["part_weight"].GetDouble());
+                    float sapCt = Convert.ToSingle(csvRow["sap_ct"].GetDouble());
+
+                    await using var sapCmd = new SqlCommand(sapSql, conn);
+                    sapCmd.Parameters.AddWithValue("@id_type", csvIdType);
+                    sapCmd.Parameters.AddWithValue("@mould", csvMould);
+
+                    await using var sapReader = await sapCmd.ExecuteReaderAsync();
+                    if (await sapReader.ReadAsync())
+                    {
+                        material = Convert.ToString(sapReader["material"]) ?? string.Empty;
+                        type = Convert.ToString(sapReader["type"]) ?? string.Empty;
+                        qtyPerct = Convert.ToInt32(sapReader["qty_perct"]);
+                        grossWeight = Convert.ToSingle(sapReader["gross_weight"]);
+                        partWeight = Convert.ToSingle(sapReader["part_weight"]);
+                        sapCt = Convert.ToSingle(sapReader["sap_ct"]);
+                    }
+
+                    int origIdType = hasMatch ? matchedDb.IdType : (dbRows.Count > 0 ? dbRows[0].IdType : csvIdType);
+                    int origMould = hasMatch ? matchedDb.Mould : (dbRows.Count > 0 ? dbRows[0].Mould : csvMould);
+
+                    bool shouldInsert = !hasMatch && dbRows.Count == 0;
+
+                    if (!hasMatch && dbRows.Count > 0)
+                        dbRows.RemoveAt(0);
+
+                    string sql = shouldInsert ? insertSql : updateSql;
+
+                    await using var cmd = new SqlCommand(sql, conn);
+
+                    cmd.Parameters.AddWithValue("@id_machine", idMachine);
+                    cmd.Parameters.AddWithValue("@production_date", rowDate);
+                    cmd.Parameters.AddWithValue("@shift", rowShift);
+                    cmd.Parameters.AddWithValue("@orig_id_type", origIdType);
+                    cmd.Parameters.AddWithValue("@orig_mould", origMould);
+                    cmd.Parameters.AddWithValue("@new_id_type", csvIdType);
+                    cmd.Parameters.AddWithValue("@new_mould", csvMould);
+                    cmd.Parameters.AddWithValue("@material", material);
+                    cmd.Parameters.AddWithValue("@type", type);
+                    cmd.Parameters.AddWithValue("@qty_perct", qtyPerct);
+                    cmd.Parameters.AddWithValue("@gross_weight", grossWeight);
+                    cmd.Parameters.AddWithValue("@part_weight", partWeight);
+                    cmd.Parameters.AddWithValue("@sap_ct", sapCt);
+                    cmd.Parameters.AddWithValue("@packer", Convert.ToString(csvRow["packer"].GetString()));
+                    cmd.Parameters.AddWithValue("@jo_no", Convert.ToString(csvRow["jo_no"].GetString()));
+                    cmd.Parameters.AddWithValue("@shot_accum", Convert.ToInt32(csvRow["shot"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@qty_order", Convert.ToInt32(csvRow["qty_order"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@wip_opening", Convert.ToInt32(csvRow["wip_opening"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@wip_closing", Convert.ToInt32(csvRow["wip_closing"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@finish_good", Convert.ToInt32(csvRow["finish_good"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@qty_accum", Convert.ToInt32(csvRow["qty_accum"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@reject_startup", Convert.ToSingle(csvRow["reject_startup"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@reject_prod", Convert.ToSingle(csvRow["reject_prod"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@act_ct", Convert.ToSingle(csvRow["act_ct"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@production_running", Convert.ToSingle(csvRow["production_running"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@change_full_set", Convert.ToSingle(csvRow["change_full_set"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@change_half_set", Convert.ToSingle(csvRow["change_half_set"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@change_parts", Convert.ToSingle(csvRow["change_parts"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@maintenance_dt", Convert.ToSingle(csvRow["maintenance_dt"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@technician_dt", Convert.ToSingle(csvRow["technician_dt"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@production_dt", Convert.ToSingle(csvRow["production_dt"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@remark", Convert.ToString(csvRow["remark"].GetString()));
+                    cmd.Parameters.AddWithValue("@reject_purging", Convert.ToSingle(csvRow["reject_purging"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@reject_preform", Convert.ToSingle(csvRow["reject_preform"].GetDouble()));
+                    cmd.Parameters.AddWithValue("@reject_total_pcs", Convert.ToInt32(csvRow["reject_total_pcs"].GetDouble()));
+
+                    await cmd.ExecuteNonQueryAsync();
+                }
+            }
+
+            var reloadDate = DateOnly.TryParse(reportList.First()["production_date"].GetString(), out var date) ? date : DateOnly.MinValue;
+            var reloadShift = Convert.ToInt32(reportList.First()["shift"].GetDouble());
+
+            return await LoadPrevReport(reloadDate, reloadShift);
         }
         public async Task<object> LoadMachineMaster()
         {
@@ -1926,7 +2128,7 @@ namespace CMS.server.Services
                         sl.work_shift;
 
                 UPDATE mm
-                    SET mm.packer = ISNULL(pt.packer, '')
+                    SET mm.packer = COALESCE(pt.packer, '')
                     FROM machine_master mm
                     LEFT JOIN @PackerTable pt 
                         ON mm.machine_name = pt.machine_name
@@ -1948,8 +2150,8 @@ namespace CMS.server.Services
                         continue;
 
                     int staffId = staff["staff_id"].GetInt32();
-                    string staffName = staff["staff_name"].GetString();
-                    string staffRole = staff["staff_role"].GetString();
+                    string staffName = staff["staff_name"].GetString() ?? string.Empty;
+                    string staffRole = staff["staff_role"].GetString() ?? string.Empty;
                     string? status = staff.TryGetValue("status", out var statusEl) && statusEl.ValueKind != JsonValueKind.Null ? statusEl.GetString() : null;
                     string? machineName = staff.TryGetValue("machine_name", out var machineEl) && machineEl.ValueKind != JsonValueKind.Null ? machineEl.GetString() : null;
                     DateTime? startDate = staff.TryGetValue("start_date", out var startEl) && startEl.ValueKind == JsonValueKind.String ? startEl.GetDateTime() : (DateTime?)null;
@@ -2054,6 +2256,361 @@ namespace CMS.server.Services
                 await cmd.ExecuteNonQueryAsync();
             }
         }
+        public async Task<object> LoadMachineProductOutput(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            var sql = @"
+                SELECT
+	                sap.type,
+                    report.id_type,
+                    report.mould,
+                    SUM(COALESCE(report.shot, 0)) AS shot,
+                    MAX(COALESCE(report.qty_perct, 0)) AS qty_perct,
+                    SUM(COALESCE(report.shift_output, 0)) AS shift_output,
+                    MAX(COALESCE(report.part_weight, 0)) AS part_weight,
+                    ROUND(AVG(COALESCE(report.act_ct, 0)), 2) AS act_ct,
+                    ROUND(AVG(COALESCE(report.sap_ct, 0)), 2) AS sap_ct,
+                    CASE
+                        WHEN AVG(COALESCE(report.act_ct, 0)) = 0 THEN 0
+                        ELSE ROUND((AVG(COALESCE(report.sap_ct, 0)) / AVG(COALESCE(report.act_ct, 0))) * 100, 1)
+                    END AS efficiency
+                FROM report
+                INNER JOIN sap
+	                ON report.id_type = sap.id_type AND report.mould = sap.mould
+                WHERE id_machine    = @id_machine
+                  AND production_date BETWEEN @start_date AND @end_date
+                  AND report.id_type <> 123456
+                GROUP BY report.id_type, report.mould, sap.type
+                ORDER BY shift_output DESC;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id_machine", id_machine);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    type = Convert.ToString(reader["type"]),
+                    id_type = Convert.ToInt32(reader["id_type"]),
+                    mould = Convert.ToInt32(reader["mould"]),
+                    shot = Convert.ToInt32(reader["shot"]),
+                    qty_perct = Convert.ToInt32(reader["qty_perct"]),
+                    shift_output = Convert.ToInt32(reader["shift_output"]),
+                    part_weight = Convert.ToSingle(reader["part_weight"]),
+                    act_ct = Convert.ToSingle(reader["act_ct"]),
+                    sap_ct = Convert.ToSingle(reader["sap_ct"]),
+                    efficiency = Convert.ToSingle(reader["efficiency"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineDailyOutput(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            var sql = @"
+                SELECT
+                    production_date,
+                    SUM(COALESCE(shift_output, 0)) AS shift_output
+                FROM report
+                WHERE id_machine = @id_machine
+                  AND production_date BETWEEN @start_date AND @end_date
+                  AND id_type <> 123456
+                GROUP BY production_date
+                ORDER BY production_date;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id_machine", id_machine);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    production_date = DateOnly.FromDateTime(Convert.ToDateTime(reader["production_date"])).ToString("yyyy-MM-dd"),
+                    shift_output = Convert.ToInt32(reader["shift_output"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineRunningtime(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            if (id_machine < 1 || id_machine > 25)
+                throw new ArgumentOutOfRangeException(nameof(id_machine));
+
+            var sql = $@"
+                SELECT
+                    category,
+                    ROUND(SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) / 3600.0), 2) AS hours
+                FROM machine_log_{id_machine}
+                WHERE production_date BETWEEN @start_date AND @end_date
+                  AND status_start = 1
+                  AND category IS NOT NULL
+                GROUP BY category
+                ORDER BY hours DESC;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    production_running = Convert.ToString(reader["category"]),
+                    hours = Convert.ToSingle(reader["hours"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineDowntimeCategory(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            if (id_machine < 1 || id_machine > 25)
+                throw new ArgumentOutOfRangeException(nameof(id_machine));
+
+            var sql = $@"
+                SELECT
+                    category,
+                    ROUND(SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) / 3600.0), 2) AS hours
+                FROM machine_log_{id_machine}
+                WHERE production_date BETWEEN @start_date AND @end_date
+                  AND NOT status_start = 1
+                  AND category IS NOT NULL
+                GROUP BY category
+                ORDER BY hours DESC;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    category = Convert.ToString(reader["category"]),
+                    hours = Convert.ToSingle(reader["hours"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineDowntimeEvents(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            if (id_machine < 1 || id_machine > 25)
+                throw new ArgumentOutOfRangeException(nameof(id_machine));
+
+            var sql = $@"
+                SELECT
+                    start,
+                    finish,
+                    category,
+                    ROUND(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) / 3600.0, 2) AS duration,
+                    CASE shift WHEN 1 THEN 'Morning' ELSE 'Night' END AS shift,
+                    COALESCE(problem, '') AS remark
+                FROM machine_log_{id_machine}
+                WHERE production_date BETWEEN @start_date AND @end_date
+                  AND NOT status_start = 1
+                  AND category IS NOT NULL
+                  AND id_type <> 123456
+                ORDER BY start DESC;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    start = Convert.ToString(reader["start"]),
+                    finish = Convert.ToString(reader["finish"]),
+                    category = Convert.ToString(reader["category"]),
+                    duration = Convert.ToSingle(reader["duration"]),
+                    shift = Convert.ToString(reader["shift"]),
+                    remark = Convert.ToString(reader["remark"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineReject(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            var sql = @"
+                SELECT
+                    production_date,
+                    CASE shift WHEN 1 THEN 'Morning' ELSE 'Night' END AS shift,
+	                sap.type,
+                    reject.id_type,
+                    reject.mould,
+                    COALESCE(reject_panelling,  0) AS reject_panelling,
+                    COALESCE(reject_lumpy,      0) AS reject_lumpy,
+                    COALESCE(reject_black_dot,  0) AS reject_black_dot,
+                    COALESCE(reject_burst,      0) AS reject_burst,
+                    COALESCE(reject_startup,    0) AS reject_startup,
+                    COALESCE(reject_preform,    0) AS reject_preform,
+                    COALESCE(reject_purging,    0) AS reject_purging,
+                    COALESCE(reject_others,     0) AS reject_others,
+                    COALESCE(total_weight,      0) AS total_weight
+                FROM reject
+                INNER JOIN sap
+	                ON reject.id_type = sap.id_type AND reject.mould = sap.mould
+                WHERE id_machine = @id_machine
+                  AND production_date BETWEEN @start_date AND @end_date
+                  AND reject.id_type <> 123456
+                ORDER BY production_date, shift;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id_machine", id_machine);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    production_date = DateOnly.FromDateTime(Convert.ToDateTime(reader["production_date"])).ToString("yyyy-MM-dd"),
+                    shift = Convert.ToString(reader["shift"]),
+                    type = Convert.ToString(reader["type"]),
+                    id_type = Convert.ToInt32(reader["id_type"]),
+                    mould = Convert.ToInt32(reader["mould"]),
+                    reject_panelling = Convert.ToSingle(reader["reject_panelling"]),
+                    reject_lumpy = Convert.ToSingle(reader["reject_lumpy"]),
+                    reject_black_dot = Convert.ToSingle(reader["reject_black_dot"]),
+                    reject_burst = Convert.ToSingle(reader["reject_burst"]),
+                    reject_startup = Convert.ToSingle(reader["reject_startup"]),
+                    reject_preform = Convert.ToSingle(reader["reject_preform"]),
+                    reject_purging = Convert.ToSingle(reader["reject_purging"]),
+                    reject_others = Convert.ToSingle(reader["reject_others"]),
+                    total_weight = Convert.ToSingle(reader["total_weight"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineCycleTime(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            var sql = @"
+                SELECT
+                    sap.type,
+                    report.id_type,
+                    report.mould,
+                    COALESCE(ROUND(AVG(NULLIF(report.act_ct, 0)), 2), 0) AS act_ct,
+                    COALESCE(ROUND(AVG(NULLIF(sap.sap_ct, 0)), 2), 0) AS sap_ct
+                FROM report
+                INNER JOIN sap
+                    ON report.id_type = sap.id_type AND report.mould = sap.mould
+                WHERE id_machine = @id_machine
+                  AND production_date BETWEEN @start_date AND @end_date
+                  AND report.id_type <> 123456
+                GROUP BY report.id_type, report.mould, sap.type
+                ORDER BY type;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id_machine", id_machine);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    type = Convert.ToString(reader["type"]),
+                    id_type = Convert.ToInt32(reader["id_type"]),
+                    mould = Convert.ToInt32(reader["mould"]),
+                    act_ct = Convert.ToSingle(reader["act_ct"]),
+                    sap_ct = Convert.ToSingle(reader["sap_ct"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineShiftPerformance(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            var sql = @"
+                SELECT
+                    CASE shift WHEN 1 THEN 'Morning' ELSE 'Night' END AS shift,
+                    SUM(COALESCE(shift_output, 0)) AS shift_output,
+                    SUM(COALESCE(reject_total_pcs, 0)) AS total_reject_pcs
+                FROM report
+                WHERE id_machine = @id_machine
+                  AND production_date BETWEEN @start_date AND @end_date
+                  AND id_type <> 123456
+                GROUP BY shift
+                ORDER BY shift;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id_machine", id_machine);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    shift = Convert.ToString(reader["shift"]),
+                    shift_output = Convert.ToInt32(reader["shift_output"]),
+                    total_reject_pcs = Convert.ToInt32(reader["total_reject_pcs"])
+                });
+            }
+            return result;
+        }
+        public async Task<object> LoadMachineUtilities(int id_machine, DateOnly start_date, DateOnly end_date)
+        {
+            var sql = @"
+                SELECT
+                    utility_name,
+                    COALESCE(start, GETDATE()) AS start,
+                    COALESCE(finish, GETDATE()) AS finish,
+                    CASE category WHEN 1 THEN 'Running' ELSE 'Stop' END AS status,
+                    ROUND(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) / 3600.0, 2) AS duration,
+                    CASE shift WHEN 1 THEN 'Morning' ELSE 'Night' END AS shift
+                FROM utilities
+                WHERE id_machine = @id_machine
+                  AND production_date BETWEEN @start_date AND @end_date
+                ORDER BY start DESC;";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@id_machine", id_machine);
+            cmd.Parameters.AddWithValue("@start_date", start_date);
+            cmd.Parameters.AddWithValue("@end_date", end_date);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    utility_name = Convert.ToString(reader["utility_name"]),
+                    start = Convert.ToString(reader["start"]),
+                    finish = Convert.ToString(reader["finish"]),
+                    status = Convert.ToString(reader["status"]),
+                    duration = Convert.ToSingle(reader["duration"]),
+                    shift = Convert.ToString(reader["shift"])
+                });
+            }
+            return result;
+        }
 
         #endregion
 
@@ -2153,7 +2710,7 @@ namespace CMS.server.Services
 
             if (prev.plcData == null)
             {
-                await shiftChange(plcData);
+                await shiftChange(plcData, isRestart: true);
 
                 _lastMachineMaster[id_machine] = (plcData, productionDate, shift, false);
                 return;
@@ -2260,7 +2817,7 @@ namespace CMS.server.Services
 
         #region Machine Log Auto
         // On Shift Change
-        public async Task shiftChange(dynamic plcData)
+        public async Task shiftChange(dynamic plcData, bool isRestart = false)
         {
             Console.WriteLine($"[Machine {plcData.id_machine}] Shift Change");
             int id_machine = plcData.id_machine;
@@ -2287,21 +2844,24 @@ namespace CMS.server.Services
                 END
 
                 -- Update Machine Log Table
+                {(isRestart ? $@"
+                -- On restart:
+                IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
+                BEGIN
+                    UPDATE [{tableName}] SET finish = @time, shot = 0, act_ct = 0 WHERE finish IS NULL;
+                END
+                " : $@"
+                -- Shift change:
                 IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
                 BEGIN
                     UPDATE [{tableName}] SET finish = @time WHERE finish IS NULL;
                 END
+                ")}
 
                 INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start) 
-                VALUES (@machine_name, @id_type, @mould, @time, 0, 
-                CASE
-                    WHEN @status_start = 1 THEN 'PRODUCTION RUNNING'
-                    ELSE NULLIF(@category, '')
-                END,
-                NULLIF(@problem, ''), 
+                VALUES (@machine_name, @id_type, @mould, @time, @shot, NULLIF(@category, ''), NULLIF(@problem, ''), 
                 CASE
                     WHEN NULLIF(@category, '') = 'MOULD CHANGE'
-                         AND COALESCE(@mould_category, '') <> ''
                     THEN @mould_category
                     ELSE 0
                 END,
@@ -2453,8 +3013,12 @@ namespace CMS.server.Services
                 -- Update Report Table
                 IF NOT EXISTS (SELECT 1 FROM report WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
                 BEGIN
-                    INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould) 
-                    VALUES (@id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould);
+                    INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould, type, material, qty_perct, gross_weight, part_weight, sap_ct) 
+                    SELECT 
+                        @id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould, s.type, s.material, s.qty_perct, s.gross_weight, s.part_weight, s.sap_ct
+                    FROM sap s
+                    WHERE s.id_type = @id_type 
+                      AND s.mould = @mould;
                 END
 
                 DECLARE @PackerTable TABLE (machine_name NVARCHAR(255), work_shift INT, packer NVARCHAR(MAX));
@@ -2488,7 +3052,7 @@ namespace CMS.server.Services
                         sl.work_shift;
 
                 UPDATE mm
-                    SET mm.packer = ISNULL(pt.packer, '')
+                    SET mm.packer = COALESCE(pt.packer, '')
                     FROM machine_master mm
                     LEFT JOIN @PackerTable pt 
                         ON mm.machine_name = pt.machine_name
@@ -2606,21 +3170,20 @@ namespace CMS.server.Services
             var sql = $@"
                 UPDATE [{tableName}]
                 SET category = CASE
-                    WHEN @status_start = 1 THEN 'PRODUCTION RUNNING'
-                    WHEN @status_start <> 1 AND @category <> 'PRODUCTION RUNNING' 
+                    WHEN status_start = 1 THEN 'PRODUCTION RUNNING'
+                    WHEN status_start <> 1 AND @category <> 'PRODUCTION RUNNING' 
                         THEN NULLIF(@category, '')
                     ELSE category
                 END
                 WHERE (category IS NULL OR finish IS NULL)
                 AND (
-                    @status_start = 1 
-                    OR (@status_start <> 1 AND @category <> 'PRODUCTION RUNNING')
+                    status_start = 1 
+                    OR (status_start <> 1 AND category <> 'PRODUCTION RUNNING')
                 );";
 
             using var conn = await CreateConnection();
             await using var cmd = new SqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@category", master.stop_category);
-            cmd.Parameters.AddWithValue("@status_start", master.status_start);
             await cmd.ExecuteNonQueryAsync();
         }
 

@@ -112,10 +112,52 @@ public class MachineLogController : ControllerBase
         }
     }
 
+    [HttpPost("ImportReport")]
+    public async Task<ActionResult> ImportReport([FromBody] JsonElement payload)
+    {
+        try
+        {
+            if (!payload.TryGetProperty("reportList", out var reportListEl) ||
+                reportListEl.ValueKind != JsonValueKind.Array)
+            {
+                return BadRequest(new { message = "Missing or invalid 'reportList' in request body." });
+            }
+
+            var reportList = reportListEl.Deserialize<List<Dictionary<string, JsonElement>>>();
+            if (reportList == null || reportList.Count == 0)
+            {
+                return BadRequest(new { message = "reportList is empty." });
+            }
+
+            foreach (var row in reportList)
+            {
+                if (!row.ContainsKey("production_date") || !row.ContainsKey("shift"))
+                {
+                    return BadRequest(new { message = "Each row must contain 'production_date' and 'shift' columns." });
+                }
+
+                if (!DateOnly.TryParse(row["production_date"].GetString(), out _))
+                {
+                    return BadRequest(new { message = $"Invalid production_date value: {row["production_date"].GetString()}. Use YYYY-MM-DD format." });
+                }
+            }
+
+            var data = await _machineLogService.ImportReport(reportList, DateOnly.MinValue, 0);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in ImportReport: {ex.Message}");
+            Console.WriteLine($"StackTrace: {ex.StackTrace}");
+            return StatusCode(500, new { error = ex.Message, stackTrace = ex.StackTrace });
+        }
+    }
+
     [HttpPut("DailyReport")]
     public async Task<ActionResult> UpdateDailyReport([FromBody] JsonElement payload)
     {
-        var reportList = payload.GetProperty("reportList").Deserialize<List<Dictionary<string, JsonElement>>>();
+        var reportList = payload.GetProperty("reportList").Deserialize<List<Dictionary<string, JsonElement>>>()
+        ?? throw new InvalidOperationException("reportList cannot be null or empty.");
         var productionDate = payload.GetProperty("production_date").GetDateTime();
         var shift = payload.GetProperty("shift").GetInt32();
 
@@ -125,7 +167,8 @@ public class MachineLogController : ControllerBase
     [HttpPut("PrevReport")]
     public async Task<ActionResult> UpdatePrevReport([FromBody] JsonElement payload)
     {
-        var reportList = payload.GetProperty("reportList").Deserialize<List<Dictionary<string, JsonElement>>>();
+        var reportList = payload.GetProperty("reportList").Deserialize<List<Dictionary<string, JsonElement>>>()
+        ?? throw new InvalidOperationException("reportList cannot be null or empty.");
         var productionDate = payload.GetProperty("production_date").GetDateTime();
         var shift = payload.GetProperty("shift").GetInt32();
 
@@ -265,7 +308,8 @@ public class MachineLogController : ControllerBase
                 return BadRequest(new { error = "No staff data provided" });
             }
 
-            var staffData = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(staffList.GetRawText());
+            var staffData = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(staffList.GetRawText())
+            ?? throw new InvalidOperationException("Failed to deserialize staff data.");
 
             await _machineLogService.UpdateStaffSchedule(staffData);
             return Ok(new { message = $"Successfully updated {staffData.Count} staff records" });
@@ -415,6 +459,69 @@ public class MachineLogController : ControllerBase
     public async Task<ActionResult> Downtime([FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date, [FromQuery] int shift)
     {
         var data = await _machineLogService.LoadDowntime(start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/ProductOutput")]
+    public async Task<ActionResult> MachineDetailProductOutput( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineProductOutput(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/DailyOutput")]
+    public async Task<ActionResult> MachineDetailDailyOutput( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineDailyOutput(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/Runningtime")]
+    public async Task<ActionResult> MachineDetailRunningtime([FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineRunningtime(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/DowntimeCategory")]
+    public async Task<ActionResult> MachineDetailDowntimeCategory( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineDowntimeCategory(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/DowntimeEvents")]
+    public async Task<ActionResult> MachineDetailDowntimeEvents( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineDowntimeEvents(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/Reject")]
+    public async Task<ActionResult> MachineDetailReject( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineReject(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/CycleTime")]
+    public async Task<ActionResult> MachineDetailCycleTime( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineCycleTime(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/ShiftPerformance")]
+    public async Task<ActionResult> MachineDetailShiftPerformance( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineShiftPerformance(id_machine, start_date, end_date);
+        return Ok(data);
+    }
+
+    [HttpGet("MachineDetail/Utilities")]
+    public async Task<ActionResult> MachineDetailUtilities( [FromQuery] int id_machine, [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    {
+        var data = await _machineLogService.LoadMachineUtilities(id_machine, start_date, end_date);
         return Ok(data);
     }
 }

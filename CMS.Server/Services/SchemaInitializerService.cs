@@ -67,7 +67,7 @@ namespace CMS.Server.Services
             string sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = @table";
             using var cmd = new SqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@table", tableName);
-            int count = (int)await cmd.ExecuteScalarAsync();
+            int count = (int)(await cmd.ExecuteScalarAsync() ?? 0);
             return count > 0;
         }
 
