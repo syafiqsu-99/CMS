@@ -2,6 +2,7 @@
 using CMS.Server.Models;
 using CMS.Server.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text;
 using System.Text.Json;
 
 namespace CMS.Server.Controllers;
@@ -384,20 +385,17 @@ public class MachineLogController : ControllerBase
         try
         {
             var rootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "staff_list");
-            var fileName = $"{staff_id}.jpg";
-            var filePath = Path.Combine(rootPath, fileName);
+            var filePath = Path.Combine(rootPath, $"{staff_id}.jpg");
 
             if (!System.IO.File.Exists(filePath))
-            {
-                return NotFound(new { error = "Photo not found" });
-            }
+                return NoContent();
 
             var imageBytes = System.IO.File.ReadAllBytes(filePath);
             return File(imageBytes, "image/jpeg");
         }
-        catch (Exception ex)
+        catch
         {
-            return BadRequest(new { error = ex.Message });
+            return NoContent();
         }
     }
 
@@ -414,17 +412,12 @@ public class MachineLogController : ControllerBase
                 return BadRequest(new { error = "Invalid staff_id." });
 
             var rootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "staff_list");
-
             if (!Directory.Exists(rootPath))
                 Directory.CreateDirectory(rootPath);
 
-            var fileName = $"{model.staff_id}.jpg";
-            var filePath = Path.Combine(rootPath, fileName);
-
+            var filePath = Path.Combine(rootPath, $"{model.staff_id}.jpg");
             using (var stream = new FileStream(filePath, FileMode.Create))
-            {
                 await model.file.CopyToAsync(stream);
-            }
 
             return Ok(new { message = "Photo uploaded successfully." });
         }
@@ -523,5 +516,96 @@ public class MachineLogController : ControllerBase
     {
         var data = await _machineLogService.LoadMachineUtilities(id_machine, start_date, end_date);
         return Ok(data);
+    }
+
+    [HttpGet("ShiftCalendar")]
+    public async Task<ActionResult> GetShiftCalendar([FromQuery] int year, [FromQuery] int month)
+    {
+        var data = await _machineLogService.LoadShiftCalendar(year, month);
+        return Ok(data);
+    }
+
+    [HttpPut("ShiftCalendar")]
+    public async Task<ActionResult> UpdateShiftCalendar([FromBody] List<calendar> entries)
+    {
+        if (entries == null || entries.Count == 0)
+            return BadRequest(new { error = "No entries provided" });
+
+        await _machineLogService.UpsertShiftCalendar(entries);
+        return Ok(new { message = $"Saved {entries.Count} calendar entries" });
+    }
+
+    [HttpPut("Settings/Password")]
+    public async Task<ActionResult> UpdateDepartmentPasswords([FromBody] Dictionary<string, JsonElement> payload)
+    {
+        try
+        {
+            var passwords = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (key, element) in payload)
+            {
+                if (element.TryGetInt32(out int val))
+                    passwords[key] = val;
+                else
+                    return BadRequest(new { error = $"Invalid value for department '{key}'. Must be an integer." });
+            }
+
+            if (passwords.Count == 0)
+                return BadRequest(new { error = "No valid department passwords supplied." });
+
+            var result = await _machineLogService.ChangeDepartmentPasswords(passwords);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to write passwords to PLC.", detail = ex.Message });
+        }
+    }
+
+    [HttpGet("Settings/PlcSignals")]
+    public ActionResult GetPlcSignals([FromQuery] int machineId)
+    {
+        if (machineId < 1 || machineId > 26)
+            return BadRequest(new { error = "machineId must be between 1 and 26." });
+
+        try
+        {
+            var data = _plcService.ReadSubPlcSignals(machineId);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new
+            {
+                error = $"Failed to read sub-PLC for machine {machineId}.",
+                detail = ex.Message
+            });
+        }
+    }
+
+    [HttpGet("Settings/PlcSignalsAll")]
+    public async Task<ActionResult> GetAllPlcSignals()
+    {
+        var tasks = Enumerable.Range(1, 26).Select(async machineId =>
+        {
+            try
+            {
+                var data = await Task.Run(() => _plcService.ReadSubPlcSignals(machineId));
+                return (machineId, data: (object)data, error: (string?)null);
+            }
+            catch (Exception ex)
+            {
+                return (machineId, data: (object?)null, error: ex.Message);
+            }
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        var response = results.ToDictionary(
+            r => r.machineId.ToString(),
+            r => r.data
+        );
+
+        return Ok(response);
     }
 }

@@ -16,7 +16,7 @@
 
         <v-list-item v-if="loggedIn" prepend-icon="mdi-account" title="Supervisor" :to="{ name: 'supervisor' }" link></v-list-item>
 
-        <v-list-item v-if="loggedIn" prepend-icon="mdi-cog" title="Setting" :to="{ name: 'setting' }" link></v-list-item>
+        <!--<v-list-item v-if="loggedIn" prepend-icon="mdi-cog" title="Setting" :to="{ name: 'setting' }" link></v-list-item>-->
       </v-list>
 
       <template #append>

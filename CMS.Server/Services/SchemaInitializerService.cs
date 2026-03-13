@@ -39,7 +39,7 @@ namespace CMS.Server.Services
                 tableNames.Add($"machine_log_{i}");
 
             tableNames.AddRange([
-                "reject", "report", "sap", "staff_list", "utilities", "attendance", "machine_master"
+                "reject", "report", "sap", "staff_list", "utilities", "attendance", "machine_master", "calendar"
             ]);
 
             using var conn = await CreateConnection();
@@ -203,7 +203,7 @@ namespace CMS.Server.Services
             if (table == "sap")
                 return @"
                 CREATE TABLE sap(
-                    id INT IDENTITY(1,1) PRIMARY KEY,
+                    id INT IDENTITY(1,1),
                     id_type INT,
                     mould INT,
                     type NVARCHAR(255),
@@ -214,6 +214,7 @@ namespace CMS.Server.Services
                     tolerance FLOAT,
                     gross_weight FLOAT,
                     sap_ct FLOAT
+                    PRIMARY KEY (id_type, mould)
                 )";
 
             if (table == "staff_list")
@@ -256,6 +257,18 @@ namespace CMS.Server.Services
                     production_date DATE,
                     shift INT
                 )";
+
+            if (table == "calendar")
+                return @"
+                CREATE TABLE calendar (
+                    production_date DATE NOT NULL,
+                    shift INT NOT NULL,
+                    day_type NVARCHAR(20) NOT NULL,
+                    planned_hours FLOAT NOT NULL DEFAULT 12,
+                    start DAETIME NOT NULL,
+                    finish DAETIME NULL,
+                    PRIMARY KEY (production_date, shift)
+                );";
 
             return "";
         }

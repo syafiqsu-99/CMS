@@ -1,12 +1,14 @@
 <template>
   <v-container fluid class="pa-2 h-100 d-flex flex-column" style="overflow-y: auto; overflow-x: hidden;">
-    <v-row no-gutters align="center" justify="center">
+    <v-row no-gutters align="center" justify="center" class="mb-1">
       <v-col cols="12" class="text-center">
-        <h2 class="font-weight-bold">OEE</h2>
+        <h2 class="font-weight-bold">OEE Dashboard</h2>
       </v-col>
     </v-row>
-    <v-row no-gutters align="center" justify="center">
-      <v-col cols="12" md="4">
+
+    <!-- Date Filters -->
+    <v-row no-gutters align="center" justify="center" class="mb-2">
+      <v-col cols="12" md="4" class="px-1">
         <v-date-input v-model="startDate"
                       label="Start Date"
                       :max="endDate"
@@ -15,8 +17,7 @@
                       hide-details
                       display-format="fullDate" />
       </v-col>
-
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="4" class="px-1">
         <v-date-input v-model="endDate"
                       label="End Date"
                       :min="startDate"
@@ -27,28 +28,49 @@
       </v-col>
     </v-row>
 
-    <v-row>
-      <v-col cols="12" md="3" v-for="(metric, index) in summaryMetrics" :key="metric.title">
-        <v-card class="pa-2 d-flex flex-column align-center justify-center text-center" elevation="2">
-          <h3>{{ metric.title }}</h3>
-          <div class="relative flex items-center justify-center w-full" style="max-width: 180px; max-height: 180px;">
+    <!-- Summary Doughnut Cards -->
+    <v-row class="mb-2">
+      <v-col cols="12" md="3" v-for="(metric, index) in summaryMetrics" :key="metric.title" class="px-1">
+        <v-card class="pa-2 d-flex flex-column align-center justify-center text-center" elevation="2"
+                :style="{ borderTop: `3px solid ${getMetricColor(metric.type, metric.value)}` }">
+          <div class="text-subtitle-2 font-weight-bold mb-1" :style="{ color: getMetricColor(metric.type, metric.value) }">
+            {{ metric.title }}
+          </div>
+          <div class="relative d-flex align-center justify-center" style="width: 140px; height: 140px;">
             <canvas :ref="el => doughnutRefs[index] = el"></canvas>
+          </div>
+          <div class="text-caption mt-1" style="color: #888;">
+            Target: {{ metricTargets[metric.type] }}%
           </div>
         </v-card>
       </v-col>
     </v-row>
 
-    <v-row>
+    <!-- Machine Data Table -->
+    <v-row class="mb-2">
       <v-col cols="12">
         <v-card elevation="2" class="overflow-hidden w-100">
+          <!-- Main Table -->
           <v-data-table-virtual :headers="tableHeaders"
-                                fixed-header
                                 :items="machineData"
+                                fixed-header
                                 density="compact"
                                 hover
-                                item-selectable
                                 @click:row="handleRowClick"
-                                style="height: 60vh;">
+                                style="height: 50vh;">
+
+            <template v-slot:item.run_time="{ item }">
+              {{ Number(item.run_time).toFixed(2) }}
+            </template>
+            <template v-slot:item.down_time="{ item }">
+              {{ Number(item.down_time).toFixed(2) }}
+            </template>
+            <template v-slot:item.material_used="{ item }">
+              {{ Number(item.material_used).toFixed(2) }}
+            </template>
+            <template v-slot:item.reject_weight="{ item }">
+              {{ Number(item.reject_weight).toFixed(2) }}
+            </template>
             <template v-slot:item.oee="{ item }">
               <span :style="{ color: getMetricColor('oee', item.oee), fontWeight: '600' }">
                 {{ item.oee }}%
@@ -70,49 +92,68 @@
               </span>
             </template>
           </v-data-table-virtual>
+
+          <v-divider />
+          <v-table density="compact" class="totals-footer">
+            <tbody>
+              <tr style="background-color: #f5f5f5; font-weight: 700;">
+                <td :style="{ width: '18%' }">TOTAL</td>
+                <td :style="{ width: '8%', textAlign: 'center' }"></td>
+                <td :style="{ width: '8%', textAlign: 'center' }"></td>
+                <td :style="{ width: '8%', textAlign: 'center' }"></td>
+                <td :style="{ width: '8%', textAlign: 'center' }"></td>
+                <td :style="{ width: '10%', textAlign: 'center' }">{{ totalsRow.run_time }}</td>
+                <td :style="{ width: '10%', textAlign: 'center' }">{{ totalsRow.down_time }}</td>
+                <td :style="{ width: '10%', textAlign: 'center' }">{{ totalsRow.material_used }}</td>
+                <td :style="{ width: '10%', textAlign: 'center' }">{{ totalsRow.reject_weight }}</td>
+              </tr>
+            </tbody>
+          </v-table>
         </v-card>
       </v-col>
     </v-row>
 
+    <!-- Pareto Charts -->
     <v-row>
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="4" class="px-1">
         <v-card elevation="2" class="pa-3">
-          <h4 class="mb-3 text-center">Total Reject</h4>
-          <div style="height: 500px;" class="d-flex align-center justify-center">
-            <canvas v-if="rejectData.length > 0" ref="rejectChart"></canvas>
+          <h4 class="mb-2 text-center text-subtitle-1 font-weight-bold">Total Reject</h4>
+          <div style="height: 420px;" class="d-flex align-center justify-center">
+            <canvas v-if="rejectData.length > 0" ref="rejectChart" style="width:100%;"></canvas>
             <div v-else class="d-flex flex-column align-center justify-center w-100 h-100">
               <v-icon size="48" color="grey-lighten-1">mdi-chart-bar</v-icon>
               <span class="text-grey text-body-2 mt-2">No reject data available</span>
-          </div>
+            </div>
           </div>
         </v-card>
       </v-col>
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="4" class="px-1">
         <v-card elevation="2" class="pa-3">
-          <h4 class="mb-3 text-center">Total Output</h4>
-          <div style="height: 500px;" class="d-flex align-center justify-center">
-            <canvas v-if="outputData.length > 0" ref="outputChart"></canvas>
+          <h4 class="mb-2 text-center text-subtitle-1 font-weight-bold">Total Output</h4>
+          <div style="height: 420px;" class="d-flex align-center justify-center">
+            <canvas v-if="outputData.length > 0" ref="outputChart" style="width:100%;"></canvas>
             <div v-else class="d-flex flex-column align-center justify-center w-100 h-100">
               <v-icon size="48" color="grey-lighten-1">mdi-chart-bar</v-icon>
               <span class="text-grey text-body-2 mt-2">No output data available</span>
-          </div>
+            </div>
           </div>
         </v-card>
       </v-col>
-      <v-col cols="12" md="4">
+      <v-col cols="12" md="4" class="px-1">
         <v-card elevation="2" class="pa-3">
-          <h4 class="mb-3 text-center">Total Downtime</h4>
-          <div style="height: 500px;" class="d-flex align-center justify-center">
-            <canvas v-if="downtimeData.length > 0" ref="downtimeChart"></canvas>
+          <h4 class="mb-2 text-center text-subtitle-1 font-weight-bold">Total Downtime</h4>
+          <div style="height: 420px;" class="d-flex align-center justify-center">
+            <canvas v-if="downtimeData.length > 0" ref="downtimeChart" style="width:100%;"></canvas>
             <div v-else class="d-flex flex-column align-center justify-center w-100 h-100">
               <v-icon size="48" color="grey-lighten-1">mdi-chart-timeline-variant</v-icon>
               <span class="text-grey text-body-2 mt-2">No downtime data available</span>
-          </div>
+            </div>
           </div>
         </v-card>
       </v-col>
     </v-row>
 
+    <!-- Machine Detail Dialog -->
     <v-dialog v-model="detailDialog" max-width="1400px" scrollable>
       <MachineOEE :selectedMachine="selectedMachine"
                   :detailDialog="detailDialog"
@@ -125,8 +166,7 @@
 
 <script setup>
   import MachineOEE from '@/components/MachineOEE.vue';
-  import { useRouter } from "vue-router";
-  import { ref, onMounted, watch, nextTick } from "vue";
+  import { ref, computed, onMounted, watch, nextTick } from "vue";
   import {
     Chart, ArcElement, DoughnutController, BarController, BarElement,
     LineController, LineElement, PointElement, CategoryScale, LinearScale,
@@ -139,12 +179,10 @@
     Tooltip, Legend
   );
 
-  const router = useRouter();
   const doughnutRefs = ref([]);
   const outputChart = ref(null);
   const downtimeChart = ref(null);
   const rejectChart = ref(null);
-  const hourlyChart = ref(null);
   const detailDialog = ref(false);
   const selectedMachine = ref(null);
 
@@ -160,41 +198,70 @@
   const currentHour = new Date().getHours();
   const currentShift = currentHour >= 8 && currentHour < 20 ? 1 : 2;
 
+  const metricTargets = {
+    oee: 65,
+    performance: 95,
+    availability: 70,
+    quality: 97,
+  };
+
+  const getMetricColor = (metricType, value) => {
+    const v = Number(value);
+    switch ((metricType || '').toLowerCase()) {
+      case 'oee': return v >= metricTargets.oee ? '#4caf50' : '#f44336';
+      case 'performance': return v >= metricTargets.performance ? '#4caf50' : '#f44336';
+      case 'availability': return v >= metricTargets.availability ? '#4caf50' : '#f44336';
+      case 'quality': return v >= metricTargets.quality ? '#4caf50' : '#f44336';
+      default: return '#9e9e9e';
+    }
+  };
+
   const centerTextPlugin = {
     id: "centerText",
     beforeDraw(chart) {
       const { width, height, ctx } = chart;
-      const dataset = chart.config.data.datasets[0];
-      const value = dataset.data[0];
+      const value = chart.config.data.datasets[0].data[0];
       ctx.save();
       const fontSize = (height / 120).toFixed(2);
-      ctx.font = `${fontSize}em sans-serif`;
+      ctx.font = `bold ${fontSize}em sans-serif`;
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "#000";
-      const text = `${value.toFixed(1)}%`;
-      const textX = Math.round(width / 2);
-      const textY = Math.round(height / 2);
       ctx.textAlign = "center";
-      ctx.fillText(text, textX, textY);
+      ctx.fillStyle = chart.config.data.datasets[0].backgroundColor[0];
+      ctx.fillText(`${value.toFixed(1)}%`, Math.round(width / 2), Math.round(height / 2));
       ctx.restore();
     },
   };
 
   const tableHeaders = [
-    { title: "Machine", key: "machine_name", width: "60%" },
-    { title: "OEE (%)", key: "oee", width: "10%", align: "center" },
-    { title: "Performance (%)", key: "performance", width: "10%", align: "center" },
-    { title: "Availability (%)", key: "availability", width: "10%", align: "center" },
-    { title: "Quality (%)", key: "quality", width: "10%", align: "center" },
+    { title: "Machine", key: "machine_name", width: "18%" },
+    { title: "OEE (%)", key: "oee", width: "8%", align: "center" },
+    { title: "Performance (%)", key: "performance", width: "8%", align: "center" },
+    { title: "Availability (%)", key: "availability", width: "8%", align: "center" },
+    { title: "Quality (%)", key: "quality", width: "8%", align: "center" },
+    { title: "Run Time (hrs)", key: "run_time", width: "10%", align: "center" },
+    { title: "Down Time (hrs)", key: "down_time", width: "10%", align: "center" },
+    { title: "Material Used (kg)", key: "material_used", width: "10%", align: "center" },
+    { title: "Reject (kg)", key: "reject_weight", width: "10%", align: "center" },
   ];
 
   const machineData = ref([]);
   const summaryMetrics = ref([
-    { title: "Overall OEE", value: 0 },
-    { title: "Performance", value: 0 },
-    { title: "Availability", value: 0 },
-    { title: "Quality", value: 0 },
+    { title: "Overall OEE", value: 0, type: 'oee' },
+    { title: "Performance", value: 0, type: 'performance' },
+    { title: "Availability", value: 0, type: 'availability' },
+    { title: "Quality", value: 0, type: 'quality' },
   ]);
+
+  const totalsRow = computed(() => {
+    const rows = machineData.value;
+    const sum = (key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+    return {
+      run_time: sum('run_time').toFixed(2),
+      down_time: sum('down_time').toFixed(2),
+      material_used: sum('material_used').toFixed(2),
+      reject_weight: sum('reject_weight').toFixed(2),
+    };
+  });
 
   const fetchOEEData = async () => {
     try {
@@ -219,27 +286,19 @@
           performance: Number(item.performance || 0).toFixed(2),
           availability: Number(item.availability || 0).toFixed(2),
           quality: Number(item.quality || 0).toFixed(2),
+          run_time: Number(item.run_time || 0),
+          down_time: Number(item.down_time || 0),
+          material_used: Number(item.material_used || 0),
+          reject_weight: Number(item.reject_weight || 0),
         }))
         : [];
 
       if (machineData.value.length > 0) {
+        const validMachines = data.filter(m => m.id_machine >= 1 && m.id_machine <= 16 && Number(m.oee) > 0);
         const avg = (key) => {
-          const validMachines = data.filter(m =>
-            m.id_machine >= 1 &&
-            m.id_machine <= 16 &&
-            Number(m.oee) > 0 
-          );
-
-          if (validMachines.length === 0) return 0;
-
-          const total = validMachines.reduce(
-            (sum, m) => sum + (Number(m[key]) || 0),
-            0
-          );
-
-          return total / validMachines.length;
+          if (!validMachines.length) return 0;
+          return validMachines.reduce((s, m) => s + (Number(m[key]) || 0), 0) / validMachines.length;
         };
-
         summaryMetrics.value = [
           { title: "Overall OEE", value: Number(avg("oee").toFixed(2)), type: 'oee' },
           { title: "Performance", value: Number(avg("performance").toFixed(2)), type: 'performance' },
@@ -247,13 +306,11 @@
           { title: "Quality", value: Number(avg("quality").toFixed(2)), type: 'quality' },
         ];
       } else {
-        summaryMetrics.value = summaryMetrics.value.map((m) => ({ ...m, value: 0 }));
+        summaryMetrics.value = summaryMetrics.value.map(m => ({ ...m, value: 0 }));
       }
 
       rejectData.value = await rejectRes.json();
-
       outputData.value = await outputRes.json();
-
       downtimeData.value = await downtimeRes.json();
 
       await nextTick();
@@ -263,24 +320,21 @@
     }
   };
 
-  const createDoughnutChart = (ctx, value) => {
-    const color = value >= 90 ? "#4caf50" : value >= 80 ? "#ff9800" : "#f44336";
-
+  const createDoughnutChart = (ctx, value, metricType) => {
+    const color = getMetricColor(metricType, value);
     return new Chart(ctx, {
       type: "doughnut",
       data: {
-        datasets: [
-          {
-            data: [value, 100 - value],
-            backgroundColor: [color, "#e0e0e0"],
-            borderWidth: 0,
-            cutout: "60%",
-          },
-        ],
+        datasets: [{
+          data: [value, Math.max(0, 100 - value)],
+          backgroundColor: [color, "#e0e0e0"],
+          borderWidth: 0,
+        }],
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        cutout: '65%',
         plugins: { legend: { display: false }, tooltip: { enabled: false } },
       },
       plugins: [centerTextPlugin],
@@ -299,7 +353,7 @@
       summaryMetrics.value.forEach((metric, i) => {
         if (doughnutRefs.value[i]) {
           const ctx = doughnutRefs.value[i].getContext("2d");
-          doughnutCharts.push(createDoughnutChart(ctx, metric.value || 0));
+          doughnutCharts.push(createDoughnutChart(ctx, metric.value || 0, metric.type));
         }
       });
 
@@ -388,11 +442,11 @@
             labels: downtimeData.value.map(d => d.id_type),
             fullLabels: downtimeData.value.map(d => d.type),
             datasets: [
-              { label: 'Downtime (Hours)', data: downtimeData.value.map(d => d.hours), backgroundColor: '#2196F3', yAxisID: 'y', order: 2 },
+              { label: 'Downtime (Hours)', data: downtimeData.value.map(d => d.hours), backgroundColor: '#FF7043', yAxisID: 'y', order: 2 },
               { label: 'Cumulative %', data: cumPct, type: 'line', borderColor: '#FF9800', backgroundColor: '#FF9800', borderWidth: 2, pointRadius: 4, yAxisID: 'y1', order: 1 }
             ]
           },
-          options: getCommonOptions('Time (hrs)', 'Downtime')
+          options: getCommonOptions('Time (hrs)', 'Downtime Category')
         });
       }
     } catch (err) {
@@ -401,6 +455,7 @@
   };
 
   const handleRowClick = (event, { item }) => {
+    if (item._isTotal) return;
     selectedMachine.value = item;
     detailDialog.value = true;
   };
@@ -413,15 +468,4 @@
   onMounted(async () => {
     await fetchOEEData();
   });
-
-  const getMetricColor = (metricType, value) => {
-    const v = Number(value);
-    switch (metricType.toLowerCase()) {
-      case 'oee': return v >= 65 ? '#4caf50' : v >= 60 ? '#ff9800' : '#f44336';
-      case 'performance': return v >= 90 ? '#4caf50' : v >= 80 ? '#ff9800' : '#f44336';
-      case 'availability': return v >= 65 ? '#4caf50' : v >= 60 ? '#ff9800' : '#f44336';
-      case 'quality': return v >= 98 ? '#4caf50' : v >= 95 ? '#ff9800' : '#f44336';
-      default: return '#e0e0e0';
-    }
-  };
 </script>

@@ -7,18 +7,19 @@
       <div class="d-flex ga-2">
         <v-date-input v-model="production_date"
                       label="Production Date"
-                      density="compact"
                       :max="maxDate"
                       variant="outlined"
+                      density="compact"
                       hide-details
-                      style="width: 180px;" />
+                      display-format="fullDate"
+                      style="width: 200px;" />
         <v-select label="Shift"
                   v-model="shift"
                   :items="[{ title: 'Morning', value: 1 }, { title: 'Night', value: 2 }]"
                   density="compact"
                   variant="outlined"
                   hide-details
-                  style="width: 130px;" />
+                  style="width: 200px;" />
       </div>
     </v-toolbar>
 

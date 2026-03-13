@@ -525,43 +525,83 @@ namespace CMS.server.Services
             else
             {
                 sql = @"
-                    WITH ReportAgg AS (
+                    WITH AllDates AS (
+                        SELECT DATEADD(DAY, n.n, @start_date) AS d
+                        FROM (
+                            SELECT TOP (DATEDIFF(DAY, @start_date, @end_date) + 1)
+                                    ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+                            FROM sys.all_objects
+                        ) n
+                    ),
+                    ShiftDates AS (
+                        SELECT d.d AS production_date, s.shift
+                        FROM AllDates d
+                        CROSS JOIN (SELECT 1 AS shift UNION ALL SELECT 2) s
+                    ),
+                    EffectiveCalendar AS (
+                        SELECT
+                            sd.production_date,
+                            sd.shift,
+                            CASE
+                                WHEN EXISTS (
+                                    SELECT 1 FROM calendar cx
+                                    WHERE cx.production_date = sd.production_date AND cx.shift = sd.shift
+                                )
+                                THEN COALESCE((
+                                    SELECT SUM(c.planned_hours)
+                                    FROM calendar c
+                                    WHERE c.production_date = sd.production_date AND c.shift = sd.shift
+                                ), 0)
+                                ELSE 12
+                            END AS planned_hours
+                        FROM ShiftDates sd
+                    ),
+                    ReportAgg AS (
                         SELECT
                             r.id_machine,
                             r.machine_name,
-                            r.id_type,
-                            r.mould,
+                            r.production_date,
+                            r.shift,
                             COALESCE(SUM(r.production_running), 0) AS run_time,
                             COALESCE(SUM(
                                 COALESCE(r.change_full_set,0) +
                                 COALESCE(r.change_half_set,0) +
-                                COALESCE(r.change_parts,0) +
+                                COALESCE(r.change_parts,0)   +
                                 COALESCE(r.maintenance_dt,0) +
-                                COALESCE(r.technician_dt,0) +
+                                COALESCE(r.technician_dt,0)  +
                                 COALESCE(r.production_dt,0)
                             ), 0) AS down_time,
                             COALESCE(SUM(r.unallocated), 0) AS unallocated,
                             SUM(COALESCE(r.material_used,0) * COALESCE(r.sap_ct,0)) AS total_sap_time,
                             SUM(COALESCE(r.material_used,0) * COALESCE(r.act_ct,0)) AS total_actual_time,
                             COALESCE(SUM(r.material_used), 0) AS material_used,
-                            COALESCE(SUM(r.reject_prod), 0) as reject_weight
+                            COALESCE(SUM(r.reject_prod + r.reject_startup),   0) AS reject_weight
                         FROM report r
-                        WHERE r.production_date BETWEEN @start_date AND @end_date AND id_machine <> 26
-                        GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould
+                        INNER JOIN EffectiveCalendar ec
+                            ON  ec.production_date = r.production_date
+                            AND ec.shift           = r.shift
+                            AND ec.planned_hours   > 0
+                        WHERE r.production_date BETWEEN @start_date AND @end_date
+                            AND r.id_machine <> 26
+                        GROUP BY r.id_machine, r.machine_name, r.production_date, r.shift
                     ),
                     MachineSummary AS (
                         SELECT
-                            id_machine,
-                            machine_name,
-                            SUM(run_time) AS run_time,
-                            SUM(down_time) AS down_time,
-                            SUM(unallocated) AS unallocated,
-                            SUM(material_used) AS material_used,
-                            SUM(reject_weight) AS reject_weight,
-                            SUM(total_sap_time) AS total_sap_time,
-                            SUM(total_actual_time) AS total_actual_time
-                        FROM ReportAgg
-                        GROUP BY id_machine, machine_name
+                            ra.id_machine,
+                            ra.machine_name,
+                            SUM(ra.run_time)          AS run_time,
+                            SUM(ra.down_time)         AS down_time,
+                            SUM(ra.unallocated)       AS unallocated,
+                            SUM(ra.material_used)     AS material_used,
+                            SUM(ra.reject_weight)     AS reject_weight,
+                            SUM(ra.total_sap_time)    AS total_sap_time,
+                            SUM(ra.total_actual_time) AS total_actual_time,
+                            SUM(ec2.planned_hours)    AS available_hours
+                        FROM ReportAgg ra
+                        INNER JOIN EffectiveCalendar ec2
+                            ON  ec2.production_date = ra.production_date
+                            AND ec2.shift           = ra.shift
+                        GROUP BY ra.id_machine, ra.machine_name
                     )
                     SELECT
                         id_machine,
@@ -571,40 +611,34 @@ namespace CMS.server.Services
                         unallocated,
                         material_used,
                         reject_weight,
+                        available_hours,
 
-                        -- AVAILABILITY
-                        CASE 
-                            WHEN (run_time + down_time) = 0 THEN 0
-                            WHEN (run_time * 1.0 / (run_time + down_time)) < 0 THEN 0
-                            ELSE (run_time * 1.0 / (run_time + down_time)) * 100
+                        CASE
+                            WHEN NULLIF(available_hours, 0) IS NULL THEN 0
+                            ELSE (run_time * 1.0 / available_hours) * 100
                         END AS availability,
 
-                        -- PERFORMANCE
-                        CASE 
+                        CASE
                             WHEN total_actual_time = 0 THEN 0
                             ELSE (total_sap_time * 1.0 / total_actual_time) * 100
                         END AS performance,
 
-                        -- QUALITY
                         CASE
                             WHEN material_used = 0 THEN 0
                             WHEN ((material_used - reject_weight) * 1.0 / material_used) < 0 THEN 0
                             ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100
                         END AS quality,
 
-                        -- OEE
-                        CASE 
-                            WHEN (run_time + down_time) = 0 
-                              OR total_actual_time = 0
-                              OR material_used = 0
-                            THEN 0
+                        CASE
+                            WHEN NULLIF(available_hours, 0) IS NULL
+                                OR total_actual_time = 0
+                                OR material_used     = 0 THEN 0
                             ELSE
-                                (
-                                (run_time * 1.0 / (run_time + down_time)) *
-                                    (total_sap_time * 1.0 / total_actual_time) *
-                                ((material_used - reject_weight) * 1.0 / material_used)
-                                ) * 100
+                                (run_time         * 1.0 / available_hours)   *
+                                (total_sap_time   * 1.0 / total_actual_time) *
+                                ((material_used - reject_weight) * 1.0 / material_used) * 100
                         END AS oee
+
                     FROM MachineSummary
                     ORDER BY id_machine;";
             }
@@ -1413,6 +1447,11 @@ namespace CMS.server.Services
                     INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould) 
                     VALUES (@id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould);
                 END
+                ELSE
+                BEGIN
+                    UPDATE report SET time = @time
+                    WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift
+                END
 
                 UPDATE m
                 SET
@@ -1568,6 +1607,21 @@ namespace CMS.server.Services
                     m.part_weight  = s.part_weight,
                     m.gross_weight = s.gross_weight
                 FROM machine_master AS m
+                JOIN sap AS s 
+                    ON s.id_type = @id_type 
+                    AND s.mould   = @mould
+                WHERE m.id_type = s.id_type
+                    AND m.mould   = s.mould;
+
+                UPDATE r
+                SET 
+                    r.material     = s.material,
+                    r.type         = s.type,
+                    r.qty_perct    = s.qty_perct,
+                    r.sap_ct       = s.sap_ct,
+                    r.part_weight  = s.part_weight,
+                    r.gross_weight = s.gross_weight
+                FROM report AS r
                 JOIN sap AS s 
                     ON s.id_type = @id_type 
                     AND s.mould   = @mould
@@ -2080,10 +2134,9 @@ namespace CMS.server.Services
             var time = DateTime.Now;
             var (productionDate, shift) = GetProductionDate(time);
 
-            var sql1 = @"
+            var sqlUpdateStaff = @"
                 SET NOCOUNT ON;
-
-                UPDATE staff_list 
+                UPDATE staff_list
                 SET staff_name   = @staff_name,
                     staff_role   = @staff_role,
                     status       = @status,
@@ -2091,17 +2144,47 @@ namespace CMS.server.Services
                     start_date   = @start_date,
                     end_date     = @end_date,
                     work_shift   = @work_shift
-                WHERE staff_id = @staff_id;
+                WHERE staff_id = @staff_id;";
 
-                UPDATE attendance
-                SET staff_role   = @staff_role,
-                    status       = @status,
-                    machine_name = @machine_name
-                WHERE staff_id = @staff_id
-                    AND production_date BETWEEN @start_date AND @end_date
-                    AND shift = @work_shift;";
+            var sqlUpsertAttendanceInRange = @"
+                IF EXISTS (
+                    SELECT 1 FROM attendance
+                    WHERE staff_id        = @staff_id
+                      AND production_date = @production_date
+                      AND shift           = @shift
+                )
+                    UPDATE attendance
+                    SET staff_name   = @staff_name,
+                        staff_role   = @staff_role,
+                        status       = @status,
+                        machine_name = @machine_name
+                    WHERE staff_id        = @staff_id
+                      AND production_date = @production_date
+                      AND shift           = @shift;
+                ELSE
+                    INSERT INTO attendance (staff_id, staff_name, staff_role, status, machine_name, production_date, shift)
+                    VALUES (@staff_id, @staff_name, @staff_role, @status, @machine_name, @production_date, @shift);";
 
-            var sql2 = @"
+            var sqlUpsertAttendanceOutOfRange = @"
+                IF EXISTS (
+                    SELECT 1 FROM attendance
+                    WHERE staff_id        = @staff_id
+                      AND production_date = @production_date
+                      AND shift           = @shift
+                )
+                    UPDATE attendance
+                    SET staff_name   = @staff_name,
+                        staff_role   = @staff_role,
+                        status       = 'INACTIVE',
+                        machine_name = NULL
+                    WHERE staff_id        = @staff_id
+                      AND production_date = @production_date
+                      AND shift           = @shift;
+                ELSE
+                    INSERT INTO attendance (staff_id, staff_name, staff_role, status, machine_name, production_date, shift)
+                    VALUES (@staff_id, @staff_name, @staff_role, 'INACTIVE', NULL, @production_date, @shift);";
+
+            var sqlUpdatePacker = @"
                 DECLARE @PackerTable TABLE (machine_name NVARCHAR(255), work_shift INT, packer NVARCHAR(MAX));
 
                 INSERT INTO @PackerTable (machine_name, work_shift, packer)
@@ -2128,21 +2211,18 @@ namespace CMS.server.Services
                         CROSS APPLY XMLData.nodes('/M') AS T(x)
                     ) AS MSplit
                     WHERE sl.status = 'ACTIVE'
-                    GROUP BY 
-                        MSplit.machine_name, 
-                        sl.work_shift;
+                    GROUP BY MSplit.machine_name, sl.work_shift;
 
                 UPDATE mm
                     SET mm.packer = COALESCE(pt.packer, '')
                     FROM machine_master mm
-                    LEFT JOIN @PackerTable pt 
+                    LEFT JOIN @PackerTable pt
                         ON mm.machine_name = pt.machine_name
-                        AND mm.shift = pt.work_shift;
+                       AND mm.shift        = pt.work_shift;
 
-                SELECT * FROM machine_master order by id_machine";
+                SELECT * FROM machine_master ORDER BY id_machine;";
 
             using var conn = await CreateConnection();
-
             await using var tx = await conn.BeginTransactionAsync();
 
             try
@@ -2157,32 +2237,78 @@ namespace CMS.server.Services
                     int staffId = staff["staff_id"].GetInt32();
                     string staffName = staff["staff_name"].GetString() ?? string.Empty;
                     string staffRole = staff["staff_role"].GetString() ?? string.Empty;
-                    string? status = staff.TryGetValue("status", out var statusEl) && statusEl.ValueKind != JsonValueKind.Null ? statusEl.GetString() : null;
-                    string? machineName = staff.TryGetValue("machine_name", out var machineEl) && machineEl.ValueKind != JsonValueKind.Null ? machineEl.GetString() : null;
-                    DateTime? startDate = staff.TryGetValue("start_date", out var startEl) && startEl.ValueKind == JsonValueKind.String ? startEl.GetDateTime() : (DateTime?)null;
-                    DateTime? endDate = staff.TryGetValue("end_date", out var endEl) && endEl.ValueKind == JsonValueKind.String ? endEl.GetDateTime() : (DateTime?)null;
-                    int? workShift = staff.TryGetValue("work_shift", out var shiftEl) && shiftEl.ValueKind != JsonValueKind.Null ? shiftEl.GetInt32() : (int?)null;
 
-                    using (var cmd = new SqlCommand(sql1, conn, (SqlTransaction)tx))
+                    string status = staff.TryGetValue("status", out var statusEl) && statusEl.ValueKind != JsonValueKind.Null
+                        ? statusEl.GetString() ?? string.Empty : string.Empty;
+
+                    string? machineName = null;
+                    if (staff.TryGetValue("machine_name", out var machineEl) && machineEl.ValueKind != JsonValueKind.Null)
+                    {
+                        string raw = machineEl.GetString() ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(raw))
+                        {
+                            var parts = raw.Split('/').Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).OrderBy(s => s);
+                            machineName = string.Join("/", parts);
+                        }
+                    }
+
+                    DateOnly? startDate = null;
+                    DateOnly? endDate = null;
+
+                    if (staff.TryGetValue("start_date", out var startEl) && startEl.ValueKind == JsonValueKind.String)
+                        startDate = DateOnly.TryParse(startEl.GetString(), out var sd) ? sd : (DateOnly?)null;
+
+                    if (staff.TryGetValue("end_date", out var endEl) && endEl.ValueKind == JsonValueKind.String)
+                        endDate = DateOnly.TryParse(endEl.GetString(), out var ed) ? ed : (DateOnly?)null;
+
+                    int? workShift = staff.TryGetValue("work_shift", out var shiftEl) && shiftEl.ValueKind != JsonValueKind.Null
+                        ? shiftEl.GetInt32() : (int?)null;
+
+                    using (var cmd = new SqlCommand(sqlUpdateStaff, conn, (SqlTransaction)tx))
                     {
                         cmd.Parameters.AddWithValue("@staff_id", staffId);
                         cmd.Parameters.AddWithValue("@staff_name", staffName);
                         cmd.Parameters.AddWithValue("@staff_role", staffRole);
                         cmd.Parameters.AddWithValue("@status", (object?)status ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@machine_name", (object?)machineName ?? DBNull.Value);
-                        cmd.Parameters.AddWithValue("@start_date", (object?)startDate ?? DBNull.Value);
-                        cmd.Parameters.AddWithValue("@end_date", (object?)endDate ?? DBNull.Value);
+                        cmd.Parameters.AddWithValue("@start_date", startDate.HasValue ? (object)startDate.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value);
+                        cmd.Parameters.AddWithValue("@end_date", endDate.HasValue ? (object)endDate.Value.ToDateTime(TimeOnly.MinValue) : DBNull.Value);
                         cmd.Parameters.AddWithValue("@work_shift", (object?)workShift ?? DBNull.Value);
-                        cmd.Parameters.AddWithValue("@production_date", productionDate);
-                        cmd.Parameters.AddWithValue("@shift", shift);
-
                         await cmd.ExecuteNonQueryAsync();
+                    }
+
+                    bool dateInRange = startDate.HasValue && endDate.HasValue
+                        && productionDate >= startDate.Value
+                        && productionDate <= endDate.Value;
+
+                    bool isInRange = dateInRange
+                        && workShift.HasValue
+                        && workShift.Value == shift;
+
+                    bool isLeaveInRange = dateInRange
+                        && workShift.HasValue
+                        && (status == "ANNUAL LEAVE" || status == "MEDICAL LEAVE" || status == "OTHER LEAVE");
+
+                    string sqlAttendance = (isInRange || isLeaveInRange)
+                        ? sqlUpsertAttendanceInRange
+                        : sqlUpsertAttendanceOutOfRange;
+
+                    using (var cmd2 = new SqlCommand(sqlAttendance, conn, (SqlTransaction)tx))
+                    {
+                        cmd2.Parameters.AddWithValue("@staff_id", staffId);
+                        cmd2.Parameters.AddWithValue("@staff_name", staffName);
+                        cmd2.Parameters.AddWithValue("@staff_role", staffRole);
+                        cmd2.Parameters.AddWithValue("@production_date", productionDate);
+                        cmd2.Parameters.AddWithValue("@shift", workShift ?? shift);
+                        cmd2.Parameters.AddWithValue("@status", (object?)status ?? DBNull.Value);
+                        cmd2.Parameters.AddWithValue("@machine_name", (object?)machineName ?? DBNull.Value);
+                        await cmd2.ExecuteNonQueryAsync();
                     }
                 }
 
                 List<dynamic> master = new();
-                await using (var cmd2 = new SqlCommand(sql2, conn, (SqlTransaction)tx))
-                await using (var reader = await cmd2.ExecuteReaderAsync())
+                await using (var cmd3 = new SqlCommand(sqlUpdatePacker, conn, (SqlTransaction)tx))
+                await using (var reader = await cmd3.ExecuteReaderAsync())
                 {
                     while (await reader.ReadAsync())
                     {
@@ -2196,7 +2322,6 @@ namespace CMS.server.Services
                 }
 
                 await tx.CommitAsync();
-
                 _plcService.UpdatePacker(master);
             }
             catch
@@ -2259,6 +2384,87 @@ namespace CMS.server.Services
                 cmd.Parameters.AddWithValue("@staff_id", staff["staff_id"].GetInt32());
 
                 await cmd.ExecuteNonQueryAsync();
+            }
+        }
+        public async Task<object> LoadShiftCalendar(int year, int month)
+        {
+            var sql = @"
+                SELECT
+                    *
+                FROM calendar
+                WHERE YEAR(production_date)  = @year
+                  AND MONTH(production_date) = @month
+                ORDER BY production_date, shift, start";
+
+            var result = new List<object>();
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@year", year);
+            cmd.Parameters.AddWithValue("@month", month);
+
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                result.Add(new
+                {
+                    production_date = DateOnly.FromDateTime(Convert.ToDateTime(reader["production_date"])),
+                    shift = Convert.ToInt32(reader["shift"]),
+                    day_type = Convert.ToString(reader["day_type"]),
+                    planned_hours = Convert.ToSingle(reader["planned_hours"]),
+                    start = Convert.ToString(reader["start"]),
+                    finish = Convert.ToString(reader["finish"]),
+                });
+            }
+            return result;
+        }
+        public async Task UpsertShiftCalendar(List<calendar> entries)
+        {
+            var groups = entries
+                .GroupBy(e => (e.production_date, e.shift))
+                .ToList();
+
+            using var conn = await CreateConnection();
+
+            foreach (var group in groups)
+            {
+                var (production_date, shift) = group.Key;
+                var baseDate = production_date.ToDateTime(TimeOnly.MinValue);
+
+                const string deleteSql = @"
+                    DELETE FROM calendar
+                    WHERE production_date = @production_date AND shift = @shift";
+
+                await using var delCmd = new SqlCommand(deleteSql, conn);
+                delCmd.Parameters.AddWithValue("@production_date", baseDate);
+                delCmd.Parameters.AddWithValue("@shift", shift);
+                await delCmd.ExecuteNonQueryAsync();
+
+                const string insertSql = @"
+                    INSERT INTO calendar (production_date, shift, day_type, planned_hours, start, finish)
+                    VALUES (@production_date, @shift, @day_type, @planned_hours, @start, @finish)";
+
+                foreach (var e in group)
+                {
+                    var defaultStart = e.shift == 1 ? baseDate.AddHours(6) : baseDate.AddHours(18);
+                    var defaultFinish = e.shift == 1 ? baseDate.AddHours(18) : baseDate.AddDays(1).AddHours(6);
+
+                    DateTime? parsedStart = string.IsNullOrEmpty(e.start_time)
+                        ? defaultStart
+                        : DateTime.Parse(e.start_time);
+
+                    DateTime? parsedFinish = string.IsNullOrEmpty(e.finish_time)
+                        ? defaultFinish
+                        : DateTime.Parse(e.finish_time);
+
+                    await using var insCmd = new SqlCommand(insertSql, conn);
+                    insCmd.Parameters.AddWithValue("@production_date", baseDate);
+                    insCmd.Parameters.AddWithValue("@shift", e.shift);
+                    insCmd.Parameters.AddWithValue("@day_type", e.day_type);
+                    insCmd.Parameters.AddWithValue("@planned_hours", e.planned_hours);
+                    insCmd.Parameters.AddWithValue("@start", parsedStart ?? (object)DBNull.Value);
+                    insCmd.Parameters.AddWithValue("@finish", parsedFinish ?? (object)DBNull.Value);
+                    await insCmd.ExecuteNonQueryAsync();
+                }
             }
         }
         public async Task<object> LoadMachineProductOutput(int id_machine, DateOnly start_date, DateOnly end_date)
@@ -2611,10 +2817,18 @@ namespace CMS.server.Services
                     finish = Convert.ToString(reader["finish"]),
                     status = Convert.ToString(reader["status"]),
                     duration = Convert.ToSingle(reader["duration"]),
-                    shift = Convert.ToString(reader["shift"])
+                    shift = Convert.ToString(reader["shift"]),
                 });
             }
             return result;
+        }
+        public Task<object> ChangeDepartmentPasswords(Dictionary<string, int> passwords)
+        {
+            return Task.Run<object>(() =>
+            {
+                _plcService.ChangePassword(passwords);
+                return new { success = true, updated = passwords.Keys };
+            });
         }
 
         #endregion
@@ -2722,8 +2936,9 @@ namespace CMS.server.Services
             }
 
             bool shift_change = prev.productionDate != productionDate || prev.shift != shift;
-            bool prod_run = prev.plcData.production_running != plcData.production_running;
+            bool prod_run = prev.plcData.production_running != plcData.production_running && plcData.production_running;
             bool status_start = prev.plcData.status_start != plcData.status_start;
+            bool done = prev.plcData.done != plcData.done && plcData.done;
             bool status_off = prev.plcData.status_off != plcData.status_off;
             bool category = prev.plcData.stop_category != plcData.stop_category;
             bool mould_category_no = prev.plcData.mould_category_no != plcData.mould_category_no;
@@ -2758,7 +2973,10 @@ namespace CMS.server.Services
 	                visual_qc = @visual_qc
                 WHERE id_machine = @id_machine;
                 
-                UPDATE [{tableName}] SET shot = @shot, act_ct = @act_ct WHERE finish IS NULL;
+                UPDATE [{tableName}] 
+                SET shot = CASE WHEN @shot > 0 THEN @shot ELSE shot END,
+                    act_ct = @act_ct 
+                WHERE finish IS NULL;
 
                 SELECT measure_qc FROM machine_master WHERE id_machine = @id_machine";
 
@@ -2778,8 +2996,12 @@ namespace CMS.server.Services
 
             try
             {
-                // Machine running/stopped
-                if (status_start || no_category)
+                // Machine running
+                if (prod_run)
+                    await insertMachineRun(plcData);
+
+                // Machine stopped
+                if (done || status_start)
                     await insertMachineStop(plcData);
 
                 // Shift changed
@@ -2836,6 +3058,29 @@ namespace CMS.server.Services
             var tableName = $"machine_log_{master.id_machine}";
 
             var sql = $@"
+                -- Update Calendar
+                IF NOT EXISTS (
+                    SELECT 1 FROM calendar
+                    WHERE production_date = @production_date AND shift = @shift
+                )
+                BEGIN
+                    INSERT INTO calendar (production_date, shift, day_type, planned_hours, start, finish)
+                    VALUES (
+                        @production_date,
+                        @shift,
+                        'NORMAL',
+                        12,
+                        CASE @shift
+                            WHEN 1 THEN CAST(CAST(@production_date AS DATETIME) + CAST('06:00:00' AS DATETIME) AS DATETIME)
+                            ELSE        CAST(CAST(@production_date AS DATETIME) + CAST('18:00:00' AS DATETIME) AS DATETIME)
+                        END,
+                        CASE @shift
+                            WHEN 1 THEN CAST(CAST(@production_date AS DATETIME) + CAST('18:00:00' AS DATETIME) AS DATETIME)
+                            ELSE        CAST(CAST(DATEADD(DAY, 1, @production_date) AS DATETIME) + CAST('06:00:00' AS DATETIME) AS DATETIME)
+                        END
+                    );
+                END
+
                 -- Update Reject Table
                 IF NOT EXISTS (SELECT 1 FROM reject WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
                 BEGIN
@@ -3025,6 +3270,11 @@ namespace CMS.server.Services
                     WHERE s.id_type = @id_type 
                       AND s.mould = @mould;
                 END
+                ELSE
+                BEGIN
+                    UPDATE report SET time = @time
+                    WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift
+                END
 
                 DECLARE @PackerTable TABLE (machine_name NVARCHAR(255), work_shift INT, packer NVARCHAR(MAX));
 
@@ -3108,6 +3358,29 @@ namespace CMS.server.Services
             _plcService.UpdatePLCS(master);
         }
 
+        public async Task insertMachineRun(dynamic plcData)
+        {
+            Console.WriteLine($"[Machine {plcData.id_machine}] Insert Machine Run");
+            int id_machine = plcData.id_machine;
+            DateTime time = plcData.time;
+
+            var master = await GetMachineMaster(id_machine, time, plcData);
+
+            var (productionDate, shift) = GetProductionDate(time);
+            var tableName = $"machine_log_{id_machine}";
+
+            var sql = $@"
+                UPDATE [{tableName}]
+                    SET category = @category
+                    WHERE (category IS NULL AND status_start = 1) OR finish is null;";
+
+            using var conn = await CreateConnection();
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@category", master.stop_category);
+
+            await cmd.ExecuteNonQueryAsync();
+        }
+
         // Insert new and Update finish Machine Log Stop
         public async Task insertMachineStop(dynamic plcData)
         {
@@ -3124,23 +3397,15 @@ namespace CMS.server.Services
                 UPDATE [{tableName}] SET finish = @time WHERE finish IS NULL
 
                 INSERT INTO [{tableName}]
-                (machine_name, id_type, mould, start, category, mould_category, shift, production_date, status_start)
+                (machine_name, id_type, mould, start, shot, mould_category, shift, production_date, status_start)
                 VALUES 
                 (
                     @machine_name, 
                     @id_type, 
                     @mould, 
                     @time, 
-                    CASE
-                        WHEN @status_start = 1 THEN 'PRODUCTION RUNNING'
-                        ELSE NULLIF(@category, '')
-                    END, 
-                    CASE
-                        WHEN NULLIF(@category, '') = 'MOULD CHANGE'
-                             AND COALESCE(@mould_category, '') <> ''
-                        THEN @mould_category
-                        ELSE 0
-                    END,
+                    0,
+                    0,
                     @shift, 
                     @production_date, 
                     @status_start
@@ -3152,7 +3417,6 @@ namespace CMS.server.Services
             cmd.Parameters.AddWithValue("@id_type", master.id_type);
             cmd.Parameters.AddWithValue("@mould", master.mould);
             cmd.Parameters.AddWithValue("@time", master.time);
-            cmd.Parameters.AddWithValue("@category", master.stop_category);
             cmd.Parameters.AddWithValue("@mould_category", master.mould_category_no);
             cmd.Parameters.AddWithValue("@shift", shift);
             cmd.Parameters.AddWithValue("@production_date", productionDate);
@@ -3174,17 +3438,8 @@ namespace CMS.server.Services
 
             var sql = $@"
                 UPDATE [{tableName}]
-                SET category = CASE
-                    WHEN status_start = 1 THEN 'PRODUCTION RUNNING'
-                    WHEN status_start <> 1 AND @category <> 'PRODUCTION RUNNING' 
-                        THEN NULLIF(@category, '')
-                    ELSE category
-                END
-                WHERE (category IS NULL OR finish IS NULL)
-                AND (
-                    status_start = 1 
-                    OR (status_start <> 1 AND category <> 'PRODUCTION RUNNING')
-                );";
+                SET category = @category
+                WHERE finish IS NULL OR category IS NULL;";
 
             using var conn = await CreateConnection();
             await using var cmd = new SqlCommand(sql, conn);
@@ -3217,7 +3472,7 @@ namespace CMS.server.Services
                                  AND COALESCE(@mould_category, '') <> ''
                             THEN @mould_category
                             ELSE 0
-                    END
+                        END
                 WHERE finish IS NULL";
 
             using var conn = await CreateConnection();
@@ -3242,8 +3497,14 @@ namespace CMS.server.Services
                 UPDATE [{tableName}] 
                 SET 
                     problem = NULLIF(@problem, ''),
-                    mould_category = NULLIF(@mould_category, '')
-                WHERE category = 'MOULD CHANGE' AND mould_category IS NULL";
+                    mould_category = 
+                        CASE
+                            WHEN category = 'MOULD CHANGE'
+                                 AND COALESCE(@mould_category, '') <> ''
+                            THEN @mould_category
+                            ELSE 0
+                    END
+                WHERE category = 'MOULD CHANGE' AND mould_category = 0";
 
             using var conn = await CreateConnection();
             await using var cmd = new SqlCommand(sql, conn);

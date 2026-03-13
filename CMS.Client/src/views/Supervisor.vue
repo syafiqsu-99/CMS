@@ -5,7 +5,6 @@
         <h2 class="font-weight-bold">SUPERVISOR</h2>
       </v-col>
     </v-row>
-
     <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="height: 90vh;">
       <v-col cols="12" class="pa-1 d-flex" style="height: 100%;">
         <v-card variant="text" class="d-flex flex-column" elevation="2" style="width: 100%; height: 100%; overflow: hidden;">
@@ -21,18 +20,21 @@
                 {{ tab.label }}
               </v-tab>
             </v-tabs>
-            <v-tabs-window v-model="activeTab" style="min-height: 0; ">
+            <v-tabs-window v-model="activeTab" style="min-height: 0;">
               <v-tabs-window-item value="0">
-                  <ProdSchedule :SAP-data="store.SAPData" />
+                <ProdSchedule :SAP-data="store.SAPData" />
               </v-tabs-window-item>
               <v-tabs-window-item value="1">
-                  <MachineSchedule :machine-data="store.machineData" :SAP-data="store.SAPData" @refresh-data="handleRefreshData" />
+                <MachineSchedule :machine-data="store.machineData" :SAP-data="store.SAPData" @refresh-data="handleRefreshData" />
               </v-tabs-window-item>
               <v-tabs-window-item value="2">
-                  <StaffSchedule />
+                <StaffSchedule />
               </v-tabs-window-item>
               <v-tabs-window-item value="3">
-                  <SAPSchedule :SAP-data="store.SAPData" @refresh-data="handleRefreshSAP"/>
+                <SAPSchedule :SAP-data="store.SAPData" @refresh-data="handleRefreshSAP" />
+              </v-tabs-window-item>
+              <v-tabs-window-item value="4">
+                <ShiftCalendar />
               </v-tabs-window-item>
             </v-tabs-window>
           </v-card-text>
@@ -44,34 +46,24 @@
 
 <script setup>
   import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
-  import { pinia } from '@/store/index'
+  import { pinia } from '@/store/index';
   import StaffSchedule from '@/components/StaffSchedule.vue';
   import MachineSchedule from '@/components/MachineSchedule.vue';
   import SAPSchedule from '@/components/SAPSchedule.vue';
   import ProdSchedule from '@/components/ProdSchedule.vue';
+  import ShiftCalendar from '@/components/ShiftCalendar.vue';
 
   const activeTab = ref(0);
   const store = pinia();
 
-  const summaryCards = computed(() => [
-    { title: "Total Machines", icon: "mdi-factory", color: "primary", value: store.totalMachines },
-    { title: "Running", icon: "mdi-play-circle", color: "success", value: store.runningMachines },
-    { title: "Stop", icon: "mdi-stop-circle", color: "error", value: store.stopMachines },
-    { title: "Staff Assigned", icon: "mdi-account-group", color: "info", value: store.activeStaff },
-  ]);
-
   const tabs = [
-    { label: "Production Report", icon: "mdi-cog-outline" },
-    { label: "Machine Management", icon: "mdi-robot-industrial" },
-    { label: "Staff Assignment", icon: "mdi-account-clock" },
-    { label: "Product Database", icon: "mdi-archive" },
+    { label: 'Production Report', icon: 'mdi-cog-outline' },
+    { label: 'Machine Management', icon: 'mdi-robot-industrial' },
+    { label: 'Staff Assignment', icon: 'mdi-account-clock' },
+    { label: 'Product Database', icon: 'mdi-archive' },
+    { label: 'Shift Calendar', icon: 'mdi-calendar-clock' },
   ];
 
-  async function handleRefreshData() {
-    await store.loadMachineMaster();
-  }
-
-  async function handleRefreshSAP() {
-    await store.loadSAP();
-  }
-  </script>
+  async function handleRefreshData() { await store.loadMachineMaster(); }
+  async function handleRefreshSAP() { await store.loadSAP(); }
+</script>
