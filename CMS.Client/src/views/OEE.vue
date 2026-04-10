@@ -227,7 +227,7 @@
       ctx.textBaseline = "middle";
       ctx.textAlign = "center";
       ctx.fillStyle = chart.config.data.datasets[0].backgroundColor[0];
-      ctx.fillText(`${value.toFixed(1)}%`, Math.round(width / 2), Math.round(height / 2));
+      ctx.fillText(`${value.toFixed(0)}%`, Math.round(width / 2), Math.round(height / 2));
       ctx.restore();
     },
   };
@@ -300,10 +300,10 @@
           return validMachines.reduce((s, m) => s + (Number(m[key]) || 0), 0) / validMachines.length;
         };
         summaryMetrics.value = [
-          { title: "Overall OEE", value: Number(avg("oee").toFixed(2)), type: 'oee' },
-          { title: "Performance", value: Number(avg("performance").toFixed(2)), type: 'performance' },
-          { title: "Availability", value: Number(avg("availability").toFixed(2)), type: 'availability' },
-          { title: "Quality", value: Number(avg("quality").toFixed(2)), type: 'quality' },
+          { title: "Overall OEE", value: Number(avg("oee").toFixed(0)), type: 'oee' },
+          { title: "Performance", value: Number(avg("performance").toFixed(0)), type: 'performance' },
+          { title: "Availability", value: Number(avg("availability").toFixed(0)), type: 'availability' },
+          { title: "Quality", value: Number(avg("quality").toFixed(0)), type: 'quality' },
         ];
       } else {
         summaryMetrics.value = summaryMetrics.value.map(m => ({ ...m, value: 0 }));
