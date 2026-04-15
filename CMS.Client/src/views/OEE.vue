@@ -359,9 +359,6 @@
         throw new Error(err.message || `Export failed (HTTP ${response.status})`);
       }
 
-      // Derive filename from the Content-Disposition header when present;
-      // fall back to a sensible default so the file always downloads with a
-      // recognisable name even when the header is absent.
       const disposition = response.headers.get('Content-Disposition') ?? '';
       const nameMatch   = disposition.match(/filename[^;=\n]*=["']?([^"';\n]+)/i);
       const fileName    = nameMatch
@@ -378,7 +375,6 @@
       setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(url); }, 200);
     } catch (err) {
       console.error('[OEE Export]', err);
-      // Surface error visibly so the user knows the download failed
       alert(`Export failed: ${err.message}`);
     } finally {
       exporting.value = false;

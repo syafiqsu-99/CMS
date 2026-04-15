@@ -462,7 +462,7 @@ public class MachineLogController : ControllerBase
             var excelBytes = _excelService.GenerateOEEReport(rawRows, start_date, end_date);
 
             var shiftName = shift == 1 ? "Morning" : "Night";
-            var fileName = $"OEE_Report_{start_date:yyyy-MM-dd}_to_{end_date:yyyy-MM-dd}_{shiftName}.xlsx";
+            var fileName = $"OEE_Report_{start_date:yyyy-MM-dd}_to_{end_date:yyyy-MM-dd}.xlsx";
 
             return File(
                 excelBytes,

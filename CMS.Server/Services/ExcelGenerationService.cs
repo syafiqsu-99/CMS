@@ -204,93 +204,152 @@ namespace CMS.Server.Services
         // Helper class for header definitions
         private record HeaderDefinition(int Column, string Title, string BackgroundColor, double Width);
 
-        // ══════════════════════════════════════════════════════════════════════════════
-        // OEE EXCEL EXPORT
-        // ══════════════════════════════════════════════════════════════════════════════
-
-        private const int C_MACHINE = 1;
-        private const int C_RUN_TIME = 2;
-        private const int C_DOWN_TIME = 3;
-        private const int C_UNALLOCATED = 4;
-        private const int C_MATERIAL = 5;
-        private const int C_REJECT = 6;
-        private const int C_AVAIL_HRS = 7;
-        private const int C_AVG_SAP_CT = 8;
-        private const int C_AVG_ACT_CT = 9;
-        // ↓ formula columns start here
-        private const int C_TOTAL_SAP = 10;
-        private const int C_TOTAL_ACT = 11;
-        private const int C_AVAILABILITY = 12;
-        private const int C_PERFORMANCE = 13;
-        private const int C_QUALITY = 14;
-        private const int C_OEE = 15;
-        private const int OEE_COL_COUNT = 15;
-
-        private static readonly string[] OEE_COLUMNS =
+        private static readonly string[] RAW_COLUMNS =
         [
-            "Machine Name",          // 1
-            "Run Time (hrs)",        // 2
-            "Down Time (hrs)",       // 3
-            "Unallocated (hrs)",     // 4
-            "Material Used (kg)",    // 5
-            "Reject Weight (kg)",    // 6
-            "Available Hours (hrs)", // 7
-            "Avg SAP CT (s)",        // 8
-            "Avg Act CT (s)",        // 9
-            "Total SAP Time (s)",    // 10
-            "Total Act Time (s)",    // 11
-            "Availability (%)",      // 12
-            "Performance (%)",       // 13
-            "Quality (%)",           // 14
-            "OEE (%)",               // 15
+            "Machine Name",          // 1 (A)
+            "Id Type",               // 2 (B)
+            "Mould",                 // 3 (C)
+            "Type",                  // 4 (D)
+            "Shot",                  // 5 (E)
+            "Run Time (hrs)",        // 6 (F)
+            "Down Time (hrs)",       // 7 (G)
+            "Unallocated (hrs)",     // 8 (H)
+            "Material Used (kg)",    // 9 (I)
+            "Reject Weight (kg)",    // 10 (J)
+            "SAP CT (s)",            // 11 (K)
+            "Act CT (s)",            // 12 (L)
+            "Total SAP Time (hrs)",  // 13 (M)
+            "Total Act Time (hrs)",  // 14 (N)
         ];
 
-        private static readonly Dictionary<int, string> OEE_HEADER_NOTES = new()
+        private static readonly string[] SUMMARY_COLUMNS =
+        [
+            "Machine Name",          // 1 (A)
+            "Run Time (hrs)",        // 2 (B)
+            "Down Time (hrs)",       // 3 (C)
+            "Unallocated (hrs)",     // 4 (D)
+            "Material Used (kg)",    // 5 (E)
+            "Reject Weight (kg)",    // 6 (F)
+            "Available Hours (hrs)", // 7 (G)
+            "Total SAP Time (hrs)",  // 8 (H)
+            "Total Act Time (hrs)",  // 9 (I)
+            "Availability (%)",      // 10 (J)
+            "Performance (%)",       // 11 (K)
+            "Quality (%)",           // 12 (L)
+            "OEE (%)",               // 13 (M)
+        ];
+
+        private static readonly Dictionary<int, string> SUMMARY_HEADER_NOTES = new()
         {
-            [C_TOTAL_SAP] = "Total SAP Time (s)\n= Material Used (kg) × Avg SAP CT (s)",
-            [C_TOTAL_ACT] = "Total Act Time (s)\n= Material Used (kg) × Avg Act CT (s)",
-            [C_AVAILABILITY] = "Availability (%)\n" +
-                               "If Available Hours > 0:\n" +
-                               "  = Run Time / Available Hours × 100\n" +
-                               "Else (live / same-day query):\n" +
-                               "  = Run Time / (Run Time + Down Time) × 100",
-            [C_PERFORMANCE] = "Performance (%)\n= Total SAP Time / Total Act Time × 100",
-            [C_QUALITY] = "Quality (%)\n= MAX(0, (Material Used − Reject Weight) / Material Used × 100)",
-            [C_OEE] = "OEE (%)\n= Availability% × Performance% × Quality% / 10000",
+            [7] = "Exclude public holiday and off day",
+            [8] = "Total SAP Time (hrs)\n= (SAP CT * Shot) / 3600",
+            [9] = "Total Act Time (hrs)\n= (Act CT * Shot) / 3600",
+            [10] = "Availability (%)\n= Run Time / Available Hours × 100",
+            [11] = "Performance (%)\n= Total SAP Time / Total Act Time × 100",
+            [12] = "Quality (%)\n= MAX(0, (Material Used − Reject Weight) / Material Used × 100)",
+            [13] = "OEE (%)\n= Availability% × Performance% × Quality% / 10000",
         };
+
+        private static readonly string[] COL_LETTERS = { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q" };
 
         public byte[] GenerateOEEReport(IEnumerable<OEERawRow> rows, DateOnly startDate, DateOnly endDate)
         {
             using var workbook = new XLWorkbook();
-            BuildOEESheet(workbook.Worksheets.Add("OEE Report"), rows.ToList(), startDate, endDate);
+
+            var rawDataSheet = workbook.Worksheets.Add("Raw Data");
+            var summarySheet = workbook.Worksheets.Add("OEE Summary");
+
+            var rowList = rows.ToList();
+
+            BuildOEERawSheet(rawDataSheet, rowList, startDate, endDate);
+            BuildOEESummarySheet(summarySheet, rowList, startDate, endDate);
 
             using var stream = new MemoryStream();
             workbook.SaveAs(stream);
             return stream.ToArray();
         }
 
-        private static void BuildOEESheet(IXLWorksheet ws, List<OEERawRow> rows, DateOnly startDate, DateOnly endDate)
+        private static void BuildOEERawSheet(IXLWorksheet ws, List<OEERawRow> rows, DateOnly startDate, DateOnly endDate)
         {
             const int TITLE_ROW = 1;
             const int HEADER_ROW = 3;
 
-            // Safeguard: Ensure the table always has at least 1 empty row if data is empty to prevent range crashing
-            int dataRowCount = Math.Max(1, rows.Count);
-            int firstDataRow = HEADER_ROW + 1;
-            int lastDataRow = firstDataRow + dataRowCount - 1;
-
-            // ── Title ─────────────────────────────────────────────────────────────────
+            // Title
             var title = ws.Cell(TITLE_ROW, 1);
-            title.Value = $"OEE Report  |  {startDate:dd MMM yyyy} – {endDate:dd MMM yyyy}";
+            title.Value = $"Raw Data  |  {startDate:dd MMM yyyy} – {endDate:dd MMM yyyy}";
             title.Style.Font.Bold = true;
             title.Style.Font.FontSize = 14;
-            ws.Range(TITLE_ROW, 1, TITLE_ROW, OEE_COL_COUNT).Merge();
+            ws.Range(TITLE_ROW, 1, TITLE_ROW, 14).Merge();
 
-            // ── Column headers ────────────────────────────────────────────────────────
-            for (int c = 1; c <= OEE_COL_COUNT; c++)
+            // Headers
+            for (int c = 1; c <= 14; c++)
             {
                 var cell = ws.Cell(HEADER_ROW, c);
-                cell.Value = OEE_COLUMNS[c - 1];
+                cell.Value = RAW_COLUMNS[c - 1];
+                cell.Style.Font.Bold = true;
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                cell.Style.Alignment.WrapText = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#4472C4");
+            }
+            ws.Row(HEADER_ROW).Height = 35;
+
+            // Raw Data
+            int currentRow = HEADER_ROW + 1;
+            foreach (var r in rows)
+            {
+                ws.Cell(currentRow, 1).Value = r.MachineName;
+                ws.Cell(currentRow, 2).Value = r.IdType;
+                ws.Cell(currentRow, 3).Value = r.Mould;
+                ws.Cell(currentRow, 4).Value = r.Type;
+                ws.Cell(currentRow, 5).Value = r.Shot;
+                ws.Cell(currentRow, 6).Value = r.RunTime;
+                ws.Cell(currentRow, 7).Value = r.DownTime;
+                ws.Cell(currentRow, 8).Value = r.Unallocated;
+                ws.Cell(currentRow, 9).Value = r.MaterialUsed;
+                ws.Cell(currentRow, 10).Value = r.RejectWeight;
+                ws.Cell(currentRow, 11).Value = r.SapCt;
+                ws.Cell(currentRow, 12).Value = r.ActCt;
+
+                // Total SAP Time (hrs) (M) = (Shot (E) * SAP CT (K)) / 3600
+                ws.Cell(currentRow, 13).FormulaA1 = $"=(E{currentRow}*K{currentRow})/3600";
+                // Total Act Time (hrs) (N) = (Shot (E) * Act CT (L)) / 3600
+                ws.Cell(currentRow, 14).FormulaA1 = $"=(E{currentRow}*L{currentRow})/3600";
+
+                // Formatting
+                for (int c = 5; c <= 14; c++)
+                {
+                    ws.Cell(currentRow, c).Style.NumberFormat.Format = "0.00";
+                }
+                for (int c = 1; c <= 14; c++)
+                {
+                    ws.Cell(currentRow, c).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                }
+                currentRow++;
+            }
+
+            ws.Columns(1, 14).AdjustToContents();
+            ws.SheetView.FreezeRows(HEADER_ROW);
+            ws.SheetView.FreezeColumns(1);
+        }
+
+        private static void BuildOEESummarySheet(IXLWorksheet ws, List<OEERawRow> rows, DateOnly startDate, DateOnly endDate)
+        {
+            const int TITLE_ROW = 1;
+            const int HEADER_ROW = 3;
+
+            // Title
+            var title = ws.Cell(TITLE_ROW, 1);
+            title.Value = $"OEE Summary  |  {startDate:dd MMM yyyy} – {endDate:dd MMM yyyy}";
+            title.Style.Font.Bold = true;
+            title.Style.Font.FontSize = 14;
+            ws.Range(TITLE_ROW, 1, TITLE_ROW, 13).Merge();
+
+            // Headers
+            for (int c = 1; c <= 13; c++)
+            {
+                var cell = ws.Cell(HEADER_ROW, c);
+                cell.Value = SUMMARY_COLUMNS[c - 1];
                 cell.Style.Font.Bold = true;
                 cell.Style.Font.FontColor = XLColor.White;
                 cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -298,83 +357,15 @@ namespace CMS.Server.Services
 
                 cell.Style.Fill.BackgroundColor = c switch
                 {
-                    C_OEE => XLColor.FromHtml("#C00000"),
-                    >= C_TOTAL_SAP and <= C_OEE => XLColor.FromHtml("#ED7D31"),
-                    _ => XLColor.FromHtml("#4472C4"),
+                    13 => XLColor.FromHtml("#C00000"), // OEE
+                    >= 8 and <= 13 => XLColor.FromHtml("#ED7D31"), // Formulas
+                    _ => XLColor.FromHtml("#4472C4"), // Data
                 };
             }
             ws.Row(HEADER_ROW).Height = 42;
 
-            // ── Write raw data ────────────────────────────────────────────────────────
-            for (int i = 0; i < rows.Count; i++)
-            {
-                var r = rows[i];
-                int excelRow = firstDataRow + i;
-
-                ws.Cell(excelRow, C_MACHINE).Value = r.MachineName;
-                ws.Cell(excelRow, C_RUN_TIME).Value = r.RunTime;
-                ws.Cell(excelRow, C_DOWN_TIME).Value = r.DownTime;
-                ws.Cell(excelRow, C_UNALLOCATED).Value = r.Unallocated;
-                ws.Cell(excelRow, C_MATERIAL).Value = r.MaterialUsed;
-                ws.Cell(excelRow, C_REJECT).Value = r.RejectWeight;
-                ws.Cell(excelRow, C_AVAIL_HRS).Value = r.AvailableHours;
-                ws.Cell(excelRow, C_AVG_SAP_CT).Value = r.AvgSapCt;
-                ws.Cell(excelRow, C_AVG_ACT_CT).Value = r.AvgActCt;
-            }
-
-            // ── Create Excel Table ────────────────────────────────────────────────────
-            var tableRange = ws.Range(HEADER_ROW, 1, lastDataRow, OEE_COL_COUNT);
-            var table = tableRange.CreateTable("OEEData");
-            table.Theme = XLTableTheme.TableStyleMedium2;
-            table.ShowTotalsRow = false;
-
-            // ── Build structured-reference formula strings ────────────────────────────
-            static string S(string colName) => $"[@[{colName}]]";
-
-            string runTime = S(OEE_COLUMNS[C_RUN_TIME - 1]);
-            string downTime = S(OEE_COLUMNS[C_DOWN_TIME - 1]);
-            string material = S(OEE_COLUMNS[C_MATERIAL - 1]);
-            string reject = S(OEE_COLUMNS[C_REJECT - 1]);
-            string availHrs = S(OEE_COLUMNS[C_AVAIL_HRS - 1]);
-            string avgSapCt = S(OEE_COLUMNS[C_AVG_SAP_CT - 1]);
-            string avgActCt = S(OEE_COLUMNS[C_AVG_ACT_CT - 1]);
-            string totalSap = S(OEE_COLUMNS[C_TOTAL_SAP - 1]);
-            string totalAct = S(OEE_COLUMNS[C_TOTAL_ACT - 1]);
-            string availability = S(OEE_COLUMNS[C_AVAILABILITY - 1]);
-            string performance = S(OEE_COLUMNS[C_PERFORMANCE - 1]);
-            string quality = S(OEE_COLUMNS[C_QUALITY - 1]);
-
-            string fTotalSap = $"={material}*{avgSapCt}";
-            string fTotalAct = $"={material}*{avgActCt}";
-            string fAvailability = $"=IF({availHrs}>0, {runTime}/{availHrs}*100, IF(({runTime}+{downTime})=0, 0, {runTime}/({runTime}+{downTime})*100))";
-            string fPerformance = $"=IF({totalAct}=0, 0, {totalSap}/{totalAct}*100)";
-            string fQuality = $"=IF({material}=0, 0, MAX(0, ({material}-{reject})/{material}*100))";
-            string fOee = $"=IF(OR({availability}=0,{performance}=0,{quality}=0), 0, {availability}/100*{performance}/100*{quality}/100*100)";
-
-            // ── Write formulas securely to the data ranges ────────────────────────────
-            ws.Range(firstDataRow, C_TOTAL_SAP, lastDataRow, C_TOTAL_SAP).FormulaA1 = fTotalSap;
-            ws.Range(firstDataRow, C_TOTAL_ACT, lastDataRow, C_TOTAL_ACT).FormulaA1 = fTotalAct;
-            ws.Range(firstDataRow, C_AVAILABILITY, lastDataRow, C_AVAILABILITY).FormulaA1 = fAvailability;
-            ws.Range(firstDataRow, C_PERFORMANCE, lastDataRow, C_PERFORMANCE).FormulaA1 = fPerformance;
-            ws.Range(firstDataRow, C_QUALITY, lastDataRow, C_QUALITY).FormulaA1 = fQuality;
-            ws.Range(firstDataRow, C_OEE, lastDataRow, C_OEE).FormulaA1 = fOee;
-
-            // ── Number formats ────────────────────────────────────────────────────────
-            string fmt2dp = "0.00";
-            int[] numCols = [
-                C_RUN_TIME, C_DOWN_TIME, C_UNALLOCATED, C_MATERIAL, C_REJECT,
-                C_AVAIL_HRS, C_AVG_SAP_CT, C_AVG_ACT_CT, C_TOTAL_SAP, C_TOTAL_ACT,
-                C_AVAILABILITY, C_PERFORMANCE, C_QUALITY, C_OEE
-            ];
-
-            foreach (int c in numCols)
-            {
-                ws.Range(firstDataRow, c, lastDataRow, c).Style.NumberFormat.Format = fmt2dp;
-            }
-            ws.Range(firstDataRow, C_OEE, lastDataRow, C_OEE).Style.Font.Bold = true;
-
-            // ── Header comments for formula columns ───────────────────────────────────
-            foreach (var (colIndex, noteText) in OEE_HEADER_NOTES)
+            // Header Comments
+            foreach (var (colIndex, noteText) in SUMMARY_HEADER_NOTES)
             {
                 var comment = ws.Cell(HEADER_ROW, colIndex).CreateComment();
                 comment.AddText(noteText);
@@ -383,72 +374,106 @@ namespace CMS.Server.Services
                 comment.Style.Alignment.SetAutomaticSize(false);
             }
 
-            // ── Totals / averages row ─────────────────────────────────────────────────
-            int totalRow = lastDataRow + 2;
+            // Get distinct machines from raw data
+            var machines = rows.GroupBy(r => new { r.IdMachine, r.MachineName })
+                               .Select(g => new { g.Key.IdMachine, g.Key.MachineName, AvailableHours = g.Max(x => x.AvailableHours) })
+                               .OrderBy(g => g.IdMachine)
+                               .ToList();
 
-            ws.Cell(totalRow, C_MACHINE).Value = "TOTAL / AVG";
-            ApplyTotalStyle(ws.Cell(totalRow, C_MACHINE));
-
-            int[] totalColumns = [ C_RUN_TIME, C_DOWN_TIME, C_UNALLOCATED, C_MATERIAL, C_REJECT,
-                                   C_AVAIL_HRS, C_AVG_SAP_CT, C_AVG_ACT_CT, C_TOTAL_SAP, C_TOTAL_ACT ];
-
-            foreach (int c in totalColumns)
+            int currentRow = HEADER_ROW + 1;
+            foreach (var machine in machines)
             {
-                string colName = OEE_COLUMNS[c - 1];
-                var cell = ws.Cell(totalRow, c);
-                // FIX: Double Brackets [[ ]] are REQUIRED by Excel when referencing a column that has spaces from outside the table.
-                cell.FormulaA1 = c is C_AVG_SAP_CT or C_AVG_ACT_CT
-                    ? $"=AVERAGE(OEEData[[{colName}]])"
-                    : $"=SUM(OEEData[[{colName}]])";
-                cell.Style.NumberFormat.Format = "0.00";
-                ApplyTotalStyle(cell);
+                ws.Cell(currentRow, 1).Value = machine.MachineName;
+
+                // Aggregations using SUMIFS referencing the "Raw Data" sheet
+                ws.Cell(currentRow, 2).FormulaA1 = $"=SUMIFS('Raw Data'!F:F, 'Raw Data'!A:A, A{currentRow})"; // Run Time
+                ws.Cell(currentRow, 3).FormulaA1 = $"=SUMIFS('Raw Data'!G:G, 'Raw Data'!A:A, A{currentRow})"; // Down Time
+                ws.Cell(currentRow, 4).FormulaA1 = $"=SUMIFS('Raw Data'!H:H, 'Raw Data'!A:A, A{currentRow})"; // Unallocated
+                ws.Cell(currentRow, 5).FormulaA1 = $"=SUMIFS('Raw Data'!I:I, 'Raw Data'!A:A, A{currentRow})"; // Material Used
+                ws.Cell(currentRow, 6).FormulaA1 = $"=SUMIFS('Raw Data'!J:J, 'Raw Data'!A:A, A{currentRow})"; // Reject
+
+                ws.Cell(currentRow, 7).Value = machine.AvailableHours; // Available Hours
+
+                // Accurate Total Time Calculations via SUMIFS (H & I pull from Raw's M & N)
+                ws.Cell(currentRow, 8).FormulaA1 = $"=SUMIFS('Raw Data'!M:M, 'Raw Data'!A:A, A{currentRow})"; // Total SAP Time (hrs)
+                ws.Cell(currentRow, 9).FormulaA1 = $"=SUMIFS('Raw Data'!N:N, 'Raw Data'!A:A, A{currentRow})"; // Total Act Time (hrs)
+
+                // OEE Formulations
+                // Availability (J)
+                ws.Cell(currentRow, 10).FormulaA1 = $"=IF(G{currentRow}>0, B{currentRow}/G{currentRow}*100, 0)";
+                // Performance (K)
+                ws.Cell(currentRow, 11).FormulaA1 = $"=IF(I{currentRow}=0, 0, H{currentRow}/I{currentRow}*100)";
+                // Quality (L)
+                ws.Cell(currentRow, 12).FormulaA1 = $"=IF(E{currentRow}=0, 0, MAX(0, (E{currentRow}-F{currentRow})/E{currentRow}*100))";
+                // OEE (M)
+                ws.Cell(currentRow, 13).FormulaA1 = $"=IF(OR(J{currentRow}=0,K{currentRow}=0,L{currentRow}=0), 0, J{currentRow}/100*K{currentRow}/100*L{currentRow}/100*100)";
+
+                // Format row
+                for (int c = 2; c <= 13; c++) ws.Cell(currentRow, c).Style.NumberFormat.Format = "0.00";
+                ws.Cell(currentRow, 13).Style.Font.Bold = true;
+                for (int c = 1; c <= 13; c++) ws.Cell(currentRow, c).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+
+                currentRow++;
             }
 
-            int[] averageColumns = [C_AVAILABILITY, C_PERFORMANCE, C_QUALITY, C_OEE];
-            foreach (int c in averageColumns)
+            int lastDataRow = Math.Max(HEADER_ROW + 1, currentRow - 1);
+
+            // ── Totals / Averages ──────────────────────────────────────────────────
+            int totalRow = currentRow + 1;
+            ws.Cell(totalRow, 1).Value = "TOTAL / AVG";
+
+            int[] sumCols = [2, 3, 4, 5, 6, 7, 8, 9]; // B to I
+            foreach (int c in sumCols)
             {
-                string colName = OEE_COLUMNS[c - 1];
-                var cell = ws.Cell(totalRow, c);
-                // FIX: Double Brackets [[ ]]
-                cell.FormulaA1 = $"=AVERAGE(OEEData[[{colName}]])";
-                cell.Style.NumberFormat.Format = "0.00";
-                ApplyTotalStyle(cell);
+                string letter = COL_LETTERS[c - 1];
+                ws.Cell(totalRow, c).FormulaA1 = $"=SUM({letter}4:{letter}{lastDataRow})";
             }
 
-            // ── Target row ────────────────────────────────────────────────────────────
+            int[] avgCols = [10, 11, 12, 13]; // J to M
+            foreach (int c in avgCols)
+            {
+                string letter = COL_LETTERS[c - 1];
+                ws.Cell(totalRow, c).FormulaA1 = $"=AVERAGE({letter}4:{letter}{lastDataRow})";
+            }
+
+            for (int c = 1; c <= 13; c++)
+            {
+                ws.Cell(totalRow, c).Style.NumberFormat.Format = "0.00";
+                ApplyTotalStyle(ws.Cell(totalRow, c));
+            }
+
+            // ── Target Row ─────────────────────────────────────────────────────────
             int targetRow = totalRow + 1;
-            var targetLabel = ws.Cell(targetRow, C_MACHINE);
-            targetLabel.Value = "TARGET";
-            targetLabel.Style.Font.Bold = true;
-            targetLabel.Style.Fill.BackgroundColor = XLColor.FromHtml("#FFC000");
+            ws.Cell(targetRow, 1).Value = "TARGET";
 
-            foreach (var (col, val) in new (int, double)[]
-                { (C_AVAILABILITY, 70.0), (C_PERFORMANCE, 95.0), (C_QUALITY, 97.0), (C_OEE, 65.0) })
+            foreach (var (col, val) in new (int, double)[] { (10, 70.0), (11, 95.0), (12, 97.0), (13, 65.0) })
             {
-                var cell = ws.Cell(targetRow, col);
-                cell.Value = val;
+                ws.Cell(targetRow, col).Value = val;
+            }
+
+            for (int c = 1; c <= 13; c++)
+            {
+                var cell = ws.Cell(targetRow, c);
                 cell.Style.NumberFormat.Format = "0.00";
                 cell.Style.Font.Bold = true;
                 cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#FFC000");
                 cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             }
 
-            // ── Column widths ─────────────────────────────────────────────────────────
-            ws.Column(C_MACHINE).Width = 20;
-            ws.Column(C_RUN_TIME).Width = 14;
-            ws.Column(C_DOWN_TIME).Width = 14;
-            ws.Column(C_UNALLOCATED).Width = 14;
-            ws.Column(C_MATERIAL).Width = 16;
-            ws.Column(C_REJECT).Width = 14;
-            ws.Column(C_AVAIL_HRS).Width = 16;
-            ws.Column(C_AVG_SAP_CT).Width = 14;
-            ws.Column(C_AVG_ACT_CT).Width = 14;
-            ws.Column(C_TOTAL_SAP).Width = 16;
-            ws.Column(C_TOTAL_ACT).Width = 16;
-            ws.Column(C_AVAILABILITY).Width = 15;
-            ws.Column(C_PERFORMANCE).Width = 14;
-            ws.Column(C_QUALITY).Width = 12;
-            ws.Column(C_OEE).Width = 12;
+            // ── Styling & Widths ───────────────────────────────────────────────────
+            ws.Column(1).Width = 20;  // Machine
+            ws.Column(2).Width = 14;  // Run Time
+            ws.Column(3).Width = 14;  // Down Time
+            ws.Column(4).Width = 14;  // Unallocated
+            ws.Column(5).Width = 16;  // Material
+            ws.Column(6).Width = 14;  // Reject
+            ws.Column(7).Width = 16;  // Avail Hrs
+            ws.Column(8).Width = 16;  // Total SAP (hrs)
+            ws.Column(9).Width = 16;  // Total Act (hrs)
+            ws.Column(10).Width = 15; // Availability
+            ws.Column(11).Width = 14; // Performance
+            ws.Column(12).Width = 12; // Quality
+            ws.Column(13).Width = 12; // OEE
 
             ws.SheetView.FreezeRows(HEADER_ROW);
             ws.SheetView.FreezeColumns(1);
@@ -466,13 +491,17 @@ namespace CMS.Server.Services
     public sealed record OEERawRow(
         int IdMachine,
         string MachineName,
+        int IdType,
+        string Mould,
+        string Type,
+        double Shot,
         double RunTime,
         double DownTime,
         double Unallocated,
         double MaterialUsed,
         double RejectWeight,
         double AvailableHours,
-        double AvgSapCt,
-        double AvgActCt
+        double SapCt,
+        double ActCt
     );
 }
