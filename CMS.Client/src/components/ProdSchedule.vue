@@ -370,7 +370,7 @@
     
       const selectedDate = formatDate(production_date.value);
       const response = await fetch(
-        `/api/MachineLog/ExportReport?productionDate=${selectedDate}&shift=${shift.value}`,
+        `/api/MachineLog/ExportReport?production_date=${selectedDate}&shift=${shift.value}`,
         { method: 'GET' }
       );
     

@@ -6,7 +6,7 @@
       </v-col>
     </v-row>
 
-    <!-- Date Filters -->
+    <!-- Date Filters + Export Button -->
     <v-row no-gutters align="center" justify="center" class="mb-2">
       <v-col cols="12" md="4" class="px-1">
         <v-date-input v-model="startDate"
@@ -25,6 +25,17 @@
                       density="compact"
                       hide-details
                       display-format="fullDate" />
+      </v-col>
+      <v-col cols="12" md="4" class="px-1 d-flex align-center">
+        <v-btn color="success"
+               prepend-icon="mdi-microsoft-excel"
+               variant="elevated"
+               :loading="exporting"
+               :disabled="machineData.length === 0"
+               @click="exportOEEExcel"
+               class="mt-1">
+          Export Excel
+        </v-btn>
       </v-col>
     </v-row>
 
@@ -185,6 +196,7 @@
   const rejectChart = ref(null);
   const detailDialog = ref(false);
   const selectedMachine = ref(null);
+  const exporting = ref(false);
 
   const rejectData = ref([]);
   const outputData = ref([]);
@@ -208,11 +220,11 @@
   const getMetricColor = (metricType, value) => {
     const v = Number(value);
     switch ((metricType || '').toLowerCase()) {
-      case 'oee': return v >= metricTargets.oee ? '#4caf50' : '#f44336';
-      case 'performance': return v >= metricTargets.performance ? '#4caf50' : '#f44336';
+      case 'oee':          return v >= metricTargets.oee          ? '#4caf50' : '#f44336';
+      case 'performance':  return v >= metricTargets.performance  ? '#4caf50' : '#f44336';
       case 'availability': return v >= metricTargets.availability ? '#4caf50' : '#f44336';
-      case 'quality': return v >= metricTargets.quality ? '#4caf50' : '#f44336';
-      default: return '#9e9e9e';
+      case 'quality':      return v >= metricTargets.quality      ? '#4caf50' : '#f44336';
+      default:             return '#9e9e9e';
     }
   };
 
@@ -233,42 +245,51 @@
   };
 
   const tableHeaders = [
-    { title: "Machine", key: "machine_name", width: "18%" },
-    { title: "OEE (%)", key: "oee", width: "8%", align: "center" },
-    { title: "Performance (%)", key: "performance", width: "8%", align: "center" },
-    { title: "Availability (%)", key: "availability", width: "8%", align: "center" },
-    { title: "Quality (%)", key: "quality", width: "8%", align: "center" },
-    { title: "Run Time (hrs)", key: "run_time", width: "10%", align: "center" },
-    { title: "Down Time (hrs)", key: "down_time", width: "10%", align: "center" },
-    { title: "Material Used (kg)", key: "material_used", width: "10%", align: "center" },
-    { title: "Reject (kg)", key: "reject_weight", width: "10%", align: "center" },
+    { title: "Machine",           key: "machine_name",  width: "18%" },
+    { title: "OEE (%)",           key: "oee",           width: "8%",  align: "center" },
+    { title: "Performance (%)",   key: "performance",   width: "8%",  align: "center" },
+    { title: "Availability (%)",  key: "availability",  width: "8%",  align: "center" },
+    { title: "Quality (%)",       key: "quality",       width: "8%",  align: "center" },
+    { title: "Run Time (hrs)",    key: "run_time",      width: "10%", align: "center" },
+    { title: "Down Time (hrs)",   key: "down_time",     width: "10%", align: "center" },
+    { title: "Material Used (kg)",key: "material_used", width: "10%", align: "center" },
+    { title: "Reject (kg)",       key: "reject_weight", width: "10%", align: "center" },
   ];
 
   const machineData = ref([]);
   const summaryMetrics = ref([
-    { title: "Overall OEE", value: 0, type: 'oee' },
-    { title: "Performance", value: 0, type: 'performance' },
+    { title: "Overall OEE",  value: 0, type: 'oee' },
+    { title: "Performance",  value: 0, type: 'performance' },
     { title: "Availability", value: 0, type: 'availability' },
-    { title: "Quality", value: 0, type: 'quality' },
+    { title: "Quality",      value: 0, type: 'quality' },
   ]);
 
   const totalsRow = computed(() => {
     const rows = machineData.value;
     const sum = (key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
     return {
-      run_time: sum('run_time').toFixed(2),
-      down_time: sum('down_time').toFixed(2),
+      run_time:      sum('run_time').toFixed(2),
+      down_time:     sum('down_time').toFixed(2),
       material_used: sum('material_used').toFixed(2),
       reject_weight: sum('reject_weight').toFixed(2),
     };
   });
 
+  // ── Helpers ────────────────────────────────────────────────────────────────────
+
+  function formatDateParam(date) {
+    if (date instanceof Date) return date.toLocaleDateString('en-CA');
+    return date;
+  }
+
+  // ── Data fetch ────────────────────────────────────────────────────────────────
+
   const fetchOEEData = async () => {
     try {
       const params = new URLSearchParams({
-        start_date: startDate.value.toLocaleDateString("en-CA"),
-        end_date: endDate.value.toLocaleDateString("en-CA"),
-        shift: currentShift,
+        start_date: formatDateParam(startDate.value),
+        end_date:   formatDateParam(endDate.value),
+        shift:      currentShift,
       });
 
       const [oeeRes, rejectRes, outputRes, downtimeRes] = await Promise.all([
@@ -282,14 +303,14 @@
       machineData.value = Array.isArray(data)
         ? data.map(item => ({
           ...item,
-          oee: Number(item.oee || 0).toFixed(2),
-          performance: Number(item.performance || 0).toFixed(2),
+          oee:          Number(item.oee         || 0).toFixed(2),
+          performance:  Number(item.performance  || 0).toFixed(2),
           availability: Number(item.availability || 0).toFixed(2),
-          quality: Number(item.quality || 0).toFixed(2),
-          run_time: Number(item.run_time || 0),
-          down_time: Number(item.down_time || 0),
-          material_used: Number(item.material_used || 0),
-          reject_weight: Number(item.reject_weight || 0),
+          quality:      Number(item.quality      || 0).toFixed(2),
+          run_time:     Number(item.run_time     || 0),
+          down_time:    Number(item.down_time    || 0),
+          material_used:Number(item.material_used|| 0),
+          reject_weight:Number(item.reject_weight|| 0),
         }))
         : [];
 
@@ -300,17 +321,17 @@
           return validMachines.reduce((s, m) => s + (Number(m[key]) || 0), 0) / validMachines.length;
         };
         summaryMetrics.value = [
-          { title: "Overall OEE", value: Number(avg("oee").toFixed(0)), type: 'oee' },
-          { title: "Performance", value: Number(avg("performance").toFixed(0)), type: 'performance' },
+          { title: "Overall OEE",  value: Number(avg("oee").toFixed(0)),          type: 'oee' },
+          { title: "Performance",  value: Number(avg("performance").toFixed(0)),  type: 'performance' },
           { title: "Availability", value: Number(avg("availability").toFixed(0)), type: 'availability' },
-          { title: "Quality", value: Number(avg("quality").toFixed(0)), type: 'quality' },
+          { title: "Quality",      value: Number(avg("quality").toFixed(0)),      type: 'quality' },
         ];
       } else {
         summaryMetrics.value = summaryMetrics.value.map(m => ({ ...m, value: 0 }));
       }
 
-      rejectData.value = await rejectRes.json();
-      outputData.value = await outputRes.json();
+      rejectData.value  = await rejectRes.json();
+      outputData.value  = await outputRes.json();
       downtimeData.value = await downtimeRes.json();
 
       await nextTick();
@@ -319,6 +340,52 @@
       console.error("Error fetching data:", err);
     }
   };
+
+  // ── OEE Excel Export ───────────────────────────────────────────────────────────
+
+  const exportOEEExcel = async () => {
+    exporting.value = true;
+    try {
+      const params = new URLSearchParams({
+        start_date: formatDateParam(startDate.value),
+        end_date:   formatDateParam(endDate.value),
+        shift:      currentShift,
+      });
+
+      const response = await fetch(`/api/MachineLog/ExportOEE?${params}`, { method: 'GET' });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || `Export failed (HTTP ${response.status})`);
+      }
+
+      // Derive filename from the Content-Disposition header when present;
+      // fall back to a sensible default so the file always downloads with a
+      // recognisable name even when the header is absent.
+      const disposition = response.headers.get('Content-Disposition') ?? '';
+      const nameMatch   = disposition.match(/filename[^;=\n]*=["']?([^"';\n]+)/i);
+      const fileName    = nameMatch
+        ? nameMatch[1].trim()
+        : `OEE_Report_${formatDateParam(startDate.value)}_to_${formatDateParam(endDate.value)}.xlsx`;
+
+      const blob = await response.blob();
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href     = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(url); }, 200);
+    } catch (err) {
+      console.error('[OEE Export]', err);
+      // Surface error visibly so the user knows the download failed
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      exporting.value = false;
+    }
+  };
+
+  // ── Chart logic (unchanged from original) ──────────────────────────────────────
 
   const createDoughnutChart = (ctx, value, metricType) => {
     const color = getMetricColor(metricType, value);
