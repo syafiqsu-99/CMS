@@ -405,257 +405,263 @@ namespace CMS.server.Services
 
             if (start_date == end_date && start_date == productionDate)
             {
+                // ── LIVE / TODAY ──────────────────────────────────────────────────────
                 sql = @"
-            WITH CombinedLogs AS (
-                SELECT 1 AS id_machine, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_1
-                UNION ALL SELECT 2, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_2
-                UNION ALL SELECT 3, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_3
-                UNION ALL SELECT 4, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_4
-                UNION ALL SELECT 5, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_5
-                UNION ALL SELECT 6, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_6
-                UNION ALL SELECT 7, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_7
-                UNION ALL SELECT 8, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_8
-                UNION ALL SELECT 9, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_9
-                UNION ALL SELECT 10, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_10
-                UNION ALL SELECT 11, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_11
-                UNION ALL SELECT 12, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_12
-                UNION ALL SELECT 13, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_13
-                UNION ALL SELECT 14, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_14
-                UNION ALL SELECT 15, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_15
-                UNION ALL SELECT 16, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_16
-                UNION ALL SELECT 17, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_17
-                UNION ALL SELECT 18, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_18
-                UNION ALL SELECT 19, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_19
-                UNION ALL SELECT 20, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_20
-                UNION ALL SELECT 21, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_21
-                UNION ALL SELECT 22, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_22
-                UNION ALL SELECT 23, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_23
-                UNION ALL SELECT 24, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_24
-                UNION ALL SELECT 25, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_25
-            ),
-            MachineTotal AS (
-                SELECT id_machine, SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE()))) / 3600.0 AS available_hours
-                FROM CombinedLogs
-                WHERE production_date = @today AND shift = @shift
-                GROUP BY id_machine
-            ),
-            MachineAgg AS (
-                SELECT
-                    cl.id_machine,
-                    cl.machine_name,
-                    cl.id_type,
-                    cl.mould,
-                    SUM(cl.shot) as shot,
-                    SUM(CASE WHEN cl.category = 'PRODUCTION RUNNING' AND cl.status_start = 1
-                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0 ELSE 0 END) AS run_time,
-                    SUM(CASE WHEN cl.category <> 'PRODUCTION RUNNING' AND cl.category IS NOT NULL
-                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0 ELSE 0 END) AS down_time,
-                    SUM(CASE WHEN cl.category IS NULL
-                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0 ELSE 0 END) AS unallocated,
-                    AVG(NULLIF(cl.act_ct, 0)) AS act_ct
-                FROM CombinedLogs cl
-                WHERE cl.production_date = @today AND cl.shift = @shift
-                GROUP BY cl.id_machine, cl.machine_name, cl.id_type, cl.mould
-            ),
-            WithSAP AS (
-                SELECT
-                    m.*,
-                    COALESCE(s.sap_ct, 0) AS sap_ct,
-                    COALESCE((m.shot * s.qty_perct * s.part_weight) / 1000.0, 0) AS material_used,
-                    COALESCE((m.shot * s.sap_ct) / 3600.0, 0) AS total_sap_time,
-                    COALESCE((m.shot * m.act_ct) / 3600.0, 0) AS total_actual_time
-                FROM MachineAgg m
-                LEFT JOIN sap s
-                    ON s.id_type = m.id_type AND s.mould = m.mould
-            ),
-            WithReject AS (
-                SELECT
-                    w.*,
-                    COALESCE(r.reject_black_dot + r.reject_burst + r.reject_lumpy + r.reject_others + r.reject_panelling, 0) AS reject_weight
-                FROM WithSAP w
-                LEFT JOIN reject r
-                    ON r.id_machine = w.id_machine
-                    AND r.id_type = w.id_type
-                    AND r.mould = w.mould
-                    AND r.production_date = @today
-                    AND r.shift = @shift
-            ),
-            MachineSummary AS (
-                SELECT
-                    w.id_machine,
-                    w.machine_name,
-                    SUM(w.run_time) AS run_time,
-                    SUM(w.down_time) AS down_time,
-                    SUM(w.unallocated) AS unallocated,
-                    SUM(w.material_used) AS material_used,
-                    SUM(w.reject_weight) AS reject_weight,
-                    SUM(w.total_sap_time) AS total_sap_time,
-                    SUM(w.total_actual_time) AS total_actual_time,
-                    MAX(mt.available_hours) AS available_hours
-                FROM WithReject w
-                LEFT JOIN MachineTotal mt ON mt.id_machine = w.id_machine
-                GROUP BY w.id_machine, w.machine_name
-            )
-            SELECT
-                id_machine,
-                machine_name,
-                run_time,
-                down_time,
-                unallocated,
-                material_used,
-                reject_weight,
-                COALESCE(available_hours, 0) AS available_hours,
+                    WITH CombinedLogs AS (
+                        SELECT 1 AS id_machine, machine_name, id_type, mould, start, finish,
+                               category, shot, act_ct, shift, production_date, status_start
+                        FROM machine_log_1
+                        UNION ALL SELECT 2,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_2
+                        UNION ALL SELECT 3,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_3
+                        UNION ALL SELECT 4,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_4
+                        UNION ALL SELECT 5,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_5
+                        UNION ALL SELECT 6,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_6
+                        UNION ALL SELECT 7,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_7
+                        UNION ALL SELECT 8,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_8
+                        UNION ALL SELECT 9,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_9
+                        UNION ALL SELECT 10, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_10
+                        UNION ALL SELECT 11, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_11
+                        UNION ALL SELECT 12, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_12
+                        UNION ALL SELECT 13, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_13
+                        UNION ALL SELECT 14, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_14
+                        UNION ALL SELECT 15, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_15
+                        UNION ALL SELECT 16, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_16
+                        UNION ALL SELECT 17, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_17
+                        UNION ALL SELECT 18, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_18
+                        UNION ALL SELECT 19, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_19
+                        UNION ALL SELECT 20, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_20
+                        UNION ALL SELECT 21, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_21
+                        UNION ALL SELECT 22, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_22
+                        UNION ALL SELECT 23, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_23
+                        UNION ALL SELECT 24, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_24
+                        UNION ALL SELECT 25, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_25
+                    ),
+                    MachineAvailable AS (
+                        SELECT
+                            id_machine,
+                            SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE()))) / 3600.0 AS available_hours
+                        FROM CombinedLogs
+                        WHERE production_date = @today AND shift = @shift
+                        GROUP BY id_machine
+                    ),
+                    MachineAgg AS (
+                        SELECT
+                            cl.id_machine,
+                            cl.machine_name,
+                            cl.id_type,
+                            cl.mould,
+                            SUM(cl.shot) AS shot,
+                            SUM(CASE WHEN cl.category = 'PRODUCTION RUNNING' AND cl.status_start = 1
+                                     THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                                     ELSE 0 END) AS run_time,
+                            SUM(CASE WHEN cl.category <> 'PRODUCTION RUNNING' AND cl.category IS NOT NULL
+                                     THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                                     ELSE 0 END) AS down_time,
+                            SUM(CASE WHEN cl.category IS NULL
+                                     THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                                     ELSE 0 END) AS unallocated,
+                            SUM(CAST(cl.shot AS FLOAT) * COALESCE(NULLIF(cl.act_ct, 0), 0)) / 3600.0 AS total_actual_time
+                        FROM CombinedLogs cl
+                        WHERE cl.production_date = @today AND cl.shift = @shift
+                        GROUP BY cl.id_machine, cl.machine_name, cl.id_type, cl.mould
+                    ),
+                    WithSAP AS (
+                        SELECT
+                            m.id_machine, m.machine_name, m.id_type, m.mould,
+                            m.shot, m.run_time, m.down_time, m.unallocated,
+                            COALESCE((CAST(m.shot AS FLOAT) * COALESCE(s.sap_ct, 0)) / 3600.0, 0) AS total_sap_time,
+                            COALESCE(m.total_actual_time, 0) AS total_actual_time,
+                            COALESCE((CAST(m.shot AS FLOAT) * COALESCE(s.qty_perct, 0) * COALESCE(s.part_weight, 0)) / 1000.0, 0) AS material_used
+                        FROM MachineAgg m
+                        LEFT JOIN sap s ON s.id_type = m.id_type AND s.mould = m.mould
+                    ),
+                    WithReject AS (
+                        SELECT
+                            ws.*,
+                            COALESCE(r.reject_black_dot + r.reject_burst + r.reject_lumpy
+                                   + r.reject_others + r.reject_panelling, 0) AS reject_weight
+                        FROM WithSAP ws
+                        LEFT JOIN reject r
+                            ON r.id_machine = ws.id_machine
+                           AND r.id_type    = ws.id_type
+                           AND r.mould      = ws.mould
+                           AND r.production_date = @today
+                           AND r.shift      = @shift
+                    ),
+                    MachineSummary AS (
+                        SELECT
+                            w.id_machine,
+                            w.machine_name,
+                            SUM(w.run_time)          AS run_time,
+                            SUM(w.down_time)         AS down_time,
+                            SUM(w.unallocated)       AS unallocated,
+                            SUM(w.material_used)     AS material_used,
+                            SUM(w.reject_weight)     AS reject_weight,
+                            SUM(w.total_sap_time)    AS total_sap_time,
+                            SUM(w.total_actual_time) AS total_actual_time,
+                            MAX(ma.available_hours)  AS available_hours
+                        FROM WithReject w
+                        LEFT JOIN MachineAvailable ma ON ma.id_machine = w.id_machine
+                        GROUP BY w.id_machine, w.machine_name
+                    )
+                    SELECT
+                        id_machine,
+                        machine_name,
+                        run_time,
+                        down_time,
+                        unallocated,
+                        material_used,
+                        reject_weight,
+                        COALESCE(available_hours, 0) AS available_hours,
 
-                CASE WHEN COALESCE(available_hours, 0) = 0 THEN 0
-                     ELSE (run_time * 1.0 / available_hours) * 100
-                END AS availability,
+                        CASE WHEN COALESCE(available_hours, 0) = 0 THEN 0.0
+                             ELSE (run_time * 1.0 / available_hours) * 100.0
+                        END AS availability,
 
-                CASE WHEN total_actual_time = 0 THEN 0
-                     ELSE (total_sap_time * 1.0 / total_actual_time) * 100
-                END AS performance,
+                        CASE WHEN total_actual_time = 0 THEN 0.0
+                             ELSE (total_sap_time * 1.0 / total_actual_time) * 100.0
+                        END AS performance,
 
-                CASE WHEN material_used = 0 THEN 0
-                     ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100
-                END AS quality,
+                        CASE WHEN material_used = 0 THEN 0.0
+                             ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100.0
+                        END AS quality,
 
-                CASE WHEN COALESCE(available_hours, 0) = 0 OR total_actual_time = 0 OR material_used = 0 THEN 0
-                     ELSE
-                        (run_time * 1.0 / available_hours) *
-                        (total_sap_time * 1.0 / total_actual_time) *
-                        ((material_used - reject_weight) * 1.0 / material_used) * 100
-                END AS oee
+                        CASE WHEN COALESCE(available_hours, 0) = 0
+                               OR total_actual_time = 0
+                               OR material_used = 0 THEN 0.0
+                             ELSE
+                                 (run_time           * 1.0 / available_hours)   *
+                                 (total_sap_time     * 1.0 / total_actual_time) *
+                                 ((material_used - reject_weight) * 1.0 / material_used) * 100.0
+                        END AS oee
 
-            FROM MachineSummary
-            ORDER BY id_machine;";
+                    FROM MachineSummary
+                    ORDER BY id_machine;";
             }
             else
             {
                 sql = @"
-            WITH AllDates AS (
-                SELECT DATEADD(DAY, n.n, @start_date) AS d
-                FROM (
-                    SELECT TOP (DATEDIFF(DAY, @start_date, @end_date) + 1)
-                            ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
-                    FROM sys.all_objects
-                ) n
-            ),
-            ShiftDates AS (
-                SELECT d.d AS production_date, s.shift
-                FROM AllDates d
-                CROSS JOIN (SELECT 1 AS shift UNION ALL SELECT 2) s
-            ),
-            EffectiveCalendar AS (
-                SELECT
-                    sd.production_date,
-                    sd.shift,
-                    CASE
-                        WHEN EXISTS (
-                            SELECT 1 FROM calendar cx
-                            WHERE cx.production_date = sd.production_date AND cx.shift = sd.shift
-                        )
-                        THEN COALESCE((
-                            SELECT SUM(c.planned_hours)
-                            FROM calendar c
-                            WHERE c.production_date = sd.production_date AND c.shift = sd.shift
-                        ), 0)
-                        ELSE 12
-                    END AS planned_hours
-                FROM ShiftDates sd
-            ),
-            ReportAgg AS (
-                SELECT
-                    r.id_machine,
-                    r.machine_name,
-                    r.id_type,
-                    r.mould,
-                    r.production_date,
-                    r.shift,
-                    COALESCE(SUM(r.shot), 0) AS shot,
-                    COALESCE(SUM(r.production_running), 0) AS run_time,
-                    COALESCE(SUM(
-                        COALESCE(r.change_full_set, 0) +
-                        COALESCE(r.change_half_set, 0) +
-                        COALESCE(r.change_parts, 0)   +
-                        COALESCE(r.maintenance_dt, 0) +
-                        COALESCE(r.technician_dt, 0)  +
-                        COALESCE(r.production_dt, 0)
-                    ), 0) AS down_time,
-                    COALESCE(SUM(r.unallocated), 0) AS unallocated,
-                    COALESCE(SUM(r.material_used), 0) AS material_used,
-                    COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
-                    SUM((COALESCE(r.shot, 0) * COALESCE(r.sap_ct, 0)) / 3600.0) AS total_sap_time,
-                    SUM((COALESCE(r.shot, 0) * COALESCE(r.act_ct, 0)) / 3600.0) AS total_actual_time
-                FROM report r
-                INNER JOIN EffectiveCalendar ec
-                    ON  ec.production_date = r.production_date
-                    AND ec.shift           = r.shift
-                    AND ec.planned_hours   > 0
-                WHERE r.production_date BETWEEN @start_date AND @end_date
-                    AND r.id_machine <> 26
-                GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould, r.production_date, r.shift
-            ),
-            MachineAvailable AS (
-                SELECT ra.id_machine, SUM(ec2.planned_hours) AS available_hours
-                FROM (SELECT DISTINCT id_machine, production_date, shift FROM ReportAgg) ra
-                INNER JOIN EffectiveCalendar ec2
-                    ON ec2.production_date = ra.production_date
-                   AND ec2.shift           = ra.shift
-                GROUP BY ra.id_machine
-            ),
-            MachineSummary AS (
-                SELECT
-                    ra.id_machine,
-                    ra.machine_name,
-                    SUM(ra.run_time)          AS run_time,
-                    SUM(ra.down_time)         AS down_time,
-                    SUM(ra.unallocated)       AS unallocated,
-                    SUM(ra.material_used)     AS material_used,
-                    SUM(ra.reject_weight)     AS reject_weight,
-                    SUM(ra.total_sap_time)    AS total_sap_time,
-                    SUM(ra.total_actual_time) AS total_actual_time,
-                    MAX(ma.available_hours)   AS available_hours
-                FROM ReportAgg ra
-                LEFT JOIN MachineAvailable ma ON ma.id_machine = ra.id_machine
-                GROUP BY ra.id_machine, ra.machine_name
-            )
-            SELECT
-                id_machine,
-                machine_name,
-                run_time,
-                down_time,
-                unallocated,
-                material_used,
-                reject_weight,
-                COALESCE(available_hours, 0) AS available_hours,
+                    WITH AllDates AS (
+                        SELECT DATEADD(DAY, n.n, @start_date) AS d
+                        FROM (
+                            SELECT TOP (DATEDIFF(DAY, @start_date, @end_date) + 1)
+                                   ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+                            FROM sys.all_objects
+                        ) n
+                    ),
+                    ShiftDates AS (
+                        SELECT d.d AS production_date, s.shift
+                        FROM AllDates d
+                        CROSS JOIN (SELECT 1 AS shift UNION ALL SELECT 2) s
+                    ),
+                    EffectiveCalendar AS (
+                        SELECT
+                            sd.production_date,
+                            sd.shift,
+                            CASE
+                                WHEN EXISTS (
+                                    SELECT 1 FROM calendar cx
+                                    WHERE cx.production_date = sd.production_date AND cx.shift = sd.shift
+                                )
+                                THEN COALESCE((
+                                    SELECT SUM(c.planned_hours) FROM calendar c
+                                    WHERE c.production_date = sd.production_date AND c.shift = sd.shift
+                                ), 0)
+                                ELSE 12
+                            END AS planned_hours
+                        FROM ShiftDates sd
+                    ),
+                    ReportAgg AS (
+                        SELECT
+                            r.id_machine,
+                            r.machine_name,
+                            r.id_type,
+                            r.mould,
+                            r.production_date,
+                            r.shift,
+                            COALESCE(SUM(r.shot), 0) AS shot,
+                            COALESCE(SUM(r.production_running), 0) AS run_time,
+                            COALESCE(SUM(
+                                COALESCE(r.change_full_set,  0) +
+                                COALESCE(r.change_half_set,  0) +
+                                COALESCE(r.change_parts,     0) +
+                                COALESCE(r.maintenance_dt,   0) +
+                                COALESCE(r.technician_dt,    0) +
+                                COALESCE(r.production_dt,    0)
+                            ), 0) AS down_time,
+                            COALESCE(SUM(r.unallocated), 0) AS unallocated,
+                            COALESCE(SUM(r.material_used), 0) AS material_used,
+                            COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
+                            -- FIX: total_sap_time and total_actual_time stored as proper sums
+                            SUM(CAST(COALESCE(r.shot, 0) AS FLOAT) * COALESCE(r.sap_ct, 0)) / 3600.0 AS total_sap_time,
+                            SUM(CAST(COALESCE(r.shot, 0) AS FLOAT) * COALESCE(r.act_ct, 0)) / 3600.0 AS total_actual_time
+                        FROM report r
+                        INNER JOIN EffectiveCalendar ec
+                            ON  ec.production_date = r.production_date
+                            AND ec.shift           = r.shift
+                            AND ec.planned_hours   > 0
+                        WHERE r.production_date BETWEEN @start_date AND @end_date
+                          AND r.id_machine <> 26
+                        GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould, r.production_date, r.shift
+                    ),
+                    MachineAvailable AS (
+                        SELECT ra.id_machine, SUM(ec2.planned_hours) AS available_hours
+                        FROM (SELECT DISTINCT id_machine, production_date, shift FROM ReportAgg) ra
+                        INNER JOIN EffectiveCalendar ec2
+                            ON ec2.production_date = ra.production_date
+                           AND ec2.shift           = ra.shift
+                        GROUP BY ra.id_machine
+                    ),
+                    MachineSummary AS (
+                        SELECT
+                            ra.id_machine,
+                            ra.machine_name,
+                            SUM(ra.run_time)          AS run_time,
+                            SUM(ra.down_time)         AS down_time,
+                            SUM(ra.unallocated)       AS unallocated,
+                            SUM(ra.material_used)     AS material_used,
+                            SUM(ra.reject_weight)     AS reject_weight,
+                            SUM(ra.total_sap_time)    AS total_sap_time,
+                            SUM(ra.total_actual_time) AS total_actual_time,
+                            MAX(ma.available_hours)   AS available_hours
+                        FROM ReportAgg ra
+                        LEFT JOIN MachineAvailable ma ON ma.id_machine = ra.id_machine
+                        GROUP BY ra.id_machine, ra.machine_name
+                    )
+                    SELECT
+                        id_machine,
+                        machine_name,
+                        run_time,
+                        down_time,
+                        unallocated,
+                        material_used,
+                        reject_weight,
+                        COALESCE(available_hours, 0) AS available_hours,
 
-                CASE
-                    WHEN COALESCE(available_hours, 0) = 0 THEN 0
-                    ELSE (run_time * 1.0 / available_hours) * 100
-                END AS availability,
+                        CASE WHEN COALESCE(available_hours, 0) = 0 THEN 0.0
+                             ELSE (run_time * 1.0 / available_hours) * 100.0
+                        END AS availability,
 
-                CASE
-                    WHEN total_actual_time = 0 THEN 0
-                    ELSE (total_sap_time * 1.0 / total_actual_time) * 100
-                END AS performance,
+                        CASE WHEN total_actual_time = 0 THEN 0.0
+                             ELSE (total_sap_time * 1.0 / total_actual_time) * 100.0
+                        END AS performance,
 
-                CASE
-                    WHEN material_used = 0 THEN 0
-                    WHEN ((material_used - reject_weight) * 1.0 / material_used) < 0 THEN 0
-                    ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100
-                END AS quality,
+                        CASE WHEN material_used = 0 THEN 0.0
+                             WHEN ((material_used - reject_weight) * 1.0 / material_used) < 0 THEN 0.0
+                             ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100.0
+                        END AS quality,
 
-                CASE
-                    WHEN COALESCE(available_hours, 0) = 0
-                        OR total_actual_time = 0
-                        OR material_used     = 0 THEN 0
-                    ELSE
-                        (run_time         * 1.0 / available_hours)   *
-                        (total_sap_time   * 1.0 / total_actual_time) *
-                        ((material_used - reject_weight) * 1.0 / material_used) * 100
-                END AS oee
+                        CASE WHEN COALESCE(available_hours, 0) = 0
+                               OR total_actual_time = 0
+                               OR material_used = 0 THEN 0.0
+                             ELSE
+                                 (run_time           * 1.0 / available_hours)   *
+                                 (total_sap_time     * 1.0 / total_actual_time) *
+                                 ((material_used - reject_weight) * 1.0 / material_used) * 100.0
+                        END AS oee
 
-            FROM MachineSummary
-            ORDER BY id_machine;";
+                    FROM MachineSummary
+                    ORDER BY id_machine;";
             }
 
             var result = new List<object>();
@@ -673,15 +679,15 @@ namespace CMS.server.Services
                 {
                     id_machine = Convert.ToInt32(reader["id_machine"]),
                     machine_name = Convert.ToString(reader["machine_name"]),
-                    run_time = Convert.ToSingle(reader["run_time"]),
-                    down_time = Convert.ToSingle(reader["down_time"]),
-                    unallocated = Convert.ToSingle(reader["unallocated"]),
-                    material_used = Convert.ToSingle(reader["material_used"]),
-                    reject_weight = Convert.ToSingle(reader["reject_weight"]),
-                    availability = Convert.ToSingle(reader["availability"]),
-                    performance = Convert.ToSingle(reader["performance"]),
-                    quality = Convert.ToSingle(reader["quality"]),
-                    oee = Convert.ToSingle(reader["oee"])
+                    run_time = Convert.ToDouble(reader["run_time"]),
+                    down_time = Convert.ToDouble(reader["down_time"]),
+                    unallocated = Convert.ToDouble(reader["unallocated"]),
+                    material_used = Convert.ToDouble(reader["material_used"]),
+                    reject_weight = Convert.ToDouble(reader["reject_weight"]),
+                    availability = Convert.ToDouble(reader["availability"]),
+                    performance = Convert.ToDouble(reader["performance"]),
+                    quality = Convert.ToDouble(reader["quality"]),
+                    oee = Convert.ToDouble(reader["oee"])
                 });
             }
             return result;
@@ -694,7 +700,7 @@ namespace CMS.server.Services
 
                 SELECT TOP 10
 	                reject.id_type,
-                reject.mould
+                    reject.mould,
                     type, 
                     COALESCE(SUM(total_weight), 0) AS total_reject
                 FROM reject
@@ -865,191 +871,204 @@ namespace CMS.server.Services
             if (start_date == end_date && start_date == productionDate)
             {
                 sql = @"
-            WITH CombinedLogs AS (
-                SELECT 1  AS id_machine, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_1
-                UNION ALL SELECT 2,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_2
-                UNION ALL SELECT 3,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_3
-                UNION ALL SELECT 4,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_4
-                UNION ALL SELECT 5,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_5
-                UNION ALL SELECT 6,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_6
-                UNION ALL SELECT 7,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_7
-                UNION ALL SELECT 8,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_8
-                UNION ALL SELECT 9,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_9
-                UNION ALL SELECT 10, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_10
-                UNION ALL SELECT 11, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_11
-                UNION ALL SELECT 12, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_12
-                UNION ALL SELECT 13, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_13
-                UNION ALL SELECT 14, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_14
-                UNION ALL SELECT 15, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_15
-                UNION ALL SELECT 16, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_16
-                UNION ALL SELECT 17, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_17
-                UNION ALL SELECT 18, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_18
-                UNION ALL SELECT 19, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_19
-                UNION ALL SELECT 20, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_20
-                UNION ALL SELECT 21, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_21
-                UNION ALL SELECT 22, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_22
-                UNION ALL SELECT 23, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_23
-                UNION ALL SELECT 24, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_24
-                UNION ALL SELECT 25, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_25
-            ),
-            MachineTotal AS (
-                SELECT id_machine, SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE()))) / 3600.0 AS available_hours
-                FROM CombinedLogs
-                WHERE production_date = @today AND shift = @shift
-                GROUP BY id_machine
-            ),
-            MachineAgg AS (
-                SELECT
-                    cl.id_machine, cl.machine_name, cl.id_type, cl.mould,
-                    SUM(cl.shot)  AS shot,
-                    SUM(CASE WHEN cl.category = 'PRODUCTION RUNNING' AND cl.status_start = 1
-                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
-                             ELSE 0 END) AS run_time,
-                    SUM(CASE WHEN cl.category <> 'PRODUCTION RUNNING' AND cl.category IS NOT NULL
-                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
-                             ELSE 0 END) AS down_time,
-                    SUM(CASE WHEN cl.category IS NULL
-                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
-                             ELSE 0 END) AS unallocated,
-                    AVG(NULLIF(cl.act_ct, 0)) AS act_ct
-                FROM CombinedLogs cl
-                WHERE cl.production_date = @today AND cl.shift = @shift
-                GROUP BY cl.id_machine, cl.machine_name, cl.id_type, cl.mould
-            ),
-            WithSAP AS (
-                SELECT
-                    m.id_machine, m.machine_name, m.id_type, m.mould,
-                    m.shot, m.run_time, m.down_time, m.unallocated,
-                    s.type,
-                    COALESCE((m.shot * s.qty_perct * s.part_weight) / 1000.0, 0) AS material_used,
-                    COALESCE(s.sap_ct, 0)  AS sap_ct,
-                    COALESCE(m.act_ct, 0)  AS act_ct
-                FROM MachineAgg m
-                LEFT JOIN sap s ON s.id_type = m.id_type AND s.mould = m.mould
-            ),
-            WithReject AS (
-                SELECT
-                    ws.id_machine, ws.machine_name, ws.id_type, ws.mould, ws.type,
-                    ws.shot, ws.run_time, ws.down_time, ws.unallocated, ws.material_used,
-                    ws.sap_ct, ws.act_ct,
-                    COALESCE(r.reject_black_dot + r.reject_burst + r.reject_lumpy
-                           + r.reject_others + r.reject_panelling, 0) AS reject_weight
-                FROM WithSAP ws
-                LEFT JOIN reject r
-                    ON r.id_machine = ws.id_machine 
-                   AND r.id_type = ws.id_type 
-                   AND r.mould = ws.mould
-                   AND r.production_date = @today AND r.shift = @shift
-            )
-            SELECT
-                w.id_machine,
-                w.machine_name,
-                COALESCE(w.id_type, 0) AS id_type,
-                COALESCE(w.mould, '')  AS mould,
-                COALESCE(w.type, '')   AS type,
-                SUM(w.shot)         AS shot,
-                SUM(w.run_time)     AS run_time,
-                SUM(w.down_time)    AS down_time,
-                SUM(w.unallocated)  AS unallocated,
-                SUM(w.material_used) AS material_used,
-                SUM(w.reject_weight) AS reject_weight,
-                MAX(mt.available_hours) AS available_hours,
-                AVG(w.sap_ct)       AS sap_ct,
-                AVG(w.act_ct)       AS act_ct
-            FROM WithReject w
-            LEFT JOIN MachineTotal mt ON mt.id_machine = w.id_machine
-            GROUP BY w.id_machine, w.machine_name, w.id_type, w.mould, w.type
-            ORDER BY w.id_machine, w.id_type, w.mould;";
+                    WITH CombinedLogs AS (
+                        SELECT 1  AS id_machine, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_1
+                        UNION ALL SELECT 2,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_2
+                        UNION ALL SELECT 3,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_3
+                        UNION ALL SELECT 4,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_4
+                        UNION ALL SELECT 5,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_5
+                        UNION ALL SELECT 6,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_6
+                        UNION ALL SELECT 7,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_7
+                        UNION ALL SELECT 8,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_8
+                        UNION ALL SELECT 9,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_9
+                        UNION ALL SELECT 10, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_10
+                        UNION ALL SELECT 11, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_11
+                        UNION ALL SELECT 12, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_12
+                        UNION ALL SELECT 13, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_13
+                        UNION ALL SELECT 14, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_14
+                        UNION ALL SELECT 15, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_15
+                        UNION ALL SELECT 16, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_16
+                        UNION ALL SELECT 17, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_17
+                        UNION ALL SELECT 18, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_18
+                        UNION ALL SELECT 19, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_19
+                        UNION ALL SELECT 20, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_20
+                        UNION ALL SELECT 21, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_21
+                        UNION ALL SELECT 22, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_22
+                        UNION ALL SELECT 23, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_23
+                        UNION ALL SELECT 24, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_24
+                        UNION ALL SELECT 25, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_25
+                    ),
+                    MachineAvailable AS (
+                        SELECT id_machine,
+                               SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE()))) / 3600.0 AS available_hours
+                        FROM CombinedLogs
+                        WHERE production_date = @today AND shift = @shift
+                        GROUP BY id_machine
+                    ),
+                    MachineAgg AS (
+                        SELECT
+                            cl.id_machine, cl.machine_name, cl.id_type, cl.mould,
+                            SUM(cl.shot) AS shot,
+                            SUM(CASE WHEN cl.category = 'PRODUCTION RUNNING' AND cl.status_start = 1
+                                     THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                                     ELSE 0 END) AS run_time,
+                            SUM(CASE WHEN cl.category <> 'PRODUCTION RUNNING' AND cl.category IS NOT NULL
+                                     THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                                     ELSE 0 END) AS down_time,
+                            SUM(CASE WHEN cl.category IS NULL
+                                     THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                                     ELSE 0 END) AS unallocated,
+                            SUM(CAST(cl.shot AS FLOAT) * COALESCE(NULLIF(cl.act_ct, 0), 0)) / 3600.0 AS total_actual_time
+                        FROM CombinedLogs cl
+                        WHERE cl.production_date = @today AND cl.shift = @shift
+                        GROUP BY cl.id_machine, cl.machine_name, cl.id_type, cl.mould
+                    ),
+                    WithSAP AS (
+                        SELECT
+                            m.id_machine, m.machine_name, m.id_type, m.mould,
+                            m.shot, m.run_time, m.down_time, m.unallocated,
+                            s.type,
+                            COALESCE((CAST(m.shot AS FLOAT) * COALESCE(s.qty_perct, 0) * COALESCE(s.part_weight, 0)) / 1000.0, 0) AS material_used,
+                            COALESCE(s.sap_ct, 0)  AS sap_ct,
+                            COALESCE(NULLIF(s.sap_ct, 0) * CAST(m.shot AS FLOAT) / 3600.0, 0) AS total_sap_time,
+                            m.total_actual_time
+                        FROM MachineAgg m
+                        LEFT JOIN sap s ON s.id_type = m.id_type AND s.mould = m.mould
+                    ),
+                    WithReject AS (
+                        SELECT
+                            ws.id_machine, ws.machine_name, ws.id_type, ws.mould, ws.type,
+                            ws.shot, ws.run_time, ws.down_time, ws.unallocated,
+                            ws.material_used, ws.sap_ct,
+                            ws.total_sap_time, ws.total_actual_time,
+                            COALESCE(r.reject_black_dot + r.reject_burst + r.reject_lumpy
+                                   + r.reject_others + r.reject_panelling, 0) AS reject_weight
+                        FROM WithSAP ws
+                        LEFT JOIN reject r
+                            ON r.id_machine = ws.id_machine
+                           AND r.id_type    = ws.id_type
+                           AND r.mould      = ws.mould
+                           AND r.production_date = @today
+                           AND r.shift      = @shift
+                    )
+                    SELECT
+                        w.id_machine,
+                        w.machine_name,
+                        COALESCE(w.id_type, 0)   AS id_type,
+                        COALESCE(w.mould,   '')  AS mould,
+                        COALESCE(w.type,    '')  AS type,
+                        SUM(w.shot)              AS shot,
+                        SUM(w.run_time)          AS run_time,
+                        SUM(w.down_time)         AS down_time,
+                        SUM(w.unallocated)       AS unallocated,
+                        SUM(w.material_used)     AS material_used,
+                        SUM(w.reject_weight)     AS reject_weight,
+                        MAX(mt.available_hours)  AS available_hours,
+                        CASE WHEN SUM(w.shot) = 0 THEN 0
+                             ELSE SUM(w.total_sap_time) / SUM(w.shot) * 3600.0
+                        END AS sap_ct,
+                        CASE WHEN SUM(w.shot) = 0 THEN 0
+                             ELSE SUM(w.total_actual_time) / SUM(w.shot) * 3600.0
+                        END AS act_ct,
+                        SUM(w.total_sap_time)    AS total_sap_time,
+                        SUM(w.total_actual_time) AS total_actual_time
+                    FROM WithReject w
+                    LEFT JOIN MachineAvailable mt ON mt.id_machine = w.id_machine
+                    GROUP BY w.id_machine, w.machine_name, w.id_type, w.mould, w.type
+                    ORDER BY w.id_machine, w.id_type, w.mould;";
             }
             else
             {
                 sql = @"
-            WITH AllDates AS (
-                SELECT DATEADD(DAY, n.n, @start_date) AS d
-                FROM (
-                    SELECT TOP (DATEDIFF(DAY, @start_date, @end_date) + 1)
-                           ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
-                    FROM sys.all_objects
-                ) n
-            ),
-            ShiftDates AS (
-                SELECT d.d AS production_date, s.shift
-                FROM AllDates d
-                CROSS JOIN (SELECT 1 AS shift UNION ALL SELECT 2) s
-            ),
-            EffectiveCalendar AS (
-                SELECT
-                    sd.production_date, sd.shift,
-                    CASE
-                        WHEN EXISTS (SELECT 1 FROM calendar cx
-                                     WHERE cx.production_date = sd.production_date
-                                       AND cx.shift = sd.shift)
-                        THEN COALESCE((SELECT SUM(c.planned_hours) FROM calendar c
-                                       WHERE c.production_date = sd.production_date
-                                         AND c.shift = sd.shift), 0)
-                        ELSE 12
-                    END AS planned_hours
-                FROM ShiftDates sd
-            ),
-            ReportAgg AS (
-                SELECT
-                    r.id_machine, r.machine_name, r.id_type, r.mould, r.production_date, r.shift,
-                    MAX(s.type) AS type,
-                    COALESCE(SUM(r.shot), 0) AS shot,
-                    COALESCE(SUM(r.production_running), 0) AS run_time,
-                    COALESCE(SUM(
-                        COALESCE(r.change_full_set,  0) + COALESCE(r.change_half_set, 0) +
-                        COALESCE(r.change_parts,     0) + COALESCE(r.maintenance_dt,  0) +
-                        COALESCE(r.technician_dt,    0) + COALESCE(r.production_dt,   0)
-                    ), 0) AS down_time,
-                    COALESCE(SUM(r.unallocated), 0) AS unallocated,
-                    COALESCE(SUM(r.material_used), 0) AS material_used,
-                    COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
-                    AVG(COALESCE(r.sap_ct, 0)) AS sap_ct,
-                    CASE WHEN SUM(r.shot) = 0 THEN AVG(COALESCE(r.act_ct, 0))
-                         ELSE SUM(r.shot * COALESCE(r.act_ct, 0)) / SUM(r.shot) END AS act_ct
-                FROM report r
-                INNER JOIN EffectiveCalendar ec
-                    ON ec.production_date = r.production_date
-                   AND ec.shift           = r.shift
-                   AND ec.planned_hours   > 0
-                LEFT JOIN sap s ON s.id_type = r.id_type AND s.mould = r.mould
-                WHERE r.production_date BETWEEN @start_date AND @end_date
-                  AND r.id_machine <> 26
-                GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould, r.production_date, r.shift
-            ),
-            MachineAvailable AS (
-                SELECT ra.id_machine, SUM(ec2.planned_hours) AS available_hours
-                FROM (SELECT DISTINCT id_machine, production_date, shift FROM ReportAgg) ra
-                INNER JOIN EffectiveCalendar ec2
-                    ON ec2.production_date = ra.production_date
-                   AND ec2.shift           = ra.shift
-                GROUP BY ra.id_machine
-            )
-            SELECT
-                ra.id_machine,
-                ra.machine_name,
-                COALESCE(ra.id_type, 0) AS id_type,
-                COALESCE(ra.mould, '')  AS mould,
-                COALESCE(ra.type, '')   AS type,
-                SUM(ra.shot)          AS shot,
-                SUM(ra.run_time)      AS run_time,
-                SUM(ra.down_time)     AS down_time,
-                SUM(ra.unallocated)   AS unallocated,
-                SUM(ra.material_used) AS material_used,
-                SUM(ra.reject_weight) AS reject_weight,
-                COALESCE(MAX(ma.available_hours), 0) AS available_hours,
-                AVG(ra.sap_ct)         AS sap_ct,
-                CASE WHEN SUM(ra.shot) = 0 THEN AVG(ra.act_ct)
-                     ELSE SUM(ra.shot * ra.act_ct) / SUM(ra.shot) END AS act_ct
-            FROM ReportAgg ra
-            LEFT JOIN MachineAvailable ma ON ma.id_machine = ra.id_machine
-            GROUP BY ra.id_machine, ra.machine_name, ra.id_type, ra.mould, ra.type
-            ORDER BY ra.id_machine, ra.id_type, ra.mould;";
+                    WITH AllDates AS (
+                        SELECT DATEADD(DAY, n.n, @start_date) AS d
+                        FROM (
+                            SELECT TOP (DATEDIFF(DAY, @start_date, @end_date) + 1)
+                                   ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+                            FROM sys.all_objects
+                        ) n
+                    ),
+                    ShiftDates AS (
+                        SELECT d.d AS production_date, s.shift
+                        FROM AllDates d
+                        CROSS JOIN (SELECT 1 AS shift UNION ALL SELECT 2) s
+                    ),
+                    EffectiveCalendar AS (
+                        SELECT
+                            sd.production_date, sd.shift,
+                            CASE
+                                WHEN EXISTS (SELECT 1 FROM calendar cx
+                                             WHERE cx.production_date = sd.production_date
+                                               AND cx.shift = sd.shift)
+                                THEN COALESCE((SELECT SUM(c.planned_hours) FROM calendar c
+                                               WHERE c.production_date = sd.production_date
+                                                 AND c.shift = sd.shift), 0)
+                                ELSE 12
+                            END AS planned_hours
+                        FROM ShiftDates sd
+                    ),
+                    ReportAgg AS (
+                        SELECT
+                            r.id_machine, r.machine_name, r.id_type, r.mould, r.production_date, r.shift,
+                            MAX(s.type) AS type,
+                            COALESCE(SUM(r.shot), 0) AS shot,
+                            COALESCE(SUM(r.production_running), 0) AS run_time,
+                            COALESCE(SUM(
+                                COALESCE(r.change_full_set,  0) + COALESCE(r.change_half_set, 0) +
+                                COALESCE(r.change_parts,     0) + COALESCE(r.maintenance_dt,  0) +
+                                COALESCE(r.technician_dt,    0) + COALESCE(r.production_dt,   0)
+                            ), 0) AS down_time,
+                            COALESCE(SUM(r.unallocated), 0) AS unallocated,
+                            COALESCE(SUM(r.material_used), 0) AS material_used,
+                            COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
+                            SUM(CAST(COALESCE(r.shot, 0) AS FLOAT) * COALESCE(r.sap_ct, 0)) / 3600.0 AS total_sap_time,
+                            SUM(CAST(COALESCE(r.shot, 0) AS FLOAT) * COALESCE(r.act_ct, 0)) / 3600.0 AS total_actual_time
+                        FROM report r
+                        INNER JOIN EffectiveCalendar ec
+                            ON  ec.production_date = r.production_date
+                            AND ec.shift           = r.shift
+                            AND ec.planned_hours   > 0
+                        LEFT JOIN sap s ON s.id_type = r.id_type AND s.mould = r.mould
+                        WHERE r.production_date BETWEEN @start_date AND @end_date
+                          AND r.id_machine <> 26
+                        GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould, r.production_date, r.shift
+                    ),
+                    MachineAvailable AS (
+                        SELECT ra.id_machine, SUM(ec2.planned_hours) AS available_hours
+                        FROM (SELECT DISTINCT id_machine, production_date, shift FROM ReportAgg) ra
+                        INNER JOIN EffectiveCalendar ec2
+                            ON ec2.production_date = ra.production_date
+                           AND ec2.shift           = ra.shift
+                        GROUP BY ra.id_machine
+                    )
+                    SELECT
+                        ra.id_machine,
+                        ra.machine_name,
+                        COALESCE(ra.id_type, 0)  AS id_type,
+                        COALESCE(ra.mould,   '')  AS mould,
+                        COALESCE(ra.type,    '')  AS type,
+                        SUM(ra.shot)             AS shot,
+                        SUM(ra.run_time)         AS run_time,
+                        SUM(ra.down_time)        AS down_time,
+                        SUM(ra.unallocated)      AS unallocated,
+                        SUM(ra.material_used)    AS material_used,
+                        SUM(ra.reject_weight)    AS reject_weight,
+                        COALESCE(MAX(ma.available_hours), 0) AS available_hours,
+                        CASE WHEN SUM(ra.shot) = 0 THEN 0
+                             ELSE SUM(ra.total_sap_time)    / SUM(ra.shot) * 3600.0
+                        END AS sap_ct,
+                        CASE WHEN SUM(ra.shot) = 0 THEN 0
+                             ELSE SUM(ra.total_actual_time) / SUM(ra.shot) * 3600.0
+                        END AS act_ct,
+                        SUM(ra.total_sap_time)   AS total_sap_time,
+                        SUM(ra.total_actual_time) AS total_actual_time
+                    FROM ReportAgg ra
+                    LEFT JOIN MachineAvailable ma ON ma.id_machine = ra.id_machine
+                    GROUP BY ra.id_machine, ra.machine_name, ra.id_type, ra.mould, ra.type
+                    ORDER BY ra.id_machine, ra.id_type, ra.mould;";
             }
 
             var result = new List<OEERawRow>();
-
             using var conn = await CreateConnection();
             await using var cmd = new SqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("@today", productionDate);
@@ -1077,7 +1096,6 @@ namespace CMS.server.Services
                     ActCt: Convert.ToDouble(reader["act_ct"])
                 ));
             }
-
             return result;
         }
         public async Task<object> LoadPrevReport(DateOnly production_date, int shift)

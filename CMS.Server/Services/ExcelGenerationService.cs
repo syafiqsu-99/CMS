@@ -246,7 +246,7 @@ namespace CMS.Server.Services
             [9] = "Total Act Time (hrs)\n= (Act CT * Shot) / 3600",
             [10] = "Availability (%)\n= Run Time / Available Hours × 100",
             [11] = "Performance (%)\n= Total SAP Time / Total Act Time × 100",
-            [12] = "Quality (%)\n= MAX(0, (Material Used − Reject Weight) / Material Used × 100)",
+            [12] = "Quality (%)\n= (Material Used − Reject Weight) / Material Used × 100",
             [13] = "OEE (%)\n= Availability% × Performance% × Quality% / 10000",
         };
 
