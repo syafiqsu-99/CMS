@@ -603,7 +603,7 @@
 <script setup>
   import { ref, computed, onMounted, watchEffect } from 'vue';
   import draggable from 'vuedraggable';
-  import { STAFFROLES, STATUSOPTIONS, SHIFTOPTIONS, MACHINEOPTIONS, ROLE_COLORS, STAFF_COLORS } from '@/store/constant.js';
+  import { STAFFROLES, STATUSOPTIONS, SHIFTOPTIONS, MACHINEOPTIONS, ROLE_COLORS, STAFF_COLORS } from '@/utils/constant.js';
 
   const loading = ref(false);
   const saving = ref(false);

@@ -276,12 +276,12 @@
   import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, TimeScale, Title, Tooltip, Legend } from 'chart.js';
   import 'chartjs-adapter-luxon';
   import { DateTime } from 'luxon';
-  import { pinia } from '@/store/index'
-  import { UTILITIES } from '@/store/constant.js';
+  import { useMachineStore } from '@/store/machineStore';
+  import { UTILITIES } from '@/utils/constant.js';
 
   ChartJS.register(CategoryScale, LinearScale, BarElement, TimeScale, Title, Tooltip, Legend);
 
-  const store = pinia();
+  const store = useMachineStore();
   const machineLogs = ref([]);
   const groupedMachines = ref([]);
   const chartData = ref({});

@@ -352,7 +352,7 @@
 
 <script setup>
   import { ref, computed, onMounted } from 'vue';
-  import { MACHINEPOSITIONS, ROLE_COLORS } from '@/store/constant.js';
+  import { MACHINEPOSITIONS, ROLE_COLORS } from '@/utils/constant.js';
 
   defineProps({
     machineStatus: { type: Object, required: true }

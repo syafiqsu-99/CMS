@@ -96,7 +96,7 @@
 
 <script setup>
   import { ref, onMounted, computed, watch } from 'vue';
-  import { pinia } from '@/store';
+  import { useMachineStore } from '@/store/machineStore';
 
   const { SAPData } = defineProps({
     SAPData: {
@@ -112,7 +112,7 @@
     color: 'success'
   });
 
-  const store = pinia();
+  const store = useMachineStore();
   const dailyReport = ref([]);
   const loading = ref(false);
   const importing = ref(false);

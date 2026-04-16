@@ -5,21 +5,27 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
+// ?? Services ?????????????????????????????????????????????????????????????????
+
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddScoped<ExcelGenerationService>();
+
 builder.Services.AddSingleton<PlcService>();
-builder.Services.AddSingleton<MachineLogService>(provider =>
-{
-    var plcService = provider.GetRequiredService<PlcService>();
-    return new MachineLogService(connectionString, plcService);
-});
+
 builder.Services.AddSingleton(new SchemaInitializerService(connectionString));
 
+builder.Services.AddSingleton<MachineMasterService>(sp =>
+    new MachineMasterService(connectionString, sp.GetRequiredService<PlcService>()));
+
+builder.Services.AddSingleton<OEEService>(_ => new OEEService(connectionString));
+
+builder.Services.AddSingleton<MachineLogService>(sp =>
+    new MachineLogService(connectionString, sp.GetRequiredService<PlcService>()));
+
 if (!builder.Environment.IsDevelopment())
-{
     builder.Services.AddHostedService<PlcMonitorService>();
-}
 
 //builder.Services.AddHostedService<PlcMonitorService>();
 

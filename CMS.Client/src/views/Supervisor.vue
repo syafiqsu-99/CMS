@@ -46,7 +46,7 @@
 
 <script setup>
   import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
-  import { pinia } from '@/store/index';
+  import { useMachineStore } from '@/store/machineStore';
   import StaffSchedule from '@/components/StaffSchedule.vue';
   import MachineSchedule from '@/components/MachineSchedule.vue';
   import SAPSchedule from '@/components/SAPSchedule.vue';
@@ -54,7 +54,7 @@
   import ShiftCalendar from '@/components/ShiftCalendar.vue';
 
   const activeTab = ref(0);
-  const store = pinia();
+  const store = useMachineStore();
 
   const tabs = [
     { label: 'Production Report', icon: 'mdi-cog-outline' },
