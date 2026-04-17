@@ -1,0 +1,50 @@
+DECLARE @start_date DATE = '2026-01-01';
+DECLARE @end_date DATE = '2026-01-31';
+
+INSERT INTO reject (
+    id_machine,
+    machine_name,
+    id_type,
+    mould,
+    shift,
+    production_date,
+    total_weight,
+    reject_startup,
+    reject_preform,
+    reject_purging,
+    reject_others,
+    reject_panelling,
+    reject_lumpy,
+    reject_black_dot,
+    reject_burst
+)
+SELECT
+    r.id_machine,
+    r.machine_name,
+    r.id_type,
+    r.mould,
+    r.shift,
+    r.production_date,
+    SUM(r.reject_startup + r.reject_preform + r.reject_purging + r.reject_prod) AS total_weight,
+
+    SUM(r.reject_startup) AS reject_startup,
+    SUM(r.reject_preform) AS reject_preform,
+    SUM(r.reject_purging) AS reject_purging,
+    SUM(r.reject_prod) AS reject_others,
+
+    0 AS reject_panelling,
+    0 AS reject_lumpy,
+    0 AS reject_black_dot,
+    0 AS reject_burst
+
+FROM report r
+WHERE r.id_machine BETWEEN 1 AND 16
+  AND r.production_date BETWEEN @start_date AND @end_date
+GROUP BY
+    r.id_machine,
+    r.machine_name,
+    r.id_type,
+    r.mould,
+    r.shift,
+    r.production_date
+ORDER BY r.production_date, r.shift;
