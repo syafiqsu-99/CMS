@@ -22,28 +22,6 @@ public class MachineLogController : ControllerBase
         _excelService = excelService;
     }
 
-    [HttpGet("Health")]
-    public IActionResult Health()
-    {
-        try
-        {
-            return Ok(new
-            {
-                status = "Ready",
-                timestamp = DateTime.UtcNow,
-            });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(503, new
-            {
-                status = "Backend Error",
-                error = ex.Message,
-                timestamp = DateTime.UtcNow
-            });
-        }
-    }
-
     [HttpGet("DailyReport")]
     public async Task<ActionResult> DailyReport(DateOnly production_date, int shift)
     {
@@ -203,79 +181,6 @@ public class MachineLogController : ControllerBase
     {
         var data = await _machineLogService.LoadUtilities(id_machine);
         return Ok(data);
-    }
-
-    [HttpGet("SAP")]
-    public async Task<ActionResult> SAP()
-    {
-        var data = await _machineLogService.LoadSAP();
-        return Ok(data);
-    }
-
-    [HttpPut("SAP")]
-    public async Task<ActionResult> UpdateSAP([FromBody] Dictionary<string, JsonElement> sapItem)
-    {
-        if (sapItem == null || !sapItem.ContainsKey("id_type") || !sapItem.ContainsKey("mould"))
-            return BadRequest(new { error = "Missing required fields" });
-
-        try
-        {
-            await _machineLogService.UpdateSAP(sapItem);
-            return Ok(new { message = "Successfully updated SAP" });
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
-    [HttpDelete("SAP")]
-    public async Task<ActionResult> DeleteSAP([FromQuery] int id_type, [FromQuery] int mould)
-    {
-        try
-        {
-            await _machineLogService.DeleteSAP(id_type, mould);
-
-            return Ok(new { message = "Deleted successfully" });
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
-    [HttpPost("SAP")]
-    public async Task<ActionResult> InsertSAP([FromBody] Dictionary<string, JsonElement> sapItem)
-    {
-        if (sapItem == null || !sapItem.ContainsKey("id_type") || !sapItem.ContainsKey("mould"))
-            return BadRequest(new { error = "Missing required fields" });
-
-        try
-        {
-            await _machineLogService.InsertSAP(sapItem);
-            return Ok(new { message = "Successfully updated SAP" });
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
-    [HttpPost("SAP/ImportSAP")]
-    public async Task<ActionResult> ImportSAP([FromBody] List<Dictionary<string, JsonElement>> sapItems)
-    {
-        if (sapItems == null || sapItems.Count == 0)
-            return BadRequest(new { error = "No data provided" });
-
-        try
-        {
-            await _machineLogService.ImportSAP(sapItems);
-            return Ok(new { message = $"Successfully imported {sapItems.Count} SAP records" });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { error = ex.Message });
-        }
     }
 
     [HttpGet("Attendance")]

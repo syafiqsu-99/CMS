@@ -3,14 +3,15 @@ import { formatDate, getTodayString, getCurrentShift } from "../utils/constant.j
 
 export const useMachineStore = defineStore('machine', {
   state: () => ({
-    machineData:    ([]),
-    SAPData:        ([]),
-    ProdData:       ([]),
+    machineData: [],
+    SAPData: [],
+    ProdData: [],
     activeStaff: 0,
     totalMachines: 0,
     runningMachines: 0,
     stopMachines: 0,
     _fetchingMaster: false,
+    _fetchingSAP: false,
   }),
 
   getters: {
@@ -48,7 +49,7 @@ export const useMachineStore = defineStore('machine', {
 
     async loadSAP() {
       try {
-        const res = await fetch('/api/MachineLog/SAP');
+        const res = await fetch('/api/SAP');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.SAPData = await res.json();
         return this.SAPData;

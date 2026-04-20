@@ -5,37 +5,57 @@
         <h2 class="font-weight-bold">SUPERVISOR</h2>
       </v-col>
     </v-row>
+
     <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="height: 90vh;">
       <v-col cols="12" class="pa-1 d-flex" style="height: 100%;">
-        <v-card variant="text" class="d-flex flex-column" elevation="2" style="width: 100%; height: 100%; overflow: hidden;">
+        <v-card variant="text"
+                class="d-flex flex-column"
+                elevation="2"
+                style="width: 100%; height: 100%; overflow: hidden;">
+
           <v-card-text class="d-flex flex-column pa-2" style="height: 100%; overflow: hidden;">
+
             <v-tabs v-model="activeTab"
-                    background-color="white"
                     color="primary"
                     density="compact"
                     grow
                     class="flex-grow-0 flex-shrink-0">
-              <v-tab v-for="(tab, index) in tabs" :key="index" class="px-3 text-caption">
+              <v-tab v-for="(tab, index) in tabs" :key="index" :value="index" class="px-3 text-caption">
                 <v-icon start size="16">{{ tab.icon }}</v-icon>
                 {{ tab.label }}
               </v-tab>
             </v-tabs>
-            <v-tabs-window v-model="activeTab" style="min-height: 0;">
-              <v-tabs-window-item value="0">
+
+            <v-tabs-window v-model="activeTab" style="min-height: 0; flex: 1; overflow: hidden;">
+
+              <!-- Production Report -->
+              <v-tabs-window-item :value="0">
                 <ProdSchedule :SAP-data="store.SAPData" />
               </v-tabs-window-item>
-              <v-tabs-window-item value="1">
-                <MachineSchedule :machine-data="store.machineData" :SAP-data="store.SAPData" @refresh-data="handleRefreshData" />
+
+              <!-- Machine Management — mounts/unmounts with the tab,
+                   so the polling lifecycle hook fires correctly -->
+              <v-tabs-window-item :value="1">
+                <MachineManagement :SAP-data="store.SAPData"
+                                   @refresh-data="store.loadMachineMaster" />
               </v-tabs-window-item>
-              <v-tabs-window-item value="2">
+
+              <!-- Staff Assignment -->
+              <v-tabs-window-item :value="2">
                 <StaffSchedule />
               </v-tabs-window-item>
-              <v-tabs-window-item value="3">
-                <SAPSchedule :SAP-data="store.SAPData" @refresh-data="handleRefreshSAP" />
+
+              <!-- Product Database — static, loaded once -->
+              <v-tabs-window-item :value="3">
+                <ProductDatabase :SAP-data="store.SAPData"
+                                 @refresh-data="store.loadSAP" />
               </v-tabs-window-item>
-              <v-tabs-window-item value="4">
+
+              <!-- Shift Calendar -->
+              <v-tabs-window-item :value="4">
                 <ShiftCalendar />
               </v-tabs-window-item>
+
             </v-tabs-window>
           </v-card-text>
         </v-card>
@@ -45,16 +65,21 @@
 </template>
 
 <script setup>
-  import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue';
+  import { ref, onMounted } from 'vue';
   import { useMachineStore } from '@/store/machineStore';
-  import StaffSchedule from '@/components/StaffSchedule.vue';
-  import MachineSchedule from '@/components/MachineSchedule.vue';
-  import SAPSchedule from '@/components/SAPSchedule.vue';
-  import ProdSchedule from '@/components/ProdSchedule.vue';
-  import ShiftCalendar from '@/components/ShiftCalendar.vue';
 
-  const activeTab = ref(0);
+  import ProdSchedule from '@/components/Supervisor/ProdSchedule.vue';
+  import MachineManagement from '@/components/Supervisor/MachineSchedule.vue';
+  import StaffSchedule from '@/components/Supervisor/StaffSchedule.vue';
+  import ProductDatabase from '@/components/Supervisor/SAPSchedule.vue';
+  import ShiftCalendar from '@/components/Supervisor/ShiftCalendar.vue';
+
   const store = useMachineStore();
+  const activeTab = ref(0);
+
+  onMounted(() => {
+    store.loadInitialData();
+  });
 
   const tabs = [
     { label: 'Production Report', icon: 'mdi-cog-outline' },
@@ -63,7 +88,4 @@
     { label: 'Product Database', icon: 'mdi-archive' },
     { label: 'Shift Calendar', icon: 'mdi-calendar-clock' },
   ];
-
-  async function handleRefreshData() { await store.loadMachineMaster(); }
-  async function handleRefreshSAP() { await store.loadSAP(); }
 </script>

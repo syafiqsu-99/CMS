@@ -2,12 +2,29 @@
 
 namespace CMS.Server.Controllers;
 
-/// <summary>
-/// Common functionality shared by all CMS controllers.
-/// </summary>
 [ApiController]
-public abstract class BaseController : ControllerBase
+[Route("api/[controller]")]
+public class BaseController : ControllerBase
 {
-    [HttpGet("/api/health")]
-    public IActionResult Health() => Ok(new { status = "Ready", timestamp = DateTime.UtcNow });
+    [HttpGet("Health")]
+    public IActionResult Health()
+    {
+        try
+        {
+            return Ok(new
+            {
+                status = "Ready",
+                timestamp = DateTime.UtcNow,
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new
+            {
+                status = "Backend Error",
+                error = ex.Message,
+                timestamp = DateTime.UtcNow
+            });
+        }
+    }
 }

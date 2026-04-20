@@ -3,10 +3,6 @@ using Microsoft.Data.SqlClient;
 
 namespace CMS.Server.Services;
 
-/// <summary>
-/// All OEE, Reject, Output, Downtime, and machine-detail analytics.
-/// Scales automatically — no hardcoded machine IDs.
-/// </summary>
 public class OEEService(string connectionString) : BaseDataService(connectionString)
 {
     // ── Machine count helper ───────────────────────────────────────────────────

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace CMS.Server.Controllers;
 
 [ApiController]
-[Route("api/oee")]
+[Route("api/[controller]")]
 public class OeeController(OEEService oeeService) : BaseController
 {
     // ── Summary ────────────────────────────────────────────────────────────────

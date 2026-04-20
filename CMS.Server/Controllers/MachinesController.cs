@@ -6,20 +6,27 @@ using System.Text.Json;
 namespace CMS.Server.Controllers;
 
 [ApiController]
-[Route("api/machines")]
-public class MachinesController(MachineMasterService machineService, MachineLogService logService)
-    : BaseController
+[Route("api/[controller]")]
+public class MachinesController : BaseController
 {
+    private readonly MachineMasterService _machineService;
+    private readonly MachineLogService _machineLogService;
+
+    public MachinesController(MachineMasterService machineService, MachineLogService logService)
+    {
+        _machineService = machineService;
+        _machineLogService = logService;
+    }
     [HttpGet]
     public async Task<IActionResult> GetAll()
-        => Ok(await machineService.LoadMachineMasterAsync());
+        => Ok(await _machineService.LoadMachineMasterAsync());
 
     [HttpPost("mould-change")]
     public async Task<IActionResult> MouldChange([FromBody] Dictionary<string, JsonElement> payload)
     {
         try
         {
-            await logService.UpdateMouldChange(payload);
+            await _machineLogService.UpdateMouldChange(payload);
             return Ok(new { message = "Mould changed successfully." });
         }
         catch (Exception ex)
@@ -30,9 +37,9 @@ public class MachinesController(MachineMasterService machineService, MachineLogS
 
     [HttpGet("timeline")]
     public async Task<IActionResult> Timeline()
-        => Ok(await logService.LoadTimeline());
+        => Ok(await _machineLogService.LoadTimeline());
 
     [HttpGet("{id:int}/utilities")]
     public async Task<IActionResult> Utilities(int id)
-        => Ok(await logService.LoadUtilities(id));
+        => Ok(await _machineLogService.LoadUtilities(id));
 }

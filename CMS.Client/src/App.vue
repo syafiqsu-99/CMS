@@ -52,7 +52,7 @@
 
   async function checkHealth() {
     try {
-      const res = await fetch('/api/health');
+      const res = await fetch('/api/Base/Health');
       if (!res.ok) return false;
       const data = await res.json();
       return data.status === 'Ready';

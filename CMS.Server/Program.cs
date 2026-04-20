@@ -5,8 +5,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-// ?? Services ?????????????????????????????????????????????????????????????????
-
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
@@ -20,6 +18,8 @@ builder.Services.AddSingleton<MachineMasterService>(sp =>
     new MachineMasterService(connectionString, sp.GetRequiredService<PlcService>()));
 
 builder.Services.AddSingleton<OEEService>(_ => new OEEService(connectionString));
+
+builder.Services.AddSingleton<SAPService>(_ => new SAPService(connectionString));
 
 builder.Services.AddSingleton<MachineLogService>(sp =>
     new MachineLogService(connectionString, sp.GetRequiredService<PlcService>()));
