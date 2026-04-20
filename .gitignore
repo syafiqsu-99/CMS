@@ -405,3 +405,4 @@ FodyWeavers.xsd
 /CMS.Server/Services/MachineLogService.cs
 /CMS.Server/Controllers/MachineLogController.cs
 /CMS.Server/Controllers/SAPController.cs
+/CMS.Server/Services/PlcMonitorService.cs
