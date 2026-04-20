@@ -555,7 +555,7 @@
         }
       }
 
-      await fetch('/api/MachineLog/ShiftCalendar', {
+      await fetch('/api/supervisor/shift-calendar', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

@@ -187,7 +187,6 @@ watch(pollInterval, () => { if (polling.value) { stopPolling(); startPolling(); 
 async function fetchAllSignals() {
   fetching.value = true;
   try {
-    // URL: /api/MachineLog/Settings/PlcSignalsAll → /api/setting/plc-signals
     const res = await fetch('/api/setting/plc-signals');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const all = await res.json();

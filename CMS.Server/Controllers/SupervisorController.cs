@@ -7,17 +7,23 @@ namespace CMS.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class SupervisorController(
-    SupervisorService supervisorService,
-    ExcelGenerationService excelService) : ControllerBase
+public class SupervisorController : ControllerBase
 {
+    private readonly SupervisorService _supervisorService;
+    private readonly ExcelGenerationService _excelService;
+
+    public SupervisorController(SupervisorService supervisorService, ExcelGenerationService excelService)
+    {
+        _supervisorService = supervisorService;
+        _excelService = excelService;
+    }
     // ── Production Reports ────────────────────────────────────────────────────
 
     [HttpGet("daily-report")]
     public async Task<IActionResult> DailyReport(
         [FromQuery] DateOnly production_date,
         [FromQuery] int shift)
-        => Ok(await supervisorService.LoadDailyReport(production_date, shift));
+        => Ok(await _supervisorService.LoadDailyReport(production_date, shift));
 
     [HttpPut("daily-report")]
     public async Task<IActionResult> UpdateDailyReport([FromBody] ReportUpdateDto dto)
@@ -25,7 +31,7 @@ public class SupervisorController(
         if (dto.ReportList == null || dto.ReportList.Count == 0)
             return BadRequest(new { error = "No report rows provided." });
 
-        await supervisorService.UpsertDailyReport(dto.ProductionDate, dto.Shift, dto.ReportList);
+        await _supervisorService.UpsertDailyReport(dto.ProductionDate, dto.Shift, dto.ReportList);
         return Ok(new { message = "Report saved." });
     }
 
@@ -33,7 +39,7 @@ public class SupervisorController(
     public async Task<IActionResult> PrevReport(
         [FromQuery] DateOnly production_date,
         [FromQuery] int shift)
-        => Ok(await supervisorService.LoadPrevReport(production_date, shift));
+        => Ok(await _supervisorService.LoadPrevReport(production_date, shift));
 
     [HttpPut("prev-report")]
     public async Task<IActionResult> UpdatePrevReport([FromBody] ReportUpdateDto dto)
@@ -41,7 +47,7 @@ public class SupervisorController(
         if (dto.ReportList == null || dto.ReportList.Count == 0)
             return BadRequest(new { error = "No report rows provided." });
 
-        await supervisorService.UpsertPrevReport(dto.ProductionDate, dto.Shift, dto.ReportList);
+        await _supervisorService.UpsertPrevReport(dto.ProductionDate, dto.Shift, dto.ReportList);
         return Ok(new { message = "Previous report saved." });
     }
 
@@ -67,7 +73,7 @@ public class SupervisorController(
 
             Console.WriteLine($"Querying for date: {parsedDate}, shift: {shift}");
 
-            var reportData = await supervisorService.LoadExcelReport(parsedDate, shift);
+            var reportData = await _supervisorService.LoadExcelReport(parsedDate, shift);
 
             Console.WriteLine($"Records found: {reportData?.Count ?? 0}");
 
@@ -81,7 +87,7 @@ public class SupervisorController(
                 });
             }
 
-            var excelFile = excelService.GenerateExcelReport(reportData, parsedDate, shift);
+            var excelFile = _excelService.GenerateExcelReport(reportData, parsedDate, shift);
 
             var shiftName = shift == 1 ? "Morning" : "Night";
             var fileName = $"DailyProductionReport_{parsedDate:yyyy-MM-dd}_Shift{shiftName}.xlsx";
@@ -130,7 +136,7 @@ public class SupervisorController(
                 }
             }
 
-            var data = await supervisorService.ImportReport(reportList, DateOnly.MinValue, 0);
+            var data = await _supervisorService.ImportReport(reportList, DateOnly.MinValue, 0);
             return Ok(data);
         }
         catch (Exception ex)
@@ -148,7 +154,7 @@ public class SupervisorController(
     {
         try
         {
-            await supervisorService.UpdateMouldChange(payload);
+            await _supervisorService.UpdateMouldChange(payload);
             return Ok(new { message = "Mould changed successfully." });
         }
         catch (Exception ex)
@@ -161,13 +167,13 @@ public class SupervisorController(
 
     [HttpGet("attendance")]
     public async Task<IActionResult> Attendance()
-        => Ok(await supervisorService.LoadAttendance());
+        => Ok(await _supervisorService.LoadAttendance());
 
     // ── Staff Schedule ────────────────────────────────────────────────────────
 
     [HttpGet("staff-schedule")]
     public async Task<IActionResult> GetStaffSchedule()
-        => Ok(await supervisorService.LoadStaffSchedule());
+        => Ok(await _supervisorService.LoadStaffSchedule());
 
     [HttpPut("staff-schedule")]
     public async Task<IActionResult> UpdateStaffSchedule(
@@ -176,11 +182,9 @@ public class SupervisorController(
         if (payload == null || payload.Count == 0)
             return BadRequest(new { error = "No schedule data provided." });
 
-        await supervisorService.UpsertStaffSchedule(payload);
+        await _supervisorService.UpsertStaffSchedule(payload);
         return Ok(new { message = "Schedule saved." });
     }
-
-    // ── Staff CRUD ────────────────────────────────────────────────────────────
 
     [HttpPost("staff")]
     public async Task<IActionResult> AddStaff([FromBody] StaffDto dto)
@@ -188,7 +192,7 @@ public class SupervisorController(
         if (string.IsNullOrWhiteSpace(dto.StaffName))
             return BadRequest(new { error = "Staff name is required." });
 
-        var newId = await supervisorService.AddStaff(dto.StaffName, dto.StaffRole ?? string.Empty);
+        var newId = await _supervisorService.AddStaff(dto.StaffName, dto.StaffRole ?? string.Empty);
         return Ok(new { staff_id = newId });
     }
 
@@ -198,14 +202,14 @@ public class SupervisorController(
         if (dto.StaffId == null)
             return BadRequest(new { error = "staff_id is required for update." });
 
-        await supervisorService.UpdateStaff(dto.StaffId.Value, dto.StaffName ?? string.Empty, dto.StaffRole ?? string.Empty);
+        await _supervisorService.UpdateStaff(dto.StaffId.Value, dto.StaffName ?? string.Empty, dto.StaffRole ?? string.Empty);
         return Ok(new { message = "Staff updated." });
     }
 
     [HttpDelete("staff/{id:int}")]
     public async Task<IActionResult> DeleteStaff(int id)
     {
-        await supervisorService.DeleteStaff(id);
+        await _supervisorService.DeleteStaff(id);
         return Ok(new { message = "Staff deleted." });
     }
 
@@ -214,7 +218,7 @@ public class SupervisorController(
     [HttpGet("staff-photo/{staffId:int}")]
     public IActionResult GetStaffPhoto(int staffId)
     {
-        var path = supervisorService.GetStaffPhotoPath(staffId);
+        var path = _supervisorService.GetStaffPhotoPath(staffId);
         if (string.IsNullOrEmpty(path))
             return NotFound();
 
@@ -231,7 +235,7 @@ public class SupervisorController(
 
         try
         {
-            await supervisorService.SaveStaffPhoto(staff_id, file);
+            await _supervisorService.SaveStaffPhoto(staff_id, file);
             return Ok(new { message = "Photo saved." });
         }
         catch (InvalidOperationException ex)
@@ -246,7 +250,7 @@ public class SupervisorController(
     public async Task<IActionResult> GetShiftCalendar(
         [FromQuery] int year,
         [FromQuery] int month)
-        => Ok(await supervisorService.LoadShiftCalendar(year, month));
+        => Ok(await _supervisorService.LoadShiftCalendar(year, month));
 
     [HttpPut("shift-calendar")]
     public async Task<IActionResult> UpdateShiftCalendar(List<Calendar> entries)
@@ -254,7 +258,7 @@ public class SupervisorController(
         if (entries == null || entries.Count == 0)
             return BadRequest(new { error = "No entries provided." });
 
-        await supervisorService.UpsertShiftCalendar(entries);
+        await _supervisorService.UpsertShiftCalendar(entries);
         return Ok(new { message = $"Saved {entries.Count} calendar entries." });
     }
 }

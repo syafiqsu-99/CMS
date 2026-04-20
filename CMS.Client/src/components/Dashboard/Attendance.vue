@@ -427,7 +427,7 @@
   }
 
   function getStaffPhotoUrl(staff_id) {
-    return `/api/MachineLog/StaffPhoto/${staff_id}`;
+    return `/api/dashboard/StaffPhoto/${staff_id}`;
   }
 
   function getRoleColor(role) {
