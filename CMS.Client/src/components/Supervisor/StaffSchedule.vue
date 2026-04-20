@@ -787,7 +787,6 @@
     }
   }
 
-  // ─── Remove to pool (fixes original bug by using listRefMap instead of raw array) ──
   function removeToPool(staff, listKey) {
     const sourceRef = listRefMap[listKey];
     if (!sourceRef) return;
@@ -931,7 +930,7 @@
   async function deleteStaff() {
     deleteDialog.value.deleting = true;
     try {
-      const response = await fetch('/api/MachineLog/Staff', {
+      const response = await fetch('/api/supervisor/Staff', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ staff_id: deleteDialog.value.staff.staff_id })

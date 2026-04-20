@@ -477,6 +477,9 @@
       ...(keys.id_type !== undefined ? { keys_id_type: Number(keys.id_type), keys_mould: Number(keys.mould) } : {}),
     };
   }
+
+  // ─── Lifecycle ─────────────────────────────────────────────────────────────────
+  onMounted(async () => { await store.loadSAP(); });
 </script>
 
 <style scoped>

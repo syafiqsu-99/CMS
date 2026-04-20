@@ -8,7 +8,7 @@
       <v-list-item v-for="machine in machines"
                    :key="machine.id_machine"
                    :active="selectedId === machine.id_machine"
-                   active-color="primary"
+                   color="primary"
                    rounded="lg"
                    class="mb-1 mx-1"
                    :style="{
@@ -45,7 +45,7 @@
       </v-list-item>
     </v-list>
   </v-card>
-</template>
+</template>v
 
 <script setup>
 import { Bar } from 'vue-chartjs';

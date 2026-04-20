@@ -410,7 +410,7 @@
     try {
       const y = calendarYear.value;
       const m = calendarMonth.value + 1;
-      const res = await fetch(`/api/MachineLog/ShiftCalendar?year=${y}&month=${m}`);
+      const res = await fetch(`/api/supervisor/shift-calendar?year=${y}&month=${m}`);
       const text = await res.text();
       calendarData.value = text ? JSON.parse(text) : [];
     } catch (err) {
@@ -460,7 +460,7 @@
         return;
       }
 
-      await fetch('/api/MachineLog/ShiftCalendar', {
+      await fetch('/api/supervisor/shift-calendar', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

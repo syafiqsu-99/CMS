@@ -1,19 +1,19 @@
 <!-- CMS.Client/src/views/Machines.vue -->
 <template>
   <v-container fluid class="pa-2 h-100 d-flex flex-column">
-    <v-row no-gutters align="center" justify="center">
-      <v-col cols="12" class="text-center">
-        <h2 class="font-weight-bold">MACHINES</h2>
-      </v-col>
-    </v-row>
 
     <!-- Summary cards -->
-    <v-row dense class="mb-2">
-      <v-col v-for="card in summaryCards" :key="card.title" cols="6" md="3">
-        <v-card variant="flat" elevation="1" class="pa-3 text-center rounded-lg">
-          <v-icon :color="card.color" size="28">{{ card.icon }}</v-icon>
-          <div class="text-h6 font-weight-bold mt-1">{{ card.value }}</div>
-          <div class="text-caption text-grey">{{ card.title }}</div>
+    <v-row no-gutters style="height: 12vh;">
+      <v-col cols="3" v-for="card in summaryCards" :key="card.title" class="pa-1">
+        <v-card class="h-100 d-flex flex-row" elevation="2">
+          <div class="d-flex align-center justify-center"
+               :style="{ width: '30%', backgroundColor: card.color + '20' }">
+            <v-icon :color="card.color" size="40">{{ card.icon }}</v-icon>
+          </div>
+          <v-card-text class="d-flex flex-column justify-center py-1 px-2" style="width: 70%;">
+            <div class="text-h5 font-weight-bold">{{ card.value }}</div>
+            <div class="text-caption text-grey-darken-1">{{ card.title }}</div>
+          </v-card-text>
         </v-card>
       </v-col>
     </v-row>
@@ -192,36 +192,89 @@
 
   function renderCharts() {
     const { minTime, maxTime } = getTimeBounds();
-    groupedMachines.value.forEach(machine => {
-      const datasets = machine.data.map(item => ({
-        data: [{ x: [new Date(item.start), item.finish ? new Date(item.finish) : new Date()], y: machine.machine_name }],
-        backgroundColor: item.color || '#808080',
-        barThickness: 20,
-      }));
+    chartData.value = {};
+
+    groupedMachines.value.forEach((machine) => {
+      const datasets = machine.data.map((item) => {
+        const startTime = DateTime.fromISO(item.start, { zone: 'local' });
+        const endTime = DateTime.fromISO(item.finish, { zone: 'local' });
+
+        const getColorWithAlpha = (color, alpha) => {
+          if (!color) return `rgba(0, 0, 0, ${alpha})`;
+          if (color.startsWith('#')) {
+            const r = parseInt(color.slice(1, 3), 16);
+            const g = parseInt(color.slice(3, 5), 16);
+            const b = parseInt(color.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          }
+          if (color.startsWith('rgb(')) {
+            return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+          }
+          return color;
+        };
+
+        const backgroundColor = getColorWithAlpha(item.color, 0.8);
+        const borderColor = getColorWithAlpha(item.color, 1);
+
+        return {
+          label: item.category,
+          data: [
+            {
+              x: [startTime.toJSDate(), endTime.toJSDate()],
+              y: machine.machine_name,
+              category: item.category,
+            },
+          ],
+          backgroundColor,
+          borderColor,
+          borderWidth: 1,
+        };
+      });
+
       chartData.value[machine.id_machine] = {
         data: { datasets },
         options: {
-          indexAxis: 'y',
+          animation: false,
           responsive: true,
           maintainAspectRatio: false,
+          indexAxis: "y",
+          barPercentage: 1,
+          categoryPercentage: 1,
           plugins: {
-            legend: { display: false }, tooltip: {
+            tooltip: {
               callbacks: {
-                label: ctx => {
-                  const [s, e] = ctx.raw.x;
-                  const fmt = d => `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
-                  return `${ctx.raw.category}: ${fmt(s)} - ${fmt(e)}`;
+                title: () => [],
+                label: function (context) {
+                  const range = context.raw.x;
+                  const start = new Date(range[0]);
+                  const end = new Date(range[1]);
+                  return `${context.raw.category}: ${start.getHours().toString().padStart(2, "0")}:${start.getMinutes().toString().padStart(2, "0")} - ${end.getHours().toString().padStart(2, "0")}:${end.getMinutes().toString().padStart(2, "0")}`;
                 },
-              }
-            }
+              },
+            },
+            legend: { display: false },
           },
           scales: {
             x: {
-              type: 'time', min: minTime, max: maxTime, time: { unit: 'hour', displayFormats: { hour: 'ha' } },
-              ticks: { stepSize: 2, color: '#000', font: { size: 10 } },
-              grid: { color: 'rgba(0,0,0,0.1)' }
+              type: "time",
+              time: {
+                unit: "hour",
+                tooltipFormat: "hh:mm a",
+                displayFormats: { hour: "ha" },
+              },
+              min: minTime,
+              max: maxTime,
+              ticks: {
+                stepSize: 2,
+                color: "#000000",
+                font: { size: 10 }
+              },
+              grid: { display: true, color: 'rgba(0,0,0,0.1)' },
             },
-            y: { stacked: true, display: false },
+            y: {
+              stacked: true,
+              display: false,
+            },
           },
         },
       };
@@ -230,37 +283,89 @@
 
   function renderUtilityTimeline() {
     const { minTime, maxTime } = getTimeBounds();
-    const grouped = {};
+
+    const groupedData = {};
     utilityData.value.forEach(item => {
-      if (!grouped[item.utility_name]) grouped[item.utility_name] = [];
-      grouped[item.utility_name].push(item);
+      if (!groupedData[item.utility_name]) {
+        groupedData[item.utility_name] = [];
+      }
+      groupedData[item.utility_name].push(item);
     });
-    utilityChartData.value = utility_order.map(name => {
-      const items = grouped[name] || [];
-      const datasets = items.length
-        ? [{
-          data: items.map(i => ({
-            x: [DateTime.fromISO(i.start).toJSDate(), DateTime.fromISO(i.finish).toJSDate()],
-            y: name, category: i.category,
-            backgroundColor: i.category === 1 ? '#00ff00' : '#ff0000',
-          })), barThickness: 20
-        }]
-        : [{ data: [{ x: [minTime, minTime], y: name, backgroundColor: 'transparent' }], barThickness: 20 }];
+
+    utilityChartData.value = utility_order.map(utilityName => {
+      const items = groupedData[utilityName] || [];
+    
+      const dataPoints = items.map(item => {
+        const start = DateTime.fromISO(item.start).toJSDate();
+        const finish = DateTime.fromISO(item.finish).toJSDate();
+        const categoryBit = item.category;
+        const categoryLabel = categoryBit === 1 ? 'RUNNING' : 'OFF';
+      
+        return {
+          x: [start, finish],
+          y: utilityName,
+          category: categoryBit,
+          categoryLabel: categoryLabel,
+          backgroundColor: categoryBit === 1 ? '#00ff00' : '#ff0000'
+        };
+      });
+    
       return {
-        utility_name: name,
-        data: { datasets },
+        utility_name: utilityName,
+        data: {
+          datasets: dataPoints.length > 0 ? [{
+            data: dataPoints,
+            backgroundColor: dataPoints.map(d => d.backgroundColor),
+            borderColor: dataPoints.map(d => d.backgroundColor.replace('0.6', '1')),
+            borderWidth: 1,
+            barThickness: 20
+          }] : []
+        },
         options: {
-          indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          animation: false,
+          indexAxis: "y",
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                title: () => [],
+                label: (ctx) => {
+                  const start = new Date(ctx.raw.x[0]);
+                  const end = new Date(ctx.raw.x[1]);
+                  const duration = Math.round((end - start) / (1000 * 60));
+                  const status = ctx.raw.categoryLabel;
+                  return [
+                    `${status}: ${start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
+                  ];
+                }
+              }
+            }
+          },
           scales: {
             x: {
-              type: 'time', min: minTime, max: maxTime,
-              time: { unit: 'hour', displayFormats: { hour: 'ha' } },
-              ticks: { display: false }, grid: { display: false }
+              type: "time",
+              min: minTime,
+              max: maxTime,
+              time: {
+                unit: "hour",
+                tooltipFormat: "hh:mm a",
+                displayFormats: { hour: "ha" },
+              },
+              ticks: {
+                stepSize: 2,
+                color: "#000000",
+                font: { size: 10 }
+              },
+              grid: { display: true, color: 'rgba(0,0,0,0.1)' },
             },
-            y: { stacked: true, display: false },
-          },
-        },
+            y: {
+              stacked: true,
+              display: false,
+            },
+          }
+        }
       };
     });
   }

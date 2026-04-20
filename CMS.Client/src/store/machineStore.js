@@ -93,12 +93,7 @@ export const useMachineStore = defineStore('machine', {
     },
 
     async loadInitialData() {
-      const today = getTodayString();
-      const shift = getCurrentShift();
       await Promise.all([
-        this.loadDailyReport(today, shift),
-        this.loadAttendance(),
-        this.loadSAP(),
         this.loadMachineMaster(),
       ]);
     },

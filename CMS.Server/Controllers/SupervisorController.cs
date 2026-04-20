@@ -100,6 +100,47 @@ public class SupervisorController(
         }
     }
 
+    [HttpPost("import-report")]
+    public async Task<ActionResult> ImportReport([FromBody] JsonElement payload)
+    {
+        try
+        {
+            if (!payload.TryGetProperty("reportList", out var reportListEl) ||
+                reportListEl.ValueKind != JsonValueKind.Array)
+            {
+                return BadRequest(new { message = "Missing or invalid 'reportList' in request body." });
+            }
+
+            var reportList = reportListEl.Deserialize<List<Dictionary<string, JsonElement>>>();
+            if (reportList == null || reportList.Count == 0)
+            {
+                return BadRequest(new { message = "reportList is empty." });
+            }
+
+            foreach (var row in reportList)
+            {
+                if (!row.ContainsKey("production_date") || !row.ContainsKey("shift"))
+                {
+                    return BadRequest(new { message = "Each row must contain 'production_date' and 'shift' columns." });
+                }
+
+                if (!DateOnly.TryParse(row["production_date"].GetString(), out _))
+                {
+                    return BadRequest(new { message = $"Invalid production_date value: {row["production_date"].GetString()}. Use YYYY-MM-DD format." });
+                }
+            }
+
+            var data = await supervisorService.ImportReport(reportList, DateOnly.MinValue, 0);
+            return Ok(data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in ImportReport: {ex.Message}");
+            Console.WriteLine($"StackTrace: {ex.StackTrace}");
+            return StatusCode(500, new { error = ex.Message, stackTrace = ex.StackTrace });
+        }
+    }
+
     // ── Machine Management ────────────────────────────────────────────────────────────
 
     [HttpPost("mould-change")]

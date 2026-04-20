@@ -475,8 +475,6 @@
       medicalLeave.value = data.filter(i => i.status === 'MEDICAL LEAVE').length;
       othersLeave.value = data.filter(i => i.status === 'OTHER LEAVE').length;
 
-      console.log(annualLeave.value);
-
       const grouped = {};
       data.forEach(item => {
         const key = item.machine_name || '';
