@@ -402,3 +402,6 @@ FodyWeavers.xsd
 /Drawing/PDF/CMS KM26.pdf
 /Drawing/PDF/CMS Y1.dsd
 /Drawing/PDF/CMS Y1.pdf
+/CMS.Server/Services/MachineLogService.cs
+/CMS.Server/Controllers/MachineLogController.cs
+/CMS.Server/Controllers/SAPController.cs
