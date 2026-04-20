@@ -5,7 +5,7 @@ using static CMS.server.Services.MachineLogService;
 
 namespace CMS.Server.Services;
 
-public class MachineMasterService(string connectionString, PlcService plcService)
+public class MachinesService(string connectionString, PlcService plcService)
     : BaseDataService(connectionString)
 {
     private readonly PlcService _plc = plcService;

@@ -10,6 +10,8 @@
   </PropertyGroup>
   <ItemGroup>
     <Folder Include="public\staff_list\" />
+    <Folder Include="src\components\Machines\" />
+    <Folder Include="src\components\Setting\" />
   </ItemGroup>
   <ProjectExtensions>
     <VisualStudio>

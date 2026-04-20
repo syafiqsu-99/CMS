@@ -1,5 +1,6 @@
+// CMS.Client/src/store/machineStore.js
 import { defineStore } from 'pinia';
-import { formatDate, getTodayString, getCurrentShift } from "../utils/constant.js";
+import { formatDate, getTodayString, getCurrentShift } from '@/utils/constant.js';
 
 export const useMachineStore = defineStore('machine', {
   state: () => ({
@@ -19,23 +20,18 @@ export const useMachineStore = defineStore('machine', {
   },
 
   actions: {
-    // ── Machine Master ─────────────────────────────────────────────────────────
-
     async loadMachineMaster() {
       if (this._fetchingMaster) return this.machineData;
       this._fetchingMaster = true;
-
       try {
         const res = await fetch('/api/machines');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const machines = await res.json();
-
         this.machineData = machines;
         const valid = machines.filter(m => m.machine_name !== 'TEST');
         this.totalMachines = valid.length;
         this.runningMachines = valid.filter(m => m.status_start).length;
         this.stopMachines = valid.filter(m => !m.status_start).length;
-
         return machines;
       } catch (err) {
         console.error('[store] loadMachineMaster:', err.message);
@@ -45,11 +41,9 @@ export const useMachineStore = defineStore('machine', {
       }
     },
 
-    // ── SAP ───────────────────────────────────────────────────────────────────
-
     async loadSAP() {
       try {
-        const res = await fetch('/api/SAP');
+        const res = await fetch('/api/sap');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.SAPData = await res.json();
         return this.SAPData;
@@ -59,11 +53,10 @@ export const useMachineStore = defineStore('machine', {
       }
     },
 
-    // ── Attendance ────────────────────────────────────────────────────────────
-
     async loadAttendance() {
       try {
-        const res = await fetch('/api/MachineLog/Attendance');
+        // Migrated: /api/MachineLog/Attendance → /api/supervisor/attendance
+        const res = await fetch('/api/supervisor/attendance');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         this.activeStaff = data.filter(s => s.machine_name && s.status === 'ACTIVE').length;
@@ -74,12 +67,10 @@ export const useMachineStore = defineStore('machine', {
       }
     },
 
-    // ── Production Reports ────────────────────────────────────────────────────
-
     async loadDailyReport(date, shift) {
       try {
         const d = formatDate(date);
-        const res = await fetch(`/api/MachineLog/DailyReport?production_date=${d}&shift=${shift}`);
+        const res = await fetch(`/api/supervisor/daily-report?production_date=${d}&shift=${shift}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.ProdData = await res.json();
         return this.ProdData;
@@ -92,7 +83,7 @@ export const useMachineStore = defineStore('machine', {
     async loadPrevReport(date, shift) {
       try {
         const d = formatDate(date);
-        const res = await fetch(`/api/MachineLog/PrevReport?production_date=${d}&shift=${shift}`);
+        const res = await fetch(`/api/supervisor/prev-report?production_date=${d}&shift=${shift}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.ProdData = await res.json();
         return this.ProdData;
@@ -101,8 +92,6 @@ export const useMachineStore = defineStore('machine', {
         return [];
       }
     },
-
-    // ── Initial load ────────────────────────────────
 
     async loadInitialData() {
       const today = getTodayString();

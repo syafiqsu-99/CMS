@@ -296,7 +296,7 @@
       selectedDepts.value.map(key => [key, passwordForm.value[key]])
     );
     try {
-      const res = await fetch('/api/MachineLog/Settings/Password', {
+      const res = await fetch('/api/setting/password', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -433,13 +433,12 @@
   }
   watch(pollInterval, () => { if (polling.value) { stopPolling(); startPolling(); } });
 
-  // Fetch all 26 machines in one request — backend runs them in parallel
   async function fetchAllSignals() {
     fetching.value = true;
     try {
-      const res = await fetch('/api/MachineLog/Settings/PlcSignalsAll');
+      const res = await fetch('/api/setting/plc-signals');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const all = await res.json(); // { "1": {...}, "2": null, ... }
+      const all = await res.json();
 
       for (let m = 1; m <= 26; m++) {
         const key = String(m);

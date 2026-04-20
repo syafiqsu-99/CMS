@@ -336,7 +336,7 @@
     try {
       const selectedDate = formatDate(production_date.value);
       const isCurrentShift = selectedDate === formatDate(getDate()) && shift.value === getShift();
-      const endpoint = isCurrentShift ? '/api/MachineLog/DailyReport' : '/api/MachineLog/PrevReport';
+      const endpoint = isCurrentShift ? '/api/supervisor/daily-report' : '/api/supervisor/prev-report';
 
       const response = await fetch(endpoint, {
           method: 'PUT',
@@ -370,7 +370,7 @@
     
       const selectedDate = formatDate(production_date.value);
       const response = await fetch(
-        `/api/MachineLog/ExportReport?production_date=${selectedDate}&shift=${shift.value}`,
+        fetch(`/api/supervisor/export-report?production_date=${date}&shift=${shift}`)
         { method: 'GET' }
       );
     

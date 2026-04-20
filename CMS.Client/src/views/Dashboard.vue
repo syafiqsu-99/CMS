@@ -106,7 +106,7 @@
 </template>
 
 <script setup>
-  import Attendance from '../components/Attendance.vue';
+  import Attendance from '../components/Dashboard/Attendance.vue';
   import {
     Chart as ChartJS,
     CategoryScale,

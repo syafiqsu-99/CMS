@@ -700,7 +700,7 @@
       ...item,
       machine_name: machineNames,
       id_machine: idList,
-      photo_url: `/api/MachineLog/StaffPhoto/${item.staff_id}`,
+      photo_url: `/api/supervisor/staff-photo/${item.staff_id}`,
       photoError: false
     };
   }
@@ -709,7 +709,7 @@
   async function loadStaffData() {
     loading.value = true;
     try {
-      const response = await fetch('/api/MachineLog/StaffSchedule');
+      const response = await fetch('/api/supervisor/staff-schedule');
       const data = await response.json();
 
       poolList.value = [];
@@ -848,7 +848,7 @@
         };
       });
 
-      const response = await fetch('/api/MachineLog/StaffSchedule', {
+      const response = await fetch('/api/supervisor/staff-schedule', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -900,7 +900,7 @@
       const isEdit = staffDialog.value.isEdit;
       const staffPayload = { staff_name: form.staff_name, staff_role: form.staff_role, staff_id: form.staff_id };
 
-      const response = await fetch('/api/MachineLog/Staff', {
+      const response = await fetch('/api/supervisor/staff', {
         method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(staffPayload)
@@ -913,7 +913,7 @@
         const formData = new FormData();
         formData.append('file', staffDialog.value.photoFile);
         formData.append('staff_id', savedId);
-        await fetch('/api/MachineLog/StaffPhoto', { method: 'POST', body: formData });
+        await fetch('/api/supervisor/staff-photo', { method: 'POST', body: formData });
       }
 
       showSnackbar(isEdit ? 'Staff updated!' : 'Staff added!', 'success');

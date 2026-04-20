@@ -9,10 +9,10 @@ namespace CMS.Server.Controllers;
 [Route("api/[controller]")]
 public class MachinesController : BaseController
 {
-    private readonly MachineMasterService _machineService;
+    private readonly MachinesService _machineService;
     private readonly MachineLogService _machineLogService;
 
-    public MachinesController(MachineMasterService machineService, MachineLogService logService)
+    public MachinesController(MachinesService machineService, MachineLogService logService)
     {
         _machineService = machineService;
         _machineLogService = logService;
