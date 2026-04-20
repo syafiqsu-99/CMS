@@ -52,7 +52,7 @@
 
   async function checkHealth() {
     try {
-      const res = await fetch('/api/Base/Health');
+      const res = await fetch('/api/base/Health');
       if (!res.ok) return false;
       const data = await res.json();
       return data.status === 'Ready';
@@ -83,17 +83,23 @@
   // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
   onMounted(async () => {
-    const ready = await waitForBackend();
-    if (ready) {
-      loadingMessage.value = 'Loading data…';
-      await store.loadInitialData();
-      startPolling();
+    try {
+      const ready = await waitForBackend();
+      if (ready) {
+        loadingMessage.value = 'Loading data…';
+        await store.loadInitialData();
+        startPolling();
+      }
+    } catch (error) {
+      console.error("Initialization error:", error);
+      showSnackbar("An error occurred while loading data.", "error");
+    } finally {
+      isLoading.value = false;
     }
-    isLoading.value = false;
   });
 
   onBeforeUnmount(stopPolling);
-</script>x
+</script>
 
 <style scoped>
   .loading-overlay {

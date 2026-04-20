@@ -1,6 +1,4 @@
-// CMS.Server/Program.cs
-using CMS.server.Services;
-using CMS.Server.Services;
+﻿using CMS.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,34 +8,38 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// Scoped
-builder.Services.AddScoped<ExcelGenerationService>();
-
-// Singletons
 builder.Services.AddSingleton<PlcService>();
+
+// ── Scoped (per-request) ──────────────────────────────────────────────────────
+builder.Services.AddScoped<ExcelGenerationService>();
+builder.Services.AddScoped<BaseService>(sp =>
+    new BaseService(connectionString, sp.GetRequiredService<PlcService>()));
+
+// ── Schema init ───────────────────────────────────────
 builder.Services.AddSingleton(new SchemaInitializerService(connectionString));
-builder.Services.AddSingleton<MachinesService>(sp =>
-    new MachinesService(connectionString, sp.GetRequiredService<PlcService>()));
-builder.Services.AddSingleton<OEEService>(_ => new OEEService(connectionString));
-builder.Services.AddSingleton<SAPService>(_ => new SAPService(connectionString));
-builder.Services.AddSingleton<MachineLogService>(sp =>
-    new MachineLogService(connectionString, sp.GetRequiredService<PlcService>()));
+
+// ── Page-specific data services ──────
+builder.Services.AddSingleton<OEEService>(sp =>
+    new OEEService(sp.GetRequiredService<PlcService>(), connectionString));
 builder.Services.AddSingleton<SupervisorService>(sp =>
-    new SupervisorService(connectionString, sp.GetRequiredService<PlcService>()));
-
+    new SupervisorService(sp.GetRequiredService<PlcService>(), connectionString));
 builder.Services.AddSingleton<SettingService>(sp =>
-    new SettingService(sp.GetRequiredService<PlcService>()));
+    new SettingService(sp.GetRequiredService<PlcService>(), connectionString));
+builder.Services.AddSingleton<DashboardService>(sp =>
+    new DashboardService(sp.GetRequiredService<PlcService>(), connectionString));
+builder.Services.AddSingleton<MachinesService>(sp =>
+    new MachinesService(sp.GetRequiredService<PlcService>(), connectionString));
 
-// Background PLC monitor
 if (!builder.Environment.IsDevelopment())
-    builder.Services.AddHostedService<PlcMonitorService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<PlcService>());
 
+// ── App pipeline ──────────────────────────────────────────────────────────────
 var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
-    var schemaService = scope.ServiceProvider.GetRequiredService<SchemaInitializerService>();
-    await schemaService.EnsureDatabaseSchemaAsync();
+    var schema = scope.ServiceProvider.GetRequiredService<SchemaInitializerService>();
+    await schema.EnsureDatabaseSchemaAsync();
 }
 
 app.UseDefaultFiles();

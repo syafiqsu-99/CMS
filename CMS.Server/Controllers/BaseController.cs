@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using CMS.Server.Services;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CMS.Server.Controllers;
 
@@ -6,6 +7,12 @@ namespace CMS.Server.Controllers;
 [Route("api/[controller]")]
 public class BaseController : ControllerBase
 {
+    private readonly BaseService _baseService;
+    public BaseController(BaseService baseService)
+    {
+        _baseService = baseService;
+    }
+
     [HttpGet("Health")]
     public IActionResult Health()
     {
@@ -26,5 +33,12 @@ public class BaseController : ControllerBase
                 timestamp = DateTime.UtcNow
             });
         }
+    }
+
+    [HttpGet("Timeline")]
+    public async Task<ActionResult> Timeline()
+    {
+        var data = await _baseService.LoadTimeline();
+        return Ok(data);
     }
 }

@@ -16,7 +16,7 @@
 
         <v-list-item v-if="loggedIn" prepend-icon="mdi-account" title="Supervisor" :to="{ name: 'supervisor' }" link></v-list-item>
 
-        <!--<v-list-item v-if="loggedIn" prepend-icon="mdi-cog" title="Setting" :to="{ name: 'setting' }" link></v-list-item>-->
+        <v-list-item v-if="loggedIn" prepend-icon="mdi-cog" title="Setting" :to="{ name: 'setting' }" link></v-list-item>
       </v-list>
 
       <template #append>
@@ -61,6 +61,7 @@
 <script setup>
   import { ref, inject } from 'vue';
   import { useRouter } from 'vue-router';
+  import { ADMIN_PASSWORD } from '@/utils/constant.js';
 
   const router = useRouter();
 
@@ -70,7 +71,7 @@
   const loggedIn = ref(localStorage.getItem('logged_in') === 'true');
 
   const login = () => {
-    if (password.value === "jjpmsb1234") {
+    if (password.value === ADMIN_PASSWORD) {
       localStorage.setItem('logged_in', 'true');
       loggedIn.value = true;
       dialog.value = false;

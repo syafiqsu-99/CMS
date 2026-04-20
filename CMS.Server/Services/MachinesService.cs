@@ -1,15 +1,9 @@
-﻿using CMS.server.Services;
-using CMS.Server.Services.Base;
-using Microsoft.Data.SqlClient;
-using static CMS.server.Services.MachineLogService;
+﻿using Microsoft.Data.SqlClient;
 
 namespace CMS.Server.Services;
 
-public class MachinesService(string connectionString, PlcService plcService)
-    : BaseDataService(connectionString)
+public class MachinesService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
-    private readonly PlcService _plc = plcService;
-
     // ── Public API ─────────────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<object>> LoadMachineMasterAsync()
@@ -143,7 +137,7 @@ public class MachinesService(string connectionString, PlcService plcService)
                 visual_qc = Convert.ToBoolean(reader["visual_qc"]),
                 measure_qc = Convert.ToBoolean(reader["measure_qc"]),
                 mould_category = Convert.ToInt32(reader["mould_category"]),
-                color = BaseDataService.GetColor(category),
+                color = BaseService.GetColor(category),
             });
         }
         return result;
@@ -237,4 +231,54 @@ public class MachinesService(string connectionString, PlcService plcService)
            AND r.mould           = mm.mould
            AND r.production_date = @production_date
            AND r.shift           = @shift";
+    public async Task<object> LoadUtilities(int id_machine)
+    {
+        var sql = @"
+                    DECLARE @production_date DATE = CASE
+                        WHEN CAST(GETDATE() AS TIME) BETWEEN '00:00:00' AND '07:59:59'
+                            THEN DATEADD(DAY, -1, CAST(GETDATE() AS DATE))
+                        ELSE CAST(GETDATE() AS DATE)
+                    END;
+
+                    DECLARE @shift INT = CASE
+                        WHEN CAST(GETDATE() AS TIME) BETWEEN '08:00:00' AND '19:59:59'
+                            THEN 1
+                        ELSE 2
+                    END;
+
+                    SELECT
+                        u.utility_name,
+                        COALESCE(u.start, GETDATE())  AS start,
+                        COALESCE(u.finish, GETDATE()) AS finish,
+                        DATEDIFF(MINUTE, COALESCE(u.start, GETDATE()), COALESCE(u.finish, GETDATE())) AS duration,
+                        COALESCE(u.category, 0) AS category
+                    FROM utilities u
+                    WHERE u.id_machine = @id_machine 
+                      AND u.production_date = @production_date
+                      AND u.shift = @shift
+                    ORDER BY u.start;";
+
+        var result = new List<object>();
+
+        using var conn = await CreateConnectionAsync();
+        using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.AddWithValue("@id_machine", id_machine);
+
+        using var reader = await cmd.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+        {
+            result.Add(new
+            {
+                utility_name = Convert.ToString(reader["utility_name"]),
+                start = Convert.ToDateTime(reader["start"]),
+                finish = Convert.ToDateTime(reader["finish"]),
+                duration = Convert.ToSingle(reader["duration"]),
+                category = Convert.ToInt32(reader["category"]),
+            });
+        }
+
+        return result;
+    }
 }

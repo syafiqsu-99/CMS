@@ -1,7 +1,6 @@
 ﻿using CMS.Server.Models;
 using CMS.Server.Services;
 using Microsoft.AspNetCore.Mvc;
-using System.Text;
 using System.Text.Json;
 
 namespace CMS.Server.Controllers;
@@ -10,7 +9,7 @@ namespace CMS.Server.Controllers;
 [Route("api/[controller]")]
 public class SupervisorController(
     SupervisorService supervisorService,
-    ExcelGenerationService excelService) : BaseController
+    ExcelGenerationService excelService) : ControllerBase
 {
     // ── Production Reports ────────────────────────────────────────────────────
 
@@ -47,30 +46,74 @@ public class SupervisorController(
     }
 
     [HttpGet("export-report")]
-    public async Task<IActionResult> ExportReport(
-        [FromQuery] string production_date,
-        [FromQuery] int shift)
+    public async Task<IActionResult> ExportReport(string production_date, int shift)
     {
-        if (string.IsNullOrEmpty(production_date))
-            return BadRequest(new { message = "Production date is required." });
+        try
+        {
+            if (string.IsNullOrEmpty(production_date))
+            {
+                return BadRequest(new { message = "Production date is required" });
+            }
 
-        if (!DateOnly.TryParse(production_date, out var parsedDate))
-            return BadRequest(new { message = $"Invalid date format: {production_date}. Use YYYY-MM-DD." });
+            if (!DateOnly.TryParse(production_date, out var parsedDate))
+            {
+                return BadRequest(new { message = $"Invalid date format: {production_date}. Use YYYY-MM-DD format." });
+            }
 
-        if (shift != 1 && shift != 2)
-            return BadRequest(new { message = "Invalid shift. Use 1 or 2." });
+            if (shift != 1 && shift != 2)
+            {
+                return BadRequest(new { message = "Invalid shift. Use 1 or 2" });
+            }
 
-        var reportData = await supervisorService.LoadExcelReport(parsedDate, shift);
-        if (reportData.Count == 0)
-            return NotFound(new { message = "No data found.", date = parsedDate, shift });
+            Console.WriteLine($"Querying for date: {parsedDate}, shift: {shift}");
 
-        var excelFile = excelService.GenerateExcelReport(reportData, parsedDate, shift);
-        var shiftName = shift == 1 ? "Morning" : "Night";
-        var fileName = $"Report_{parsedDate:yyyy-MM-dd}_{shiftName}.xlsx";
+            var reportData = await supervisorService.LoadExcelReport(parsedDate, shift);
 
-        return File(excelFile,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            fileName);
+            Console.WriteLine($"Records found: {reportData?.Count ?? 0}");
+
+            if (reportData == null || !reportData.Any())
+            {
+                return NotFound(new
+                {
+                    message = "No data found for the specified date and shift",
+                    requestedDate = parsedDate.ToString("yyyy-MM-dd"),
+                    requestedShift = shift
+                });
+            }
+
+            var excelFile = excelService.GenerateExcelReport(reportData, parsedDate, shift);
+
+            var shiftName = shift == 1 ? "Morning" : "Night";
+            var fileName = $"DailyProductionReport_{parsedDate:yyyy-MM-dd}_Shift{shiftName}.xlsx";
+
+            return File(
+                excelFile,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                fileName
+            );
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error in ExportReport: {ex.Message}");
+            Console.WriteLine($"StackTrace: {ex.StackTrace}");
+            return StatusCode(500, new { error = ex.Message, stackTrace = ex.StackTrace });
+        }
+    }
+
+    // ── Machine Management ────────────────────────────────────────────────────────────
+
+    [HttpPost("mould-change")]
+    public async Task<IActionResult> MouldChange([FromBody] Dictionary<string, JsonElement> payload)
+    {
+        try
+        {
+            await supervisorService.UpdateMouldChange(payload);
+            return Ok(new { message = "Mould changed successfully." });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     // ── Attendance ────────────────────────────────────────────────────────────
@@ -165,7 +208,7 @@ public class SupervisorController(
         => Ok(await supervisorService.LoadShiftCalendar(year, month));
 
     [HttpPut("shift-calendar")]
-    public async Task<IActionResult> UpdateShiftCalendar([FromBody] List<calendar> entries)
+    public async Task<IActionResult> UpdateShiftCalendar(List<Calendar> entries)
     {
         if (entries == null || entries.Count == 0)
             return BadRequest(new { error = "No entries provided." });

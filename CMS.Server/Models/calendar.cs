@@ -1,6 +1,6 @@
 ﻿namespace CMS.Server.Models
 {
-    public class calendar
+    public class Calendar
     {
         public DateOnly production_date { get; set; }
         public int shift { get; set; }

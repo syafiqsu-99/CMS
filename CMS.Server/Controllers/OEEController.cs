@@ -5,7 +5,7 @@ namespace CMS.Server.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class OeeController(OEEService oeeService) : BaseController
+public class OeeController(OEEService oeeService) : ControllerBase
 {
     // ── Summary ────────────────────────────────────────────────────────────────
 

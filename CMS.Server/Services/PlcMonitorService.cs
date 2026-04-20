@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace CMS.server.Services
+namespace CMS.Server.Services
 {
     public class PlcMonitorService : BackgroundService
     {

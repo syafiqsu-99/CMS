@@ -148,3 +148,71 @@ export function formatDate(date) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
   return new Date(date).toLocaleDateString('en-CA');
 }
+
+// ── Setting Page — Department definitions for PLC password management ─────────
+export const DEPARTMENTS = [
+  { key: 'maintenance', label: 'Maintenance', holdingAddr: 10, color: 'blue', icon: 'mdi-wrench-outline' },
+  { key: 'technician', label: 'Technician', holdingAddr: 12, color: 'orange', icon: 'mdi-account-hard-hat-outline' },
+  { key: 'production', label: 'Production', holdingAddr: 14, color: 'green', icon: 'mdi-factory' },
+];
+
+// ── Setting Page — PLC signal monitor definitions ─────────────────────────────
+// address = Mitsubishi D/W register address string shown in the monitor table
+export const SIGNAL_DEFS = [
+  // Machine status
+  { name: 'Status Start', dataType: 'bit', address: 'W0.0', group: 'Status' },
+  { name: 'Status Off', dataType: 'bit', address: 'W0.1', group: 'Status' },
+  { name: 'Prod Running', dataType: 'bit', address: 'W0.2', group: 'Status' },
+  { name: 'Done', dataType: 'bit', address: 'W0.3', group: 'Status' },
+  { name: 'Remark Signal', dataType: 'bit', address: 'W0.5', group: 'Status' },
+  { name: 'Reject Signal', dataType: 'bit', address: 'W0.6', group: 'Status' },
+  // Production
+  { name: 'Shot', dataType: 'int', address: 'D530', group: 'Production' },
+  { name: 'Shot Accum', dataType: 'int', address: 'D532', group: 'Production' },
+  { name: 'Cycle Time', dataType: 'float', address: 'D560', group: 'Production', unit: 's' },
+  { name: 'SAP Code', dataType: 'int', address: 'D510', group: 'Production' },
+  { name: 'Mould', dataType: 'int', address: 'D512', group: 'Production' },
+  { name: 'Stop Category', dataType: 'string', address: 'D800', group: 'Production' },
+  { name: 'Remark', dataType: 'string', address: 'D900', group: 'Production' },
+  // Utilities
+  { name: 'Barrel', dataType: 'bit', address: 'W1.0', group: 'Utilities' },
+  { name: 'Hyd Motor', dataType: 'bit', address: 'W1.1', group: 'Utilities' },
+  { name: 'Dehumidifier', dataType: 'bit', address: 'W1.2', group: 'Utilities' },
+  { name: 'Chiller', dataType: 'bit', address: 'W1.3', group: 'Utilities' },
+  { name: 'Material', dataType: 'bit', address: 'W1.4', group: 'Utilities' },
+  { name: 'Dry Cycle', dataType: 'bit', address: 'W1.5', group: 'Utilities' },
+  // Reject (kg)
+  { name: 'Panelling kg', dataType: 'float', address: 'D750', group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Lumpy kg', dataType: 'float', address: 'D755', group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Blk.Dot kg', dataType: 'float', address: 'D760', group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Burst kg', dataType: 'float', address: 'D765', group: 'Reject (kg)', unit: 'kg' },
+  { name: 'StartUp kg', dataType: 'float', address: 'D770', group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Preform kg', dataType: 'float', address: 'D775', group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Purging kg', dataType: 'float', address: 'D780', group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Others kg', dataType: 'float', address: 'D785', group: 'Reject (kg)', unit: 'kg' },
+  // Reject (pcs)
+  { name: 'Panelling pcs', dataType: 'float', address: 'D700', group: 'Reject (pcs)', unit: 'pcs' },
+  { name: 'Lumpy pcs', dataType: 'float', address: 'D705', group: 'Reject (pcs)', unit: 'pcs' },
+  { name: 'Blk.Dot pcs', dataType: 'float', address: 'D710', group: 'Reject (pcs)', unit: 'pcs' },
+  { name: 'Burst pcs', dataType: 'float', address: 'D715', group: 'Reject (pcs)', unit: 'pcs' },
+  { name: 'StartUp pcs', dataType: 'float', address: 'D720', group: 'Reject (pcs)', unit: 'pcs' },
+  { name: 'Preform pcs', dataType: 'float', address: 'D725', group: 'Reject (pcs)', unit: 'pcs' },
+  { name: 'Purging pcs', dataType: 'float', address: 'D730', group: 'Reject (pcs)', unit: 'pcs' },
+  { name: 'Others pcs', dataType: 'float', address: 'D735', group: 'Reject (pcs)', unit: 'pcs' },
+];
+
+// Poll interval options (ms) — used by PlcSignalMonitor
+export const POLL_INTERVALS = [
+  { title: '1s', value: 1000 },
+  { title: '2s', value: 2000 },
+  { title: '5s', value: 5000 },
+];
+
+// Machine count — number of physical PLCs monitored
+export const MACHINE_COUNT = 26;
+
+// Base IP prefix for machine IPs displayed in the signal monitor
+export const MACHINE_IP_PREFIX = '172.17.86.';
+
+// ── NavBar — admin password (centralised, not in template logic) ──────────────
+export const ADMIN_PASSWORD = 'jjpmsb1234';

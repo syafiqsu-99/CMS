@@ -43,7 +43,7 @@ export const useMachineStore = defineStore('machine', {
 
     async loadSAP() {
       try {
-        const res = await fetch('/api/sap');
+        const res = await fetch('/api/setting/sap');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.SAPData = await res.json();
         return this.SAPData;
@@ -55,7 +55,6 @@ export const useMachineStore = defineStore('machine', {
 
     async loadAttendance() {
       try {
-        // Migrated: /api/MachineLog/Attendance → /api/supervisor/attendance
         const res = await fetch('/api/supervisor/attendance');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();

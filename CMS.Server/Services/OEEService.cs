@@ -1,9 +1,7 @@
-﻿using CMS.Server.Services.Base;
-using Microsoft.Data.SqlClient;
-
+﻿using Microsoft.Data.SqlClient;
 namespace CMS.Server.Services;
 
-public class OEEService(string connectionString) : BaseDataService(connectionString)
+public class OEEService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
     // ── Machine count helper ───────────────────────────────────────────────────
 

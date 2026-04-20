@@ -5,7 +5,7 @@
         public int id_machine { get; set; }
         public string? machine_name { get; set; }
         public string? packer { get; set; }
-        public string? process { get; set; }
+        public string? material { get; set; }
         public int id_type { get; set; }
         public int mould { get; set; }
         public string? type { get; set; }

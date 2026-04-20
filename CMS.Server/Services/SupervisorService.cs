@@ -1,17 +1,10 @@
-﻿using CMS.server.Services;
-using CMS.Server.Models;
-using CMS.Server.Services.Base;
+﻿using CMS.Server.Models;
 using Microsoft.Data.SqlClient;
 using System.Text.Json;
 
 namespace CMS.Server.Services;
 
-/// <summary>
-/// Handles all data operations for the Supervisor page:
-/// production reports, staff management, staff scheduling, shift calendar, attendance.
-/// Raw SQL is preserved verbatim from MachineLogService — no query modifications.
-/// </summary>
-public class SupervisorService(string connectionString, PlcService plcService) : BaseDataService(connectionString)
+public class SupervisorService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
     // ── Daily / Prev Report ───────────────────────────────────────────────────
 
@@ -128,32 +121,113 @@ public class SupervisorService(string connectionString, PlcService plcService) :
 
     // ── Excel Export ──────────────────────────────────────────────────────────
 
-    public async Task<List<Dictionary<string, object?>>> LoadExcelReport(DateOnly date, int shift)
+    public async Task<List<Report>> LoadExcelReport(DateOnly production_date, int shift)
     {
         var sql = @"
-            SELECT r.*, m.machine_name, m.packer,
-                   sap.type, sap.material, sap.qty_perct,
-                   sap.gross_weight, sap.part_weight, sap.sap_ct
-            FROM report r
-            INNER JOIN machine_master m ON r.id_machine = m.id_machine
-            LEFT JOIN sap ON r.id_type = sap.id_type AND r.mould = sap.mould
-            WHERE r.production_date = @production_date AND r.shift = @shift
-            ORDER BY m.machine_name";
+                SELECT 
+                    COALESCE(id_machine, 1) AS id_machine,
+                    COALESCE(shift, 1) AS shift,
+                    COALESCE(machine_name, '') AS machine_name,
+                    COALESCE(packer, '') AS packer,
+                    COALESCE(material, '') AS material,
+                    COALESCE(id_type, 123456) AS id_type,
+                    COALESCE(mould, 0) AS mould,
+                    COALESCE(type, '') AS type,
+                    COALESCE(jo_no, '') AS jo_no,
+                    COALESCE(qty_perct, 1) AS qty_perct,
+                    COALESCE(gross_weight, 0.0) AS gross_weight,
+                    COALESCE(part_weight, 0.0) AS part_weight,
+                    COALESCE(shot, 0) AS shot,
+                    COALESCE(qty_order, 0) AS qty_order,
+                    COALESCE(wip_opening, 0) AS wip_opening,
+                    COALESCE(wip_closing, 0) AS wip_closing,
+                    COALESCE(shift_output, 0) AS shift_output,
+                    COALESCE(finish_good, 0) AS finish_good,
+                    COALESCE(inward, 0.0) AS inward,
+                    COALESCE(qty_accum, 0) AS qty_accum,
+                    COALESCE(qty_balance, 0) AS qty_balance,
+                    COALESCE(material_used, 0.0) AS material_used,
+                    COALESCE(runner, 0.0) AS runner,
+                    COALESCE(reject_startup, 0.0) AS reject_startup,
+                    COALESCE(reject_startup_per, 0.0) AS reject_startup_per,
+                    COALESCE(reject_prod, 0.0) AS reject_prod,
+                    COALESCE(reject_prod_per, 0.0) AS reject_prod_per,
+                    COALESCE(act_ct, 0.0) AS act_ct,
+                    COALESCE(production_running, 0.0) AS production_running,
+                    COALESCE(sap_ct, 0.0) AS sap_ct,
+                    COALESCE(change_full_set, 0.0) AS change_full_set,
+                    COALESCE(change_half_set, 0.0) AS change_half_set,
+                    COALESCE(change_parts, 0.0) AS change_parts,
+                    COALESCE(maintenance_dt, 0.0) AS maintenance_dt,
+                    COALESCE(technician_dt, 0.0) AS technician_dt,
+                    COALESCE(production_dt, 0.0) AS production_dt,
+                    COALESCE(remark, '') AS remark,
+                    COALESCE(unallocated, 0.0) AS unallocated,
+                    COALESCE(part_scrap, 0.0) AS part_scrap,
+                    COALESCE(reject_purging, 0.0) AS reject_purging,
+                    COALESCE(reject_preform, 0.0) AS reject_preform,
+                    COALESCE(reject_total_pcs, 0) AS reject_total_pcs
+                FROM report
+                WHERE production_date = @production_date 
+                AND shift = @shift";
 
-        var result = new List<Dictionary<string, object?>>();
+        var result = new List<Report>();
+
         await using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@production_date", date);
+        cmd.Parameters.AddWithValue("@production_date", production_date);
         cmd.Parameters.AddWithValue("@shift", shift);
+        using var reader = await cmd.ExecuteReaderAsync();
 
-        await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            var row = new Dictionary<string, object?>();
-            for (int i = 0; i < reader.FieldCount; i++)
-                row[reader.GetName(i)] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-            result.Add(row);
+            result.Add(new Report
+            {
+                IdMachine = Convert.ToInt32(reader["id_machine"]),
+                Shift = Convert.ToInt32(reader["shift"]),
+                MachineName = Convert.ToString(reader["machine_name"]) ?? string.Empty,
+                Packer = Convert.ToString(reader["packer"]),
+                Material = Convert.ToString(reader["material"]) ?? string.Empty,
+                IdType = Convert.ToInt32(reader["id_type"]),
+                Mould = Convert.ToInt32(reader["mould"]),
+                Type = Convert.ToString(reader["type"]) ?? string.Empty,
+                JoNo = Convert.ToString(reader["jo_no"]),
+                QtyPerct = Convert.ToInt32(reader["qty_perct"]),
+                GrossWeight = Convert.ToDouble(reader["gross_weight"]),
+                PartWeight = Convert.ToDouble(reader["part_weight"]),
+                ShotAccum = Convert.ToInt32(reader["shot"]),
+                QtyOrder = Convert.ToInt32(reader["qty_order"]),
+                WipOpening = Convert.ToInt32(reader["wip_opening"]),
+                WipClosing = Convert.ToInt32(reader["wip_closing"]),
+                ShiftOutput = Convert.ToInt32(reader["shift_output"]),
+                FinishGood = Convert.ToInt32(reader["finish_good"]),
+                Inward = Convert.ToDouble(reader["inward"]),
+                QtyAccum = Convert.ToInt32(reader["qty_accum"]),
+                QtyBalance = Convert.ToInt32(reader["qty_balance"]),
+                MaterialUsed = Convert.ToDouble(reader["material_used"]),
+                Runner = Convert.ToDouble(reader["runner"]),
+                RejectStartup = Convert.ToDouble(reader["reject_startup"]),
+                RejectStartupPer = Convert.ToDouble(reader["reject_startup_per"]),
+                RejectProd = Convert.ToDouble(reader["reject_prod"]),
+                RejectProdPer = Convert.ToDouble(reader["reject_prod_per"]),
+                ActCt = Convert.ToDouble(reader["act_ct"]),
+                ProductionRunning = Convert.ToDouble(reader["production_running"]),
+                SapCt = Convert.ToDouble(reader["sap_ct"]),
+                ChangeFullSet = Convert.ToDouble(reader["change_full_set"]),
+                ChangeHalfSet = Convert.ToDouble(reader["change_half_set"]),
+                ChangeParts = Convert.ToDouble(reader["change_parts"]),
+                MaintenanceDt = Convert.ToDouble(reader["maintenance_dt"]),
+                TechnicianDt = Convert.ToDouble(reader["technician_dt"]),
+                ProductionDt = Convert.ToDouble(reader["production_dt"]),
+                Remark = Convert.ToString(reader["remark"]),
+                Unallocated = Convert.ToDouble(reader["unallocated"]),
+                PartScrap = Convert.ToDouble(reader["part_scrap"]),
+                RejectPurging = Convert.ToDouble(reader["reject_purging"]),
+                RejectPreform = Convert.ToDouble(reader["reject_preform"]),
+                RejectTotalPcs = Convert.ToInt32(reader["reject_total_pcs"])
+            });
         }
+
         return result;
     }
 
@@ -335,24 +409,165 @@ public class SupervisorService(string connectionString, PlcService plcService) :
         return result;
     }
 
-    public async Task UpsertShiftCalendar(List<calendar> entries)
+    public async Task UpsertShiftCalendar(List<Calendar> entries)
     {
-        const string sql = @"
-            MERGE calendar AS target
-            USING (SELECT @calendar_date AS calendar_date) AS source ON target.calendar_date = source.calendar_date
-            WHEN MATCHED THEN UPDATE SET shift = @shift, status = @status, remark = @remark
-            WHEN NOT MATCHED THEN INSERT (calendar_date, shift, status, remark)
-                VALUES (@calendar_date, @shift, @status, @remark);";
+        var groups = entries
+            .GroupBy(e => (e.production_date, e.shift))
+            .ToList();
 
         await using var conn = await CreateConnectionAsync();
-        foreach (var entry in entries)
+
+        foreach (var group in groups)
         {
-            await using var cmd = new SqlCommand(sql, conn);
-            cmd.Parameters.AddWithValue("@calendar_date", entry.calendar_date);
-            cmd.Parameters.AddWithValue("@shift", entry.shift);
-            cmd.Parameters.AddWithValue("@status", entry.status ?? (object)DBNull.Value);
-            cmd.Parameters.AddWithValue("@remark", entry.remark ?? (object)DBNull.Value);
-            await cmd.ExecuteNonQueryAsync();
+            var (production_date, shift) = group.Key;
+            var baseDate = production_date.ToDateTime(TimeOnly.MinValue);
+
+            const string deleteSql = @"
+                    DELETE FROM calendar
+                    WHERE production_date = @production_date AND shift = @shift";
+
+            await using var delCmd = new SqlCommand(deleteSql, conn);
+            delCmd.Parameters.AddWithValue("@production_date", baseDate);
+            delCmd.Parameters.AddWithValue("@shift", shift);
+            await delCmd.ExecuteNonQueryAsync();
+
+            const string insertSql = @"
+                    INSERT INTO calendar (production_date, shift, day_type, planned_hours, start, finish)
+                    VALUES (@production_date, @shift, @day_type, @planned_hours, @start, @finish)";
+
+            foreach (var e in group)
+            {
+                var defaultStart = e.shift == 1 ? baseDate.AddHours(6) : baseDate.AddHours(18);
+                var defaultFinish = e.shift == 1 ? baseDate.AddHours(18) : baseDate.AddDays(1).AddHours(6);
+
+                DateTime? parsedStart = string.IsNullOrEmpty(e.start_time)
+                    ? defaultStart
+                    : DateTime.Parse(e.start_time);
+
+                DateTime? parsedFinish = string.IsNullOrEmpty(e.finish_time)
+                    ? defaultFinish
+                    : DateTime.Parse(e.finish_time);
+
+                await using var insCmd = new SqlCommand(insertSql, conn);
+                insCmd.Parameters.AddWithValue("@production_date", baseDate);
+                insCmd.Parameters.AddWithValue("@shift", e.shift);
+                insCmd.Parameters.AddWithValue("@day_type", e.day_type);
+                insCmd.Parameters.AddWithValue("@planned_hours", e.planned_hours);
+                insCmd.Parameters.AddWithValue("@start", parsedStart ?? (object)DBNull.Value);
+                insCmd.Parameters.AddWithValue("@finish", parsedFinish ?? (object)DBNull.Value);
+                await insCmd.ExecuteNonQueryAsync();
+            }
         }
     }
+    public async Task UpdateMouldChange(Dictionary<string, JsonElement> payload)
+    {
+        var time = DateTime.Now;
+        var (productionDate, shift) = GetProductionDate(time);
+
+        var tableName = $"machine_log_{payload["id_machine"].GetInt32()}";
+
+        var sql = $@"
+            IF NOT EXISTS (SELECT 1 FROM reject WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
+            BEGIN
+                INSERT INTO reject (id_machine, machine_name, id_type, mould, total_weight, reject_panelling, reject_lumpy, reject_black_dot, reject_burst, reject_startup, reject_preform, reject_purging, reject_others, shift, production_date) 
+                VALUES (@id_machine, @machine_name, @id_type, @mould, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, @shift, @production_date);
+            END
+
+            DECLARE @status_start INT;
+            DECLARE @category NVARCHAR(MAX);
+            DECLARE @problem NVARCHAR(MAX);
+            DECLARE @mould_category NVARCHAR(MAX);
+
+            SELECT TOP 1
+                @status_start = status_start,
+                @category = category,
+                @problem = problem,
+                @mould_category = mould_category
+            FROM [{tableName}]
+            WHERE finish IS NULL;
+
+            IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
+            BEGIN
+                UPDATE [{tableName}] SET finish = @time WHERE finish IS NULL;
+            END
+
+            INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start) 
+            VALUES (@machine_name, @id_type, @mould, @time, 0, 
+            CASE
+                WHEN @status_start = 1 THEN 'PRODUCTION RUNNING'
+                ELSE NULLIF(@category, '')
+            END,
+            NULLIF(@problem, ''),
+            CASE
+                WHEN NULLIF(@category, '') = 'MOULD CHANGE'
+                     AND COALESCE(@mould_category, '') <> ''
+                THEN @mould_category
+                ELSE '0'
+            END,
+            @shift, @production_date, @status_start);
+
+            IF NOT EXISTS (SELECT 1 FROM report WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
+            BEGIN
+                INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould) 
+                VALUES (@id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould);
+            END
+            ELSE
+            BEGIN
+                UPDATE report SET time = @time
+                WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift
+            END
+
+            UPDATE m
+            SET
+                m.material = s.material,
+                m.id_type = @id_type,
+                m.mould = @mould,
+                m.type = s.type,
+                m.jo_no = 0,
+                m.qty_order = 0,
+                m.wip_opening = 0,
+                m.wip_closing = 0,
+                m.finish_good = 0,
+                m.qty_accum = 0,
+                m.qty_perct = s.qty_perct,
+                m.sap_ct = s.sap_ct,
+                m.part_weight = s.part_weight,
+                m.gross_weight = s.gross_weight,
+                m.shift = @shift
+            FROM machine_master m
+            LEFT JOIN sap s
+                ON s.id_type = @id_type
+                AND s.mould = @mould
+            WHERE m.id_machine = @id_machine;
+
+            SELECT id_machine, part_weight, type, packer FROM machine_master WHERE id_machine = @id_machine";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.Clear();
+        cmd.Parameters.AddWithValue("@id_machine", payload["id_machine"].GetInt32());
+        cmd.Parameters.AddWithValue("@machine_name", payload["machine_name"].GetString());
+        cmd.Parameters.AddWithValue("@id_type", payload["id_type"].GetInt32());
+        cmd.Parameters.AddWithValue("@mould", payload["mould"].GetInt32());
+        cmd.Parameters.AddWithValue("@shift", shift);
+        cmd.Parameters.AddWithValue("@production_date", productionDate);
+        cmd.Parameters.AddWithValue("@time", time);
+
+        using var reader = await cmd.ExecuteReaderAsync();
+
+        if (await reader.ReadAsync())
+        {
+            var result = new
+            {
+                id_machine = Convert.ToInt32(reader["id_machine"]),
+                packer = Convert.ToString(reader["packer"]),
+                type = Convert.ToString(reader["type"]),
+                part_weight = Convert.ToSingle(reader["part_weight"]),
+            };
+
+            _plcService.UpdatePLCS(result);
+        }
+    }
+
 }

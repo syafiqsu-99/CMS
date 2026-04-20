@@ -441,7 +441,7 @@
   async function confirmImport() {
     loading.value = true;
     try {
-      const res = await fetch('/api/SAP/ImportSAP', {
+      const res = await fetch('/api/setting/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(importDialog.value.data.map(buildPayload)),

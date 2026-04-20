@@ -188,7 +188,7 @@
 
   async function fetchTimelineData() {
     try {
-      const response = await fetch('/api/MachineLog/Timeline');
+      const response = await fetch('/api/base/Timeline');
       const data = await response.json();
 
       machines.value = groupByMachine(data);

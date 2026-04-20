@@ -456,7 +456,7 @@
 
   async function fetchAttendance() {
     try {
-      const res = await fetch('/api/MachineLog/Attendance');
+      const res = await fetch('/api/dashboard/Attendance');
       const data = await res.json();
 
       const enrich = item => ({
