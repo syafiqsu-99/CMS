@@ -1,48 +1,71 @@
-﻿namespace CMS.Server.Models
+﻿namespace CMS.Server.Models;
+
+public class Report
 {
-    public class Report
-    {
-        public int IdMachine { get; set; }
-        public int Shift { get; set; }
-        public required string MachineName { get; set; }
-        public string? Packer { get; set; }
-        public required string Material { get; set; }
-        public int IdType { get; set; }
-        public int Mould { get; set; }
-        public required string Type { get; set; }
-        public string? JoNo { get; set; }
-        public int QtyPerct { get; set; }
-        public double GrossWeight { get; set; }
-        public double PartWeight { get; set; }
-        public int ShotAccum { get; set; }
-        public int QtyOrder { get; set; }
-        public int WipOpening { get; set; }
-        public int WipClosing { get; set; }
-        public int ShiftOutput { get; set; }
-        public int FinishGood { get; set; }
-        public double Inward { get; set; }
-        public int QtyAccum { get; set; }
-        public int QtyBalance { get; set; }
-        public double MaterialUsed { get; set; }
-        public double Runner { get; set; }
-        public double RejectStartup { get; set; }
-        public double RejectStartupPer { get; set; }
-        public double RejectProd { get; set; }
-        public double RejectProdPer { get; set; }
-        public double ActCt { get; set; }
-        public double ProductionRunning { get; set; }
-        public double SapCt { get; set; }
-        public double ChangeFullSet { get; set; }
-        public double ChangeHalfSet { get; set; }
-        public double ChangeParts { get; set; }
-        public double MaintenanceDt { get; set; }
-        public double TechnicianDt { get; set; }
-        public double ProductionDt { get; set; }
-        public string? Remark { get; set; }
-        public double Unallocated { get; set; }
-        public double PartScrap { get; set; }
-        public double RejectPurging { get; set; }
-        public double RejectPreform { get; set; }
-        public int RejectTotalPcs { get; set; }
-    }
+    #region Identifiers
+
+    public int id_machine { get; set; }
+    public int shift { get; set; }
+    public required string machine_name { get; set; }
+    public string? packer { get; set; }
+    public required string material { get; set; }
+    public int id_type { get; set; }
+    public int mould { get; set; }
+    public required string type { get; set; }
+    public string? jo_no { get; set; }
+
+    #endregion
+
+    #region Quantities
+
+    public int qty_perct { get; set; }
+    public double gross_weight { get; set; }
+    public double part_weight { get; set; }
+    public int shot_accum { get; set; }
+    public int qty_order { get; set; }
+    public int wip_opening { get; set; }
+    public int wip_closing { get; set; }
+    public int shift_output { get; set; }
+    public int finish_good { get; set; }
+    public double inward { get; set; }
+    public int qty_accum { get; set; }
+    public int qty_balance { get; set; }
+    public double material_used { get; set; }
+    public double runner { get; set; }
+
+    #endregion
+
+    #region Rejects
+
+    public double reject_startup { get; set; }
+    public double reject_startup_per { get; set; }
+    public double reject_prod { get; set; }
+    public double reject_prod_per { get; set; }
+    public double reject_purging { get; set; }
+    public double reject_preform { get; set; }
+    public int reject_total_pcs { get; set; }
+    public double part_scrap { get; set; }
+
+    #endregion
+
+    #region CycleAndDowntime
+
+    public double act_ct { get; set; }
+    public double sap_ct { get; set; }
+    public double production_running { get; set; }
+    public double change_full_set { get; set; }
+    public double change_half_set { get; set; }
+    public double change_parts { get; set; }
+    public double maintenance_dt { get; set; }
+    public double technician_dt { get; set; }
+    public double production_dt { get; set; }
+    public double unallocated { get; set; }
+
+    #endregion
+
+    #region Meta
+
+    public string? remark { get; set; }
+
+    #endregion
 }

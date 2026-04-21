@@ -8,59 +8,13 @@ public class SupervisorService(PlcService plcService, string connectionString) :
 {
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
     {
-        var sql = @"
+        var logUnion = await BuildMachineLogUnionAsync(
+            columns: "machine_name, id_type, mould, start, finish, category, problem, mould_category, shot, act_ct, shift, production_date, status_start",
+            whereClause: "production_date = @production_date AND shift = @shift");
+
+        var sql = $@"
                 WITH all_logs AS (
-                    SELECT 1 AS id_machine, * FROM machine_log_1 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 2 AS id_machine, * FROM machine_log_2 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 3 AS id_machine, * FROM machine_log_3 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 4 AS id_machine, * FROM machine_log_4 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 5 AS id_machine, * FROM machine_log_5 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 6 AS id_machine, * FROM machine_log_6 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 7 AS id_machine, * FROM machine_log_7 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 8 AS id_machine, * FROM machine_log_8 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 9 AS id_machine, * FROM machine_log_9 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 10 AS id_machine, * FROM machine_log_10 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 11 AS id_machine, * FROM machine_log_11 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 12 AS id_machine, * FROM machine_log_12 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 13 AS id_machine, * FROM machine_log_13 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 14 AS id_machine, * FROM machine_log_14 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 15 AS id_machine, * FROM machine_log_15 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 16 AS id_machine, * FROM machine_log_16 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 17 AS id_machine, * FROM machine_log_17 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 18 AS id_machine, * FROM machine_log_18 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 19 AS id_machine, * FROM machine_log_19 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 20 AS id_machine, * FROM machine_log_20 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 21 AS id_machine, * FROM machine_log_21 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 22 AS id_machine, * FROM machine_log_22 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 23 AS id_machine, * FROM machine_log_23 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 24 AS id_machine, * FROM machine_log_24 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 25 AS id_machine, * FROM machine_log_25 WHERE production_date = @production_date and shift = @shift
-                    UNION ALL
-                    SELECT 26 AS id_machine, * FROM machine_log_26 WHERE production_date = @production_date and shift = @shift
+                    {logUnion}
                 ),log_aggregation AS (
                     SELECT 
                         ml.id_machine,
@@ -429,48 +383,48 @@ public class SupervisorService(PlcService plcService, string connectionString) :
         {
             result.Add(new Report
             {
-                IdMachine = Convert.ToInt32(reader["id_machine"]),
-                Shift = Convert.ToInt32(reader["shift"]),
-                MachineName = Convert.ToString(reader["machine_name"]) ?? string.Empty,
-                Packer = Convert.ToString(reader["packer"]),
-                Material = Convert.ToString(reader["material"]) ?? string.Empty,
-                IdType = Convert.ToInt32(reader["id_type"]),
-                Mould = Convert.ToInt32(reader["mould"]),
-                Type = Convert.ToString(reader["type"]) ?? string.Empty,
-                JoNo = Convert.ToString(reader["jo_no"]),
-                QtyPerct = Convert.ToInt32(reader["qty_perct"]),
-                GrossWeight = Convert.ToDouble(reader["gross_weight"]),
-                PartWeight = Convert.ToDouble(reader["part_weight"]),
-                ShotAccum = Convert.ToInt32(reader["shot"]),
-                QtyOrder = Convert.ToInt32(reader["qty_order"]),
-                WipOpening = Convert.ToInt32(reader["wip_opening"]),
-                WipClosing = Convert.ToInt32(reader["wip_closing"]),
-                ShiftOutput = Convert.ToInt32(reader["shift_output"]),
-                FinishGood = Convert.ToInt32(reader["finish_good"]),
-                Inward = Convert.ToDouble(reader["inward"]),
-                QtyAccum = Convert.ToInt32(reader["qty_accum"]),
-                QtyBalance = Convert.ToInt32(reader["qty_balance"]),
-                MaterialUsed = Convert.ToDouble(reader["material_used"]),
-                Runner = Convert.ToDouble(reader["runner"]),
-                RejectStartup = Convert.ToDouble(reader["reject_startup"]),
-                RejectStartupPer = Convert.ToDouble(reader["reject_startup_per"]),
-                RejectProd = Convert.ToDouble(reader["reject_prod"]),
-                RejectProdPer = Convert.ToDouble(reader["reject_prod_per"]),
-                ActCt = Convert.ToDouble(reader["act_ct"]),
-                ProductionRunning = Convert.ToDouble(reader["production_running"]),
-                SapCt = Convert.ToDouble(reader["sap_ct"]),
-                ChangeFullSet = Convert.ToDouble(reader["change_full_set"]),
-                ChangeHalfSet = Convert.ToDouble(reader["change_half_set"]),
-                ChangeParts = Convert.ToDouble(reader["change_parts"]),
-                MaintenanceDt = Convert.ToDouble(reader["maintenance_dt"]),
-                TechnicianDt = Convert.ToDouble(reader["technician_dt"]),
-                ProductionDt = Convert.ToDouble(reader["production_dt"]),
-                Remark = Convert.ToString(reader["remark"]),
-                Unallocated = Convert.ToDouble(reader["unallocated"]),
-                PartScrap = Convert.ToDouble(reader["part_scrap"]),
-                RejectPurging = Convert.ToDouble(reader["reject_purging"]),
-                RejectPreform = Convert.ToDouble(reader["reject_preform"]),
-                RejectTotalPcs = Convert.ToInt32(reader["reject_total_pcs"])
+                id_machine = Convert.ToInt32(reader["id_machine"]),
+                shift = Convert.ToInt32(reader["shift"]),
+                machine_name = Convert.ToString(reader["machine_name"]) ?? string.Empty,
+                packer = Convert.ToString(reader["packer"]),
+                material = Convert.ToString(reader["material"]) ?? string.Empty,
+                id_type = Convert.ToInt32(reader["id_type"]),
+                mould = Convert.ToInt32(reader["mould"]),
+                type = Convert.ToString(reader["type"]) ?? string.Empty,
+                jo_no = Convert.ToString(reader["jo_no"]),
+                qty_perct = Convert.ToInt32(reader["qty_perct"]),
+                gross_weight = Convert.ToDouble(reader["gross_weight"]),
+                part_weight = Convert.ToDouble(reader["part_weight"]),
+                shot_accum = Convert.ToInt32(reader["shot"]),
+                qty_order = Convert.ToInt32(reader["qty_order"]),
+                wip_opening = Convert.ToInt32(reader["wip_opening"]),
+                wip_closing = Convert.ToInt32(reader["wip_closing"]),
+                shift_output = Convert.ToInt32(reader["shift_output"]),
+                finish_good = Convert.ToInt32(reader["finish_good"]),
+                inward = Convert.ToDouble(reader["inward"]),
+                qty_accum = Convert.ToInt32(reader["qty_accum"]),
+                qty_balance = Convert.ToInt32(reader["qty_balance"]),
+                material_used = Convert.ToDouble(reader["material_used"]),
+                runner = Convert.ToDouble(reader["runner"]),
+                reject_startup = Convert.ToDouble(reader["reject_startup"]),
+                reject_startup_per = Convert.ToDouble(reader["reject_startup_per"]),
+                reject_prod = Convert.ToDouble(reader["reject_prod"]),
+                reject_prod_per = Convert.ToDouble(reader["reject_prod_per"]),
+                act_ct = Convert.ToDouble(reader["act_ct"]),
+                production_running = Convert.ToDouble(reader["production_running"]),
+                sap_ct = Convert.ToDouble(reader["sap_ct"]),
+                change_full_set = Convert.ToDouble(reader["change_full_set"]),
+                change_half_set = Convert.ToDouble(reader["change_half_set"]),
+                change_parts = Convert.ToDouble(reader["change_parts"]),
+                maintenance_dt = Convert.ToDouble(reader["maintenance_dt"]),
+                technician_dt = Convert.ToDouble(reader["technician_dt"]),
+                production_dt = Convert.ToDouble(reader["production_dt"]),
+                remark = Convert.ToString(reader["remark"]),
+                unallocated = Convert.ToDouble(reader["unallocated"]),
+                part_scrap = Convert.ToDouble(reader["part_scrap"]),
+                reject_purging = Convert.ToDouble(reader["reject_purging"]),
+                reject_preform = Convert.ToDouble(reader["reject_preform"]),
+                reject_total_pcs = Convert.ToInt32(reader["reject_total_pcs"]),
             });
         }
 

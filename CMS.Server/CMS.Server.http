@@ -1,17 +1,13 @@
 @CMS.Server_HostAddress = http://localhost:5219
 
 ### Get Machine Master
-GET https://localhost:7080/api/MachineLog/MachineMaster
+GET https://localhost:7080/api/machines
 Accept: application/json
-
-###
 
 ### Get Attendance
-GET https://localhost:7080/api/MachineLog/Attendance
+GET https://localhost:7080/api/supervisor/attendance
 Accept: application/json
 
-###
-
 ### Get Timeline
-GET https://localhost:7080/api/MachineLog/GetTimeline
+GET https://localhost:7080/api/dashboard/timeline
 Accept: application/json

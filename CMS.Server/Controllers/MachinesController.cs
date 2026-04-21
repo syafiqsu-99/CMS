@@ -17,7 +17,7 @@ public class MachinesController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetAll()
-        => Ok(await _machineService.LoadMachineMasterAsync());
+        => Ok(await _machineService.LoadMachineMaster());
 
     [HttpGet("{id:int}/utilities")]
     public async Task<IActionResult> Utilities(int id)

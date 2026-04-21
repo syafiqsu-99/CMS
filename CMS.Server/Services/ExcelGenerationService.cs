@@ -106,39 +106,39 @@ namespace CMS.Server.Services
 
             foreach (var item in data)
             {
-                worksheet.Cell(currentRow, 1).Value = item.MachineName;
-                worksheet.Cell(currentRow, 2).Value = item.Shift;
-                worksheet.Cell(currentRow, 3).Value = item.Packer;
-                worksheet.Cell(currentRow, 4).Value = item.Material;
-                worksheet.Cell(currentRow, 5).Value = item.IdType;
-                worksheet.Cell(currentRow, 6).Value = item.Mould;
-                worksheet.Cell(currentRow, 7).Value = item.Type;
-                worksheet.Cell(currentRow, 8).Value = item.JoNo;
-                worksheet.Cell(currentRow, 9).Value = item.QtyPerct;
-                worksheet.Cell(currentRow, 10).Value = item.GrossWeight;
-                worksheet.Cell(currentRow, 11).Value = item.PartWeight;
-                worksheet.Cell(currentRow, 12).Value = item.ShotAccum;
-                worksheet.Cell(currentRow, 13).Value = item.QtyOrder;
-                worksheet.Cell(currentRow, 14).Value = item.WipOpening;
-                worksheet.Cell(currentRow, 15).Value = item.WipClosing;
-                worksheet.Cell(currentRow, 17).Value = item.FinishGood;
-                worksheet.Cell(currentRow, 19).Value = item.QtyAccum;
-                worksheet.Cell(currentRow, 23).Value = item.RejectStartup;
-                worksheet.Cell(currentRow, 25).Value = item.RejectProd;
-                worksheet.Cell(currentRow, 27).Value = item.ActCt;
-                worksheet.Cell(currentRow, 28).Value = item.ProductionRunning;
-                worksheet.Cell(currentRow, 29).Value = item.SapCt;
+                worksheet.Cell(currentRow, 1).Value = item.machine_name;
+                worksheet.Cell(currentRow, 2).Value = item.shift   ;
+                worksheet.Cell(currentRow, 3).Value = item.packer;
+                worksheet.Cell(currentRow, 4).Value = item.material;
+                worksheet.Cell(currentRow, 5).Value = item.id_type;
+                worksheet.Cell(currentRow, 6).Value = item.mould;
+                worksheet.Cell(currentRow, 7).Value = item.type;
+                worksheet.Cell(currentRow, 8).Value = item.jo_no;
+                worksheet.Cell(currentRow, 9).Value = item.qty_perct;
+                worksheet.Cell(currentRow, 10).Value = item.gross_weight;
+                worksheet.Cell(currentRow, 11).Value = item.part_weight;
+                worksheet.Cell(currentRow, 12).Value = item.shot_accum;
+                worksheet.Cell(currentRow, 13).Value = item.qty_order;
+                worksheet.Cell(currentRow, 14).Value = item.wip_opening;
+                worksheet.Cell(currentRow, 15).Value = item.wip_opening;
+                worksheet.Cell(currentRow, 17).Value = item.finish_good;
+                worksheet.Cell(currentRow, 19).Value = item.qty_accum;
+                worksheet.Cell(currentRow, 23).Value = item.reject_startup;
+                worksheet.Cell(currentRow, 25).Value = item.reject_prod;
+                worksheet.Cell(currentRow, 27).Value = item.act_ct;
+                worksheet.Cell(currentRow, 28).Value = item.production_running;
+                worksheet.Cell(currentRow, 29).Value = item.sap_ct;
 
-                worksheet.Cell(currentRow, 30).Value = item.ChangeFullSet;
-                worksheet.Cell(currentRow, 31).Value = item.ChangeHalfSet;
-                worksheet.Cell(currentRow, 32).Value = item.ChangeParts;
-                worksheet.Cell(currentRow, 33).Value = item.MaintenanceDt;
-                worksheet.Cell(currentRow, 34).Value = item.TechnicianDt;
-                worksheet.Cell(currentRow, 35).Value = item.ProductionDt;
-                worksheet.Cell(currentRow, 36).Value = item.Remark;
-                worksheet.Cell(currentRow, 37).Value = item.PartScrap;
-                worksheet.Cell(currentRow, 38).Value = item.RejectPurging;
-                worksheet.Cell(currentRow, 39).Value = item.RejectPreform;
+                worksheet.Cell(currentRow, 30).Value = item.change_full_set;
+                worksheet.Cell(currentRow, 31).Value = item.change_half_set;
+                worksheet.Cell(currentRow, 32).Value = item.change_parts;
+                worksheet.Cell(currentRow, 33).Value = item.maintenance_dt;
+                worksheet.Cell(currentRow, 34).Value = item.technician_dt;
+                worksheet.Cell(currentRow, 35).Value = item.production_dt;
+                worksheet.Cell(currentRow, 36).Value = item.remark;
+                worksheet.Cell(currentRow, 37).Value = item.part_scrap;
+                worksheet.Cell(currentRow, 38).Value = item.reject_purging;
+                worksheet.Cell(currentRow, 39).Value = item.reject_preform;
 
                 ApplyFormulas(worksheet, currentRow);
 

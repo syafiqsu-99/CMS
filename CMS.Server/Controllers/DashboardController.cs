@@ -17,7 +17,7 @@ public class DashboardController : ControllerBase
         _baseService = baseService;
     }
 
-    [HttpGet("Attendance")]
+    [HttpGet("attendance")]
     public async Task<ActionResult> Attendance()
     {
         var data = await _dashboardService.LoadAttendance();

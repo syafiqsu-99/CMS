@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { formatDate } from '@/utils/constant.js';
 
 export const useMachineStore = defineStore('machine', {
+  // #region State
   state: () => ({
     machineData: [],
     SAPData: [],
@@ -13,15 +14,17 @@ export const useMachineStore = defineStore('machine', {
     _fetchingMaster: false,
     _fetchingSAP: false,
   }),
+  // #endregion
 
+  // #region Getters
   getters: {
     machineById: (state) => (id) =>
       state.machineData.find(m => m.id_machine === id),
   },
+  // #endregion
 
   actions: {
-    // ── Machine master ───────────────────────────────────────────────────────
-
+    // #region MachineMaster
     async loadMachineMaster() {
       if (this._fetchingMaster) return this.machineData;
       this._fetchingMaster = true;
@@ -43,9 +46,9 @@ export const useMachineStore = defineStore('machine', {
         this._fetchingMaster = false;
       }
     },
+    // #endregion
 
-    // ── SAP ─────
-
+    // #region SAP
     async loadSAP() {
       if (this._fetchingSAP) return this.SAPData;
       this._fetchingSAP = true;
@@ -61,12 +64,12 @@ export const useMachineStore = defineStore('machine', {
         this._fetchingSAP = false;
       }
     },
+    // #endregion
 
-    // ── Attendance ───────────────────────────────────────────────────────────
-
+    // #region Attendance
     async loadAttendance() {
       try {
-        const res = await fetch('/api/supervisor/attendance');
+        const res = await fetch('/api/dashboard/attendance');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         this.activeStaff = data.filter(s => s.machine_name && s.status === 'ACTIVE').length;
@@ -76,13 +79,13 @@ export const useMachineStore = defineStore('machine', {
         return [];
       }
     },
+    // #endregion
 
-    // ── Production reports ───────────────────────────────────────────────────
-
+    // #region Reports
     async loadDailyReport(date, shift) {
       try {
-        const d = formatDate(date);
-        const res = await fetch(`/api/supervisor/daily-report?production_date=${d}&shift=${shift}`);
+        const production_date = formatDate(date);
+        const res = await fetch(`/api/supervisor/daily-report?production_date=${production_date}&shift=${shift}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.ProdData = await res.json();
         return this.ProdData;
@@ -94,8 +97,8 @@ export const useMachineStore = defineStore('machine', {
 
     async loadPrevReport(date, shift) {
       try {
-        const d = formatDate(date);
-        const res = await fetch(`/api/supervisor/prev-report?production_date=${d}&shift=${shift}`);
+        const production_date = formatDate(date);
+        const res = await fetch(`/api/supervisor/prev-report?production_date=${production_date}&shift=${shift}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.ProdData = await res.json();
         return this.ProdData;
@@ -104,11 +107,12 @@ export const useMachineStore = defineStore('machine', {
         return [];
       }
     },
+    // #endregion
 
-    // ── Bootstrap helper (called once on app init) ───────────────────────────
-
+    // #region Bootstrap
     async loadInitialData() {
       await this.loadMachineMaster();
     },
+    // #endregion
   },
 });

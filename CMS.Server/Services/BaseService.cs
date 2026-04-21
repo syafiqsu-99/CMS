@@ -26,6 +26,40 @@ public class BaseService
         return conn;
     }
 
+    #region DynamicMachineLogHelpers
+
+    protected async Task<IReadOnlyList<int>> GetMachineIdsAsync()
+    {
+        const string sql = "SELECT id_machine FROM machine_master ORDER BY id_machine";
+        var ids = new List<int>();
+
+        await using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            ids.Add(reader.GetInt32(0));
+
+        return ids;
+    }
+
+    protected async Task<string> BuildMachineLogUnionAsync(
+        string columns,
+        string whereClause = "")
+    {
+        var ids = await GetMachineIdsAsync();
+        if (ids.Count == 0)
+            return "SELECT NULL AS id_machine WHERE 1=0";
+
+        var where = string.IsNullOrWhiteSpace(whereClause) ? "" : $" WHERE {whereClause}";
+
+        var parts = ids.Select(id =>
+            $"SELECT {id} AS id_machine, {columns} FROM machine_log_{id}{where}");
+
+        return string.Join("\n                    UNION ALL\n                    ", parts);
+    }
+
+    #endregion
+
     // ── Shift / date helpers ──────────────────────────────────────────────────
 
     protected static (DateOnly productionDate, int shift) GetProductionDate(DateTime time)

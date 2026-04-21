@@ -3,30 +3,6 @@ namespace CMS.Server.Services;
 
 public class OEEService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
-    // ── Machine count helper ───────────────────────────────────────────────────
-
-    private async Task<IReadOnlyList<int>> GetMachineIdsAsync()
-    {
-        const string sql = "SELECT id_machine FROM machine_master ORDER BY id_machine";
-        var ids = new List<int>();
-        await using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
-        await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-            ids.Add(reader.GetInt32(0));
-        return ids;
-    }
-
-    private async Task<string> BuildLogCteAsync(string columns = "id_machine, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start")
-    {
-        var ids = await GetMachineIdsAsync();
-        var parts = ids.Select(id =>
-            $"SELECT {id} AS id_machine, {columns.Replace("id_machine,", "").TrimStart()} FROM machine_log_{id}");
-        return string.Join("\n                    UNION ALL\n                    ", parts);
-    }
-
-    // ── OEE ───────────────────────────────────────────────────────────────────
-
     public async Task<IReadOnlyList<object>> CalculateOeeAsync(DateOnly startDate, DateOnly endDate, int shift)
     {
         var (today, currentShift) = GetProductionDate(DateTime.Now);
@@ -67,7 +43,8 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
 
     private async Task<string> BuildTodayOeeSqlAsync(DateOnly today)
     {
-        var logCte = await BuildLogCteAsync("machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start");
+        var logCte = await BuildMachineLogUnionAsync(
+            "machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start");
 
         return $@"
             WITH CombinedLogs AS (
@@ -226,29 +203,47 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
         return result;
     }
 
-    public async Task<IReadOnlyList<object>> LoadDowntimeAsync(DateOnly start, DateOnly end)
+    public async Task<object> LoadDowntimeAsync(DateOnly start_date, DateOnly end_date)
     {
-        var logCte = await BuildLogCteAsync("id_type, mould, category, start, finish, production_date");
+        var logUnion = await BuildMachineLogUnionAsync(
+            columns: "id_type, mould, category, start, finish, production_date",
+            whereClause: "production_date BETWEEN @start_date AND @end_date");
 
         var sql = $@"
-            WITH CombinedLogs AS ({logCte})
-            SELECT TOP 10 sap.id_type, sap.type,
-                SUM(DATEDIFF(SECOND,start,COALESCE(finish,GETDATE())))/3600.0 AS hours
+            WITH CombinedLogs AS (
+                {logUnion}
+            )
+            SELECT TOP 10
+                sap.id_type,
+                sap.type,
+                SUM(DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE()))) / 3600.0 AS hours
             FROM CombinedLogs ml
-            LEFT JOIN sap ON sap.id_type=ml.id_type AND sap.mould=ml.mould
-            WHERE production_date BETWEEN @start_date AND @end_date AND ml.id_type<>123456
-              AND category NOT IN ('PRODUCTION RUNNING','NO SCHEDULE','SCHEDULED MAINTENANCE')
+            LEFT JOIN sap
+                ON sap.id_type = ml.id_type
+               AND sap.mould = ml.mould
+            WHERE ml.id_type <> 123456
+              AND ml.category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE', 'SCHEDULED MAINTENANCE')
             GROUP BY sap.id_type, sap.type
-            ORDER BY hours DESC";
+            ORDER BY hours DESC;";
 
         var result = new List<object>();
+
         await using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@start_date", start);
-        cmd.Parameters.AddWithValue("@end_date", end);
-        await using var reader = await cmd.ExecuteReaderAsync();
+        cmd.Parameters.AddWithValue("@start_date", start_date);
+        cmd.Parameters.AddWithValue("@end_date", end_date);
+
+        using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
-            result.Add(new { id_type = Convert.ToInt32(reader["id_type"]), type = reader["type"].ToString(), hours = Convert.ToDouble(reader["hours"]) });
+        {
+            result.Add(new
+            {
+                id_type = Convert.ToInt32(reader["id_type"]),
+                type = Convert.ToString(reader["type"]),
+                hours = Convert.ToDouble(reader["hours"])
+            });
+        }
+
         return result;
     }
 
