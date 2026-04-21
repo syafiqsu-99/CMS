@@ -11,12 +11,33 @@
     <!-- Date Filters -->
     <v-row no-gutters align="center" justify="center" class="mb-2">
       <v-col cols="12" md="4" class="px-1">
-        <v-date-input v-model="startDate" label="Start Date" :max="endDate"
-                      variant="outlined" density="compact" hide-details display-format="fullDate" />
+        <v-date-input v-model="startDate"
+                      label="Start Date"
+                      :max="endDate"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      display-format="fullDate" />
       </v-col>
       <v-col cols="12" md="4" class="px-1">
-        <v-date-input v-model="endDate" label="End Date" :min="startDate"
-                      variant="outlined" density="compact" hide-details display-format="fullDate" />
+        <v-date-input v-model="endDate"
+                      label="End Date"
+                      :min="startDate"
+                      variant="outlined"
+                      density="compact"
+                      hide-details
+                      display-format="fullDate" />
+      </v-col>
+      <v-col cols="12" md="4" class="px-1 d-flex align-center">
+        <v-btn color="success"
+               prepend-icon="mdi-microsoft-excel"
+               variant="elevated"
+               :loading="exporting"
+               :disabled="machineData.length === 0"
+               @click="exportOEEExcel"
+               class="mt-1">
+          Export Excel
+        </v-btn>
       </v-col>
     </v-row>
 
@@ -34,39 +55,39 @@
     <v-row>
       <v-col cols="12" md="4" class="px-1">
         <ParetoChart title="Total Reject"
-                     :data="rejectData"
-                     value-key="total_reject"
-                     label-key="id_type"
-                     full-label-key="type"
-                     bar-label="Total Reject (kg)"
-                     bar-color="#F44336"
-                     y-axis-label="Weight (kg)"
-                     x-axis-label="Product Type"
-                     empty-icon="mdi-chart-bar" />
+                      :data="rejectData"
+                      value-key="total_reject"
+                      label-key="id_type"
+                      full-label-key="type"
+                      bar-label="Total Reject (kg)"
+                      bar-color="#F44336"
+                      y-axis-label="Weight (kg)"
+                      x-axis-label="Product Type"
+                      empty-icon="mdi-chart-bar" />
       </v-col>
       <v-col cols="12" md="4" class="px-1">
         <ParetoChart title="Total Output"
-                     :data="outputData"
-                     value-key="total_output"
-                     label-key="id_type"
-                     full-label-key="type"
-                     bar-label="Total Output (kg)"
-                     bar-color="#2196F3"
-                     y-axis-label="Weight (kg)"
-                     x-axis-label="Product Type"
-                     empty-icon="mdi-chart-bar" />
+                      :data="outputData"
+                      value-key="total_output"
+                      label-key="id_type"
+                      full-label-key="type"
+                      bar-label="Total Output (kg)"
+                      bar-color="#2196F3"
+                      y-axis-label="Weight (kg)"
+                      x-axis-label="Product Type"
+                      empty-icon="mdi-chart-bar" />
       </v-col>
       <v-col cols="12" md="4" class="px-1">
         <ParetoChart title="Total Downtime"
-                     :data="downtimeData"
-                     value-key="hours"
-                     label-key="id_type"
-                     full-label-key="type"
-                     bar-label="Downtime (Hours)"
-                     bar-color="#FF7043"
-                     y-axis-label="Time (hrs)"
-                     x-axis-label="Downtime Category"
-                     empty-icon="mdi-chart-timeline-variant" />
+                      :data="downtimeData"
+                      value-key="hours"
+                      label-key="id_type"
+                      full-label-key="type"
+                      bar-label="Downtime (Hours)"
+                      bar-color="#FF7043"
+                      y-axis-label="Time (hrs)"
+                      x-axis-label="Downtime Category"
+                      empty-icon="mdi-chart-timeline-variant" />
       </v-col>
     </v-row>
 
@@ -178,6 +199,44 @@
     fetchAll();
     detailDialog.value = false;
   });
+
+  const exportOEEExcel = async () => {
+    exporting.value = true;
+    try {
+      const params = new URLSearchParams({
+        start_date: formatDateParam(startDate.value),
+        end_date:   formatDateParam(endDate.value),
+        shift:      currentShift,
+      });
+
+      const response = await fetch(`/api/MachineLog/ExportOEE?${params}`, { method: 'GET' });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.message || `Export failed (HTTP ${response.status})`);
+      }
+
+      const disposition = response.headers.get('Content-Disposition') ?? '';
+      const nameMatch   = disposition.match(/filename[^;=\n]*=["']?([^"';\n]+)/i);
+      const fileName    = nameMatch
+        ? nameMatch[1].trim()
+        : `OEE_Report_${formatDateParam(startDate.value)}_to_${formatDateParam(endDate.value)}.xlsx`;
+
+      const blob = await response.blob();
+      const url  = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href     = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(url); }, 200);
+    } catch (err) {
+      console.error('[OEE Export]', err);
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      exporting.value = false;
+    }
+  };
 
   onMounted(fetchAll);
 </script>

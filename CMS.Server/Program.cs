@@ -12,8 +12,11 @@ builder.Services.AddSingleton<PlcService>();
 
 // ── Scoped (per-request) ──────────────────────────────────────────────────────
 builder.Services.AddScoped<ExcelGenerationService>();
-builder.Services.AddScoped<BaseService>(sp =>
-    new BaseService(connectionString, sp.GetRequiredService<PlcService>()));
+builder.Services.AddSingleton<BaseService>(sp =>
+{
+    var plc = sp.GetRequiredService<PlcService>();
+    return new BaseService(connectionString, plc);
+});
 
 // ── Schema init ───────────────────────────────────────
 builder.Services.AddSingleton(new SchemaInitializerService(connectionString));
@@ -23,12 +26,12 @@ builder.Services.AddSingleton<OEEService>(sp =>
     new OEEService(sp.GetRequiredService<PlcService>(), connectionString));
 builder.Services.AddSingleton<SupervisorService>(sp =>
     new SupervisorService(sp.GetRequiredService<PlcService>(), connectionString));
-builder.Services.AddSingleton<SettingService>(sp =>
-    new SettingService(sp.GetRequiredService<PlcService>(), connectionString));
 builder.Services.AddSingleton<DashboardService>(sp =>
     new DashboardService(sp.GetRequiredService<PlcService>(), connectionString));
 builder.Services.AddSingleton<MachinesService>(sp =>
     new MachinesService(sp.GetRequiredService<PlcService>(), connectionString));
+builder.Services.AddSingleton<SettingService>(sp =>
+    new SettingService(sp.GetRequiredService<PlcService>(), connectionString));
 
 if (!builder.Environment.IsDevelopment())
     builder.Services.AddHostedService(sp => sp.GetRequiredService<PlcService>());

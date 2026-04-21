@@ -1,53 +1,23 @@
 <template>
   <v-container fluid class="pa-0 h-100 d-flex flex-column" style="overflow: hidden;">
     <v-row no-gutters class="flex-grow-1" style="height: 100%; overflow: hidden;">
+
+      <!-- Machine slideshow (top 70 %) -->
       <v-col cols="12" style="height: 70vh">
         <v-window v-model="machine_layout" show-arrows="hover" continuous class="h-100">
-          <!--<v-window-item :value="1">
-            <v-card class="h-100 d-flex flex-column">-->
-              <!--<div ref="machLayout" class="w-100 h-100" style="min-height: 65vh;"></div>-->
-            <!--</v-card>
 
-            <v-card width="15%" variant="text" class="position-absolute top-0 right-0">
-              <v-card-title align="center" justify="center"><strong>LEGENDS</strong></v-card-title>
-              <v-card-text>
-                <v-row>
-                  <v-col cols="12" class="d-flex align-center">
-                    <v-icon color="green" class="me-2">mdi-circle</v-icon>
-                    <span>Prod. Run</span>
-                  </v-col>
-                  <v-col cols="12" class="d-flex align-center">
-                    <v-icon color="yellow" class="me-2">mdi-circle</v-icon>
-                    <span>Prod. Issue</span>
-                  </v-col>
-                  <v-col cols="12" class="d-flex align-center">
-                    <v-icon color="red" class="me-2">mdi-circle</v-icon>
-                    <span>Tech. Issue</span>
-                  </v-col>
-                  <v-col cols="12" class="d-flex align-center">
-                    <v-icon color="orange" class="me-2">mdi-circle</v-icon>
-                    <span>Maint. Issue</span>
-                  </v-col>
-                  <v-col cols="12" class="d-flex align-center">
-                    <v-icon color="gray" class="me-2">mdi-circle</v-icon>
-                    <span>QC Issue</span>
-                  </v-col>
-                  <v-col cols="12" class="d-flex align-center">
-                    <v-icon color="white" class="me-2">mdi-circle</v-icon>
-                    <span>Unidentified</span>
-                  </v-col>
-                </v-row>
-              </v-card-text>
-            </v-card>
-          </v-window-item>-->
 
           <v-window-item :value="1" class="h-100">
             <Attendance :machine-status="machineColor" />
           </v-window-item>
         </v-window>
       </v-col>
+
       <v-col cols="12" style="height: 30vh; max-height: 30vh;">
-        <v-window v-model="running_slideshow" show-arrows="hover" continuous class="h-100 overflow-hidden">
+        <v-window v-model="running_slideshow"
+                  show-arrows="hover"
+                  continuous
+                  class="h-100 overflow-hidden">
           <v-window-item v-for="(group, index) in paginatedMachines" :key="index" class="h-100">
             <v-row class="fill-height ma-0">
               <v-col v-for="machine in group" :key="machine.id_machine" cols="2" class="pa-1 d-flex flex-column">
@@ -101,147 +71,177 @@
           </v-window-item>
         </v-window>
       </v-col>
+
     </v-row>
   </v-container>
 </template>
 
 <script setup>
-  import Attendance from '../components/Dashboard/Attendance.vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import {
-    Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    Title,
-    Tooltip,
-    Legend,
-  } from 'chart.js'
-  import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
-  import { initMachLayout, updateMachLayout } from '@/Machines_Layout'
-  import { Bar } from "vue-chartjs";
+    Chart as ChartJS, CategoryScale, LinearScale,
+    BarElement, TimeScale, Tooltip, Legend,
+  } from 'chart.js';
+  import 'chartjs-adapter-luxon';
   import { DateTime } from 'luxon';
+  import { useMachineStore } from '@/store/machineStore';
+  import Attendance from '@/components/Dashboard/Attendance.vue';
 
-  ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+  ChartJS.register(CategoryScale, LinearScale, BarElement, TimeScale, Tooltip, Legend);
 
-  const machLayout = ref(null);
+  const store = useMachineStore();
+
+  // ── UI state ──────────────────────────────────────────────────────────────────
+
   const machine_layout = ref(1);
-  const machines = ref([]);
-  const previousMachineData = ref([]);
   const running_slideshow = ref(0);
+  const machines = ref([]);
   const chartData = ref({});
-  const card_timer = ref(null);
-  const layout_timer = ref(null);
-  const machineColor = ref({})
-  let sceneManager = null;
-  let chartInstances = {};
+  const machineColor = ref({});
+
+  // ── Computed ──────────────────────────────────────────────────────────────────
 
   const paginatedMachines = computed(() => {
-    const chunkSize = 6;
+    const size = 6;
     return Array.from(
-      { length: Math.ceil(machines.value.length / chunkSize) },
-      (_, i) => machines.value.slice(i * chunkSize, (i + 1) * chunkSize)
+      { length: Math.ceil(machines.value.length / size) },
+      (_, i) => machines.value.slice(i * size, (i + 1) * size),
     );
   });
 
-  onMounted(async () => {
-    if (machLayout.value) {
-      sceneManager = await initMachLayout(machLayout.value)
-      await refreshMachineLayout()
-    }
-    fetchTimelineData();
-    startDataRefresh();
-  })
-
-  onUnmounted(() => {
-    clearInterval(card_timer.value);
-    //clearInterval(layout_timer.value);
-    destroyExistingCharts();
-  })
-
-  function startDataRefresh() {
-    card_timer.value = setInterval(() => {
-      running_slideshow.value =
-        (running_slideshow.value + 1) % paginatedMachines.value.length;
-      fetchTimelineData();
-    }, 10000);
-    //layout_timer.value = setInterval(() => {
-    //  machine_layout.value = machine_layout.value >= 2 ? 1 : machine_layout.value + 1;
-    //}, 60000);
-  }
-
-  function destroyExistingCharts() {
-    Object.values(chartInstances).forEach((chart) => {
-      if (chart) chart.destroy();
-    });
-    chartInstances = {};
-  }
-
-  async function refreshMachineLayout() {
-    try {
-      if (sceneManager?.scene) {
-        previousMachineData.value = await updateMachLayout(sceneManager.scene, previousMachineData.value)
-      }
-    } catch (error) {
-      console.error('Error during machine layout refresh:', error)
-    }
-  }
+  // ── Timeline fetch ────────────────────────────────────────────────────────────
 
   async function fetchTimelineData() {
     try {
-      const response = await fetch('/api/base/Timeline');
-      const data = await response.json();
+      const res = await fetch('/api/dashboard/timeline');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
       machines.value = groupByMachine(data);
-
-      const statusMap = {};
-      data.forEach(item => {
-        const machineName = item.machine_name;
-
-        if (!statusMap[machineName] ||
-          new Date(item.start) > new Date(statusMap[machineName].start)) {
-          statusMap[machineName] = {
-            start: item.start,
-            color: item.color
-          };
-        }
-      });
-
-      const colorMap = {};
-      Object.keys(statusMap).forEach(machine => {
-        colorMap[machine] = statusMap[machine].color;
-      });
-
-      machineColor.value = colorMap;
-    } catch (error) {
-      console.error("Error fetching timeline data:", error);
+      machineColor.value = buildColorMap(data);
+      buildChartData();
+    } catch (err) {
+      console.error('[Dashboard] fetchTimelineData:', err.message);
     }
   }
 
   function groupByMachine(data) {
     const grouped = {};
-    data.forEach((item) => {
+    for (const item of data) {
       if (!grouped[item.id_machine]) {
         grouped[item.id_machine] = {
           id_machine: item.id_machine,
-          machine_name: item.machine_name || "UNDEFINED",
-          type: item.type || "UNDEFINED",
-          output: item.output || 0,
-          plan_output: item.plan_output || 0,
-          eff: item.efficiency || 0.0,
+          machine_name: item.machine_name ?? 'UNDEFINED',
+          type: item.type ?? 'UNDEFINED',
+          output: item.output ?? 0,
+          plan_output: item.plan_output ?? 0,
+          eff: item.efficiency ?? 0.0,
           data: [],
         };
       }
       grouped[item.id_machine].data.push({
-        category: item.category || "UNDEFINED",
-        start: item.start || null,
-        finish: item.finish || null,
-        color: item.color || "rgba(0,0,0,0.1)",
+        category: item.category ?? 'UNDEFINED',
+        start: item.start ?? null,
+        finish: item.finish ?? null,
+        color: item.color ?? 'rgba(0,0,0,0.1)',
       });
-    });
-
+    }
     return Object.values(grouped);
   }
+
+  function buildColorMap(data) {
+    const statusMap = {};
+    for (const item of data) {
+      const name = item.machine_name;
+      if (!statusMap[name] || new Date(item.start) > new Date(statusMap[name].start)) {
+        statusMap[name] = { start: item.start, color: item.color };
+      }
+    }
+    return Object.fromEntries(Object.entries(statusMap).map(([k, v]) => [k, v.color]));
+  }
+
+  function buildChartData() {
+    const now = DateTime.now();
+    const start = now.startOf('day');
+    const end = now.endOf('day');
+
+    const built = {};
+    for (const machine of machines.value) {
+      const datasets = machine.data
+        .filter(d => d.start && d.finish)
+        .map(d => ({
+          x: [d.start, d.finish],
+          backgroundColor: d.color,
+        }));
+
+      built[machine.id_machine] = {
+        data: { datasets: datasets.length ? [{ data: datasets, backgroundColor: datasets.map(d => d.x ? d.backgroundColor : 'transparent'), barThickness: 14 }] : [] },
+        options: {
+          animation: false,
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          scales: {
+            x: {
+              type: 'time',
+              min: start.toISO(),
+              max: end.toISO(),
+              time: { unit: 'hour', displayFormats: { hour: 'ha' } },
+              ticks: { stepSize: 4, color: '#000', font: { size: 8 } },
+              grid: { display: false },
+            },
+            y: { display: false },
+          },
+        },
+      };
+    }
+    chartData.value = built;
+  }
+
+  // ── Polling ───────────────────────────────────────────────────────────────────
+  const POLL_INTERVAL = 10_000;
+
+  let timelineTimer = null;
+  let statusTimer = null;
+  let slideshowTimer = null;
+
+  function startPolling() {
+    if (!timelineTimer) {
+      timelineTimer = setInterval(fetchTimelineData, POLL_INTERVAL);
+    }
+    if (!statusTimer) {
+      statusTimer = setInterval(() => store.loadMachineMaster(), POLL_INTERVAL);
+    }
+    if (!slideshowTimer) {
+      slideshowTimer = setInterval(() => {
+        running_slideshow.value =
+          (running_slideshow.value + 1) % Math.max(paginatedMachines.value.length, 1);
+      }, POLL_INTERVAL);
+    }
+  }
+
+  function stopPolling() {
+    if (timelineTimer) { clearInterval(timelineTimer); timelineTimer = null; }
+    if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+    if (slideshowTimer) { clearInterval(slideshowTimer); slideshowTimer = null; }
+  }
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+  onMounted(async () => {
+    await Promise.all([
+      store.loadMachineMaster(),
+      fetchTimelineData(),
+    ]);
+    startPolling();
+  });
+
+  onUnmounted(() => {
+    stopPolling();
+  });
 </script>
+
 <style scoped>
   .marquee-wrapper {
     overflow: hidden;

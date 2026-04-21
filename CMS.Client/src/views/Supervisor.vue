@@ -12,7 +12,6 @@
                 class="d-flex flex-column"
                 elevation="2"
                 style="width: 100%; height: 100%; overflow: hidden;">
-
           <v-card-text class="d-flex flex-column pa-2" style="height: 100%; overflow: hidden;">
 
             <v-tabs v-model="activeTab"
@@ -28,31 +27,29 @@
 
             <v-tabs-window v-model="activeTab" style="min-height: 0; flex: 1; overflow: hidden;">
 
-              <!-- Production Report -->
-              <v-tabs-window-item :value="0">
+              <!-- 0: Production Report -->
+              <v-tabs-window-item :value="0" style="height: 100%; overflow: hidden;">
                 <ProdSchedule :SAP-data="store.SAPData" />
               </v-tabs-window-item>
 
-              <!-- Machine Management — mounts/unmounts with the tab,
-                   so the polling lifecycle hook fires correctly -->
-              <v-tabs-window-item :value="1">
+              <!-- 1: Machine Management -->
+              <v-tabs-window-item :value="1" style="height: 100%; overflow: hidden;">
                 <MachineManagement :SAP-data="store.SAPData"
                                    @refresh-data="store.loadMachineMaster" />
               </v-tabs-window-item>
 
-              <!-- Staff Assignment -->
-              <v-tabs-window-item :value="2">
+              <!-- 2: Staff Assignment -->
+              <v-tabs-window-item :value="2" style="height: 100%; overflow: hidden;">
                 <StaffSchedule />
               </v-tabs-window-item>
 
-              <!-- Product Database — static, loaded once -->
-              <v-tabs-window-item :value="3">
-                <ProductDatabase :SAP-data="store.SAPData"
-                                 @refresh-data="store.loadSAP" />
+              <!-- 3: Product Database -->
+              <v-tabs-window-item :value="3" style="height: 100%; overflow: hidden;">
+                <ProductDatabase @refresh-data="store.loadSAP" />
               </v-tabs-window-item>
 
-              <!-- Shift Calendar -->
-              <v-tabs-window-item :value="4">
+              <!-- 4: Shift Calendar -->
+              <v-tabs-window-item :value="4" style="height: 100%; overflow: hidden;">
                 <ShiftCalendar />
               </v-tabs-window-item>
 
@@ -77,10 +74,6 @@
   const store = useMachineStore();
   const activeTab = ref(0);
 
-  onMounted(() => {
-    store.loadInitialData();
-  });
-
   const tabs = [
     { label: 'Production Report', icon: 'mdi-cog-outline' },
     { label: 'Machine Management', icon: 'mdi-robot-industrial' },
@@ -88,4 +81,8 @@
     { label: 'Product Database', icon: 'mdi-archive' },
     { label: 'Shift Calendar', icon: 'mdi-calendar-clock' },
   ];
+
+  onMounted(() => {
+    store.loadMachineMaster();
+  });
 </script>

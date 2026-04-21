@@ -1,4 +1,5 @@
 ﻿using CMS.Server.Models;
+using CMS.Server.Services;
 using PLC_Omron_Standard;
 using PLC_Omron_Standard.Enums;
 using System.Collections.Concurrent;
@@ -6,296 +7,269 @@ using System.Text;
 
 namespace CMS.Server.Services
 {
-    public class PlcService : BackgroundService
+    /// <summary>
+    /// Single consolidated service that owns both PLC communication (read/write)
+    /// and the background polling loop that persists data to the database.
+    /// 
+    /// Replaces the old PlcService + PlcMonitorService pair.
+    /// </summary>
+    public sealed class PlcService : BackgroundService
     {
+        // ── Connection cache ───────────────────────────────────────────────────
         private static readonly ConcurrentDictionary<string, PlcOmron> _plcConnections = new();
 
+        // ── Guard: prevents a slow DB/PLC cycle from overlapping the next tick ─
+        private readonly SemaphoreSlim _pollLock = new(1, 1);
+
+        // ── DI ────────────────────────────────────────────────────────────────
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<PlcService> _logger;
-        private int _iterationCount = 0;
 
-        private const string READ_KEY = "172.17.86.80_read";
-        private const string WRITE_KEY = "172.17.86.80_write";
-        public PlcService(IConfiguration config, IServiceScopeFactory scopeFactory, ILogger<PlcService> logger)
+        // ── PLC addresses ─────────────────────────────────────────────────────
+        private const string MasterIp = "172.17.86.80";
+        private const string ReadKey = MasterIp + "_read";
+        private const string WriteKey = MasterIp + "_write";
+        private const int PollDelayMs = 200;
+        private const int MachineCount = 26;
+
+        private int _iterationCount;
+
+        public PlcService(IServiceScopeFactory scopeFactory, ILogger<PlcService> logger)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
         }
 
+        // ── BackgroundService lifecycle ────────────────────────────────────────
+
         public override Task StartAsync(CancellationToken cancellationToken)
         {
-            _logger.LogInformation("PlcMonitorService is starting at {Time}", DateTime.Now);
+            _logger.LogInformation("[PlcService] Starting at {Time}", DateTime.Now);
             return base.StartAsync(cancellationToken);
         }
 
         public override Task StopAsync(CancellationToken cancellationToken)
         {
-            _logger.LogWarning("PlcMonitorService is stopping at {Time}", DateTime.Now);
+            _logger.LogWarning("[PlcService] Stopping at {Time}", DateTime.Now);
             return base.StopAsync(cancellationToken);
         }
 
+        // ── Main poll loop ─────────────────────────────────────────────────────
+
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-
             while (!stoppingToken.IsCancellationRequested)
             {
+                // Non-blocking wait: if the previous iteration is still running, skip this tick
+                if (!await _pollLock.WaitAsync(0, stoppingToken))
+                {
+                    await Task.Delay(PollDelayMs, stoppingToken);
+                    continue;
+                }
 
                 try
                 {
                     _iterationCount++;
 
                     if (_iterationCount % 200 == 0)
-                        _logger.LogInformation("Heartbeat - Iteration: {Count}, Time: {Time}", _iterationCount, DateTime.Now);
+                        _logger.LogInformation("[PlcService] Heartbeat – iteration {Count}", _iterationCount);
 
                     var plcResults = ReadAllPlcs();
-                    var time = DateTime.Now;
+                    var timestamp = DateTime.Now;
 
-                    if (!plcResults.TryGetValue("Data", out var dataObj) || dataObj is not Dictionary<string, object> combinedData)
+                    if (!plcResults.TryGetValue("Data", out var dataObj)
+                        || dataObj is not Dictionary<string, object> combinedData)
                     {
-                        _logger.LogWarning("Missing or invalid Data from PLC at {Time}", time);
+                        _logger.LogWarning("[PlcService] No valid PLC data at {Time}", timestamp);
                         continue;
                     }
 
                     var dRaw = combinedData.GetValueOrDefault("D_RAW") as byte[] ?? Array.Empty<byte>();
                     var wRaw = combinedData.GetValueOrDefault("W_RAW") as bool[] ?? Array.Empty<bool>();
 
-                    var allPlcData = new List<object>(26);
-                    for (int i = 0; i < 26; i++)
-                    {
-                        int Doffset = i * 500;
-                        int Woffset = i * 3;
+                    // Build typed snapshot for all 26 machines
+                    var snapshots = BuildSnapshots(dRaw, wRaw, timestamp);
 
-                        allPlcData.Add(new
-                        {
-                            // Read D Memory values
-                            id_machine = i + 1,
-                            time = time,
-                            shot = Math.Min(ReadIntFromD(dRaw, 30 + Doffset), 10000),
-                            shot_accum = Math.Min(ReadIntFromD(dRaw, 32 + Doffset), 10000),
-                            act_ct = Math.Min(ReadFloatFromD(dRaw, 60 + Doffset), 1000f),
-                            mould_category_no = Math.Min(ReadIntFromD(dRaw, 90 + Doffset), 10),
-                            stop_category = ReadStringFromD(dRaw, 300 + Doffset),
-                            remark = ReadStringFromD(dRaw, 400 + Doffset),
-
-                            reject_panelling = Math.Min(ReadFloatFromD(dRaw, 250 + Doffset), 10000f),
-                            reject_lumpy = Math.Min(ReadFloatFromD(dRaw, 255 + Doffset), 10000f),
-                            reject_black_dot = Math.Min(ReadFloatFromD(dRaw, 260 + Doffset), 10000f),
-                            reject_burst = Math.Min(ReadFloatFromD(dRaw, 265 + Doffset), 10000f),
-                            reject_startup = Math.Min(ReadFloatFromD(dRaw, 270 + Doffset), 10000f),
-                            reject_preform = Math.Min(ReadFloatFromD(dRaw, 275 + Doffset), 10000f),
-                            reject_purging = Math.Min(ReadFloatFromD(dRaw, 280 + Doffset), 10000f),
-                            reject_others = Math.Min(ReadFloatFromD(dRaw, 285 + Doffset), 10000f),
-
-                            // Read W Memory values (bits)
-                            status_start = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 0),
-                            status_off = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 1),
-                            production_running = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 2),
-                            visual_qc = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 3),
-                            done = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 4),
-                            remark_signal = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 5),
-                            reject_signal = ReadBitFromW(wRaw, (ushort)(0 + Woffset), 6),
-
-                            util_barrel = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 0),
-                            util_hyd_motor = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 1),
-                            util_dehumidifier = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 2),
-                            util_chiller = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 3),
-                            util_material = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 4),
-                            util_dry_cycle = ReadBitFromW(wRaw, (ushort)(1 + Woffset), 5),
-                        });
-                        //DisplayMasterData(allPlcData[i], i);
-                    }
-
-                    using (var scope = _scopeFactory.CreateScope())
-                    {
-                        var dataService = scope.ServiceProvider.GetRequiredService<BaseService>();
-
-                        foreach (var p in allPlcData)
-                        {
-                            await dataService.insertMachineMaster(p);
-                        }
-                    }
+                    await PersistSnapshotsAsync(snapshots, stoppingToken);
                 }
-                catch (OperationCanceledException) { break; }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error in PlcMonitorService at iteration {Count}", _iterationCount);
+                    _logger.LogError(ex, "[PlcService] Error at iteration {Count}", _iterationCount);
+                }
+                finally
+                {
+                    _pollLock.Release();
                 }
 
-                await Task.Delay(200, stoppingToken);
-
+                await Task.Delay(PollDelayMs, stoppingToken);
             }
 
-            _logger.LogWarning("PlcMonitorService ExecuteAsync loop ended. Total iterations: {Count}", _iterationCount);
+            _logger.LogWarning("[PlcService] Poll loop ended. Total iterations: {Count}", _iterationCount);
         }
-        private int ReadIntFromD(byte[] buffer, int wordIndex)
+
+        // ── Snapshot builder ───────────────────────────────────────────────────
+
+        private static List<PlcSnapshot> BuildSnapshots(byte[] dRaw, bool[] wRaw, DateTime timestamp)
         {
-            int byteIndex = wordIndex * 2;
-            if (byteIndex + 4 > buffer.Length) return 0;
-            byte[] reordered = { buffer[byteIndex + 1], buffer[byteIndex], buffer[byteIndex + 3], buffer[byteIndex + 2] };
-            int value = BitConverter.ToInt32(reordered, 0);
-            return value;
+            var list = new List<PlcSnapshot>(MachineCount);
+
+            for (int i = 0; i < MachineCount; i++)
+            {
+                int dOffset = i * 500;
+                int wOffset = i * 3;
+
+                list.Add(new PlcSnapshot
+                {
+                    id_machine = i + 1,
+                    time = timestamp,
+
+                    // D-memory (integers / floats / strings)
+                    shot = Math.Min(ReadIntFromD(dRaw, 30 + dOffset), 10_000),
+                    shot_accum = Math.Min(ReadIntFromD(dRaw, 32 + dOffset), 10_000),
+                    act_ct = Math.Min(ReadFloatFromD(dRaw, 60 + dOffset), 1_000f),
+                    mould_category_no = Math.Min(ReadIntFromD(dRaw, 90 + dOffset), 10),
+                    stop_category = ReadStringFromD(dRaw, 300 + dOffset),
+                    remark = ReadStringFromD(dRaw, 400 + dOffset),
+
+                    reject_panelling = Math.Min(ReadFloatFromD(dRaw, 250 + dOffset), 10_000f),
+                    reject_lumpy = Math.Min(ReadFloatFromD(dRaw, 255 + dOffset), 10_000f),
+                    reject_black_dot = Math.Min(ReadFloatFromD(dRaw, 260 + dOffset), 10_000f),
+                    reject_burst = Math.Min(ReadFloatFromD(dRaw, 265 + dOffset), 10_000f),
+                    reject_startup = Math.Min(ReadFloatFromD(dRaw, 270 + dOffset), 10_000f),
+                    reject_preform = Math.Min(ReadFloatFromD(dRaw, 275 + dOffset), 10_000f),
+                    reject_purging = Math.Min(ReadFloatFromD(dRaw, 280 + dOffset), 10_000f),
+                    reject_others = Math.Min(ReadFloatFromD(dRaw, 285 + dOffset), 10_000f),
+
+                    // W-memory (bits)
+                    status_start = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 0),
+                    status_off = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 1),
+                    production_running = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 2),
+                    visual_qc = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 3),
+                    done = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 4),
+                    remark_signal = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 5),
+                    reject_signal = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 6),
+
+                    util_barrel = ReadBitFromW(wRaw, (ushort)(1 + wOffset), 0),
+                    util_hyd_motor = ReadBitFromW(wRaw, (ushort)(1 + wOffset), 1),
+                    util_dehumidifier = ReadBitFromW(wRaw, (ushort)(1 + wOffset), 2),
+                    util_chiller = ReadBitFromW(wRaw, (ushort)(1 + wOffset), 3),
+                    util_material = ReadBitFromW(wRaw, (ushort)(1 + wOffset), 4),
+                    util_dry_cycle = ReadBitFromW(wRaw, (ushort)(1 + wOffset), 5),
+                });
+            }
+
+            return list;
         }
-        private float ReadFloatFromD(byte[] buffer, int wordIndex)
+
+        // ── Database persistence ───────────────────────────────────────────────
+
+        private async Task PersistSnapshotsAsync(List<PlcSnapshot> snapshots, CancellationToken ct)
         {
-            int byteIndex = wordIndex * 2;
-            if (byteIndex + 4 > buffer.Length) return 0f;
+            // Create a short-lived scope per poll tick so DbContext/connections are disposed promptly
+            using var scope = _scopeFactory.CreateScope();
+            var baseService = scope.ServiceProvider.GetRequiredService<BaseService>();
 
-            byte[] reordered = { buffer[byteIndex + 1], buffer[byteIndex], buffer[byteIndex + 3], buffer[byteIndex + 2] };
-            float value = BitConverter.ToSingle(reordered, 0);
+            foreach (var snapshot in snapshots)
+            {
+                ct.ThrowIfCancellationRequested();
 
-            return value;
+                try
+                {
+                    await baseService.insertMachineMaster(snapshot);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[PlcService] DB persist failed for machine {Id}", snapshot.id_machine);
+                }
+            }
         }
-        private string ReadStringFromD(byte[] buffer, int wordIndex)
-        {
-            int byteIndex = wordIndex * 2;
 
-            if (byteIndex >= buffer.Length) return string.Empty;
-
-            if (buffer[byteIndex] == 0) return string.Empty;
-
-            return Encoding.ASCII.GetString(buffer, byteIndex, 100).Trim('\0', ' ');
-        }
-        private bool ReadBitFromW(bool[] buffer, int wordIndex, int bit)
-        {
-            int index = wordIndex * 16 + bit;
-            if (index < 0 || index >= buffer.Length) return false;
-            return buffer[index];
-        }
-        private void DisplayMasterData(dynamic plcData, int index)
-        {
-            int Doffset = index * 500;
-            int Woffset = index * 3;
-
-            Console.WriteLine($"=== Master.{plcData.id_machine} Data ===");
-            Console.WriteLine($"Machine Info    : ID={plcData.id_machine}");
-
-            //Console.WriteLine($"Production      : Shot=D{530 + Doffset} ({plcData.shot}), Shot_Accum=D{532 + Doffset} ({plcData.shot_accum}), " +
-            //                  $"CT=D{560 + Doffset} ({plcData.act_ct:F2}s)");
-
-            Console.WriteLine($"Status          : Start=W{5 + Woffset}.0 ({plcData.status_start}), " +
-                              $"Off=W{5 + Woffset}.1 ({plcData.status_off}), " +
-                              $"Visual_QC=W{5 + Woffset}.3 ({plcData.visual_qc}), " +
-                              $"Remark Signal=W{5 + Woffset}.5 ({plcData.remark_signal}), " +
-                              $"Reject Signal=W{5 + Woffset}.6 ({plcData.reject_signal})");
-
-            //Console.WriteLine($"Quality         : Visual_QC=W{5 + Woffset}.3 ({plcData.visual_qc}), " +
-            //                  $"Measure_QC=W{7 + Woffset}.0 ({plcData.measure_qc})");
-
-            //Console.WriteLine($"Rejects         : Panelling=D{750 + Doffset} ({plcData.reject_panelling:F1}), " +
-            //                  $"Lumpy=D{755 + Doffset} ({plcData.reject_lumpy:F1}), " +
-            //                  $"Black Dot=D{760 + Doffset} ({plcData.reject_black_dot:F1}), " +
-            //                  $"Burst=D{765 + Doffset} ({plcData.reject_burst:F1}), " +
-            //                  $"Startup=D{770 + Doffset} ({plcData.reject_startup:F1}), " +
-            //                  $"Preform=D{775 + Doffset} ({plcData.reject_preform:F1}), " +
-            //                  $"Purging=D{780 + Doffset} ({plcData.reject_purging:F1}), " +
-            //                  $"Others=D{785 + Doffset} ({plcData.reject_others:F1})");
-
-            //Console.WriteLine($"Utilities       : Barrel=W{6 + Woffset}.0 ({plcData.util_barrel}), " +
-            //                  $"Motor=W{6 + Woffset}.1 ({plcData.util_hyd_motor}), " +
-            //                  $"Dehum=W{6 + Woffset}.2 ({plcData.util_dehumidifier}), " +
-            //                  $"Chiller=W{6 + Woffset}.3 ({plcData.util_chiller}), " +
-            //                  $"Material=W{6 + Woffset}.4 ({plcData.util_material}), " +
-            //                  $"Dry Cycle=W{6 + Woffset}.5 ({plcData.util_dry_cycle}), ");
-
-            Console.WriteLine($"Remark=D{900 + Doffset} ({plcData.remark}), " +
-                              $"StopCat=D{800 + Doffset} ({plcData.stop_category})");
-
-            Console.WriteLine($"Time            : {plcData.time:yyyy-MM-dd HH:mm:ss}");
-            Console.WriteLine();
-        }
+        // ── Public read interface ──────────────────────────────────────────────
 
         public Dictionary<string, object> ReadAllPlcs()
         {
-            var ip = "172.17.86.80";
             PlcOmron? plc = null;
 
             try
             {
-                if (!_plcConnections.TryGetValue(ip, out plc) || plc == null)
+                if (!_plcConnections.TryGetValue(ReadKey, out plc) || plc == null)
                 {
-                    plc = new PlcOmron(ip, 9600, false, 80, 136);
-                    _plcConnections[ip] = plc;
+                    plc = new PlcOmron(MasterIp, 9600, false, 80, 136);
+                    _plcConnections[ReadKey] = plc;
                 }
 
                 plc.Connect();
 
-                // Read up to 3 times
-                byte[] dBuffer1 = null, dBuffer2 = null, dBuffer3 = null;
-                bool[] wBits1 = null, wBits2 = null, wBits3 = null;
-
-                if (!TryReadSnapshot(plc, out dBuffer1, out wBits1))
+                // Triple-read with majority vote for signal consistency
+                if (!TryReadSnapshot(plc, out var d1, out var w1))
                 {
-                    Console.WriteLine("[PlcService] Read attempt 1 failed");
-                    return new Dictionary<string, object>();
+                    _logger.LogWarning("[PlcService] Read attempt 1 failed");
+                    return [];
                 }
 
-                if (!TryReadSnapshot(plc, out dBuffer2, out wBits2))
+                if (!TryReadSnapshot(plc, out var d2, out var w2))
                 {
-                    Console.WriteLine("[PlcService] Read attempt 2 failed");
-                    return new Dictionary<string, object>();
+                    _logger.LogWarning("[PlcService] Read attempt 2 failed");
+                    return [];
                 }
 
-                // Compare event signals between read 1 and read 2
-                if (AreSignalsConsistent(wBits1, wBits2, dBuffer1, dBuffer2))
+                if (AreSignalsConsistent(w1, w2, d1, d2))
+                    return BuildResult(d2, w2);
+
+                _logger.LogWarning("[PlcService] Inconsistency between reads 1 & 2 — tiebreaker read");
+
+                if (!TryReadSnapshot(plc, out var d3, out var w3))
                 {
-                    // Use second read
-                    return BuildResult(dBuffer2, wBits2);
+                    _logger.LogWarning("[PlcService] Read attempt 3 failed — using read 2");
+                    return BuildResult(d2, w2);
                 }
 
-                // Reads 1 and 2 disagree
-                Console.WriteLine("[PlcService] Signal inconsistency detected between reads, taking tiebreaker read");
+                if (AreSignalsConsistent(w2, w3, d2, d3)) return BuildResult(d3, w3);
+                if (AreSignalsConsistent(w1, w3, d1, d3)) return BuildResult(d3, w3);
 
-                if (!TryReadSnapshot(plc, out dBuffer3, out wBits3))
-                {
-                    Console.WriteLine("[PlcService] Read attempt 3 failed, using read 2");
-                    return BuildResult(dBuffer2, wBits2);
-                }
-
-                // Majority vote
-                if (AreSignalsConsistent(wBits2, wBits3, dBuffer2, dBuffer3))
-                    return BuildResult(dBuffer3, wBits3); // reads 2+3 agree
-
-                if (AreSignalsConsistent(wBits1, wBits3, dBuffer1, dBuffer3))
-                    return BuildResult(dBuffer3, wBits3); // reads 1+3 agree
-
-                Console.WriteLine("[PlcService] All 3 reads inconsistent — skipping iteration");
-                return new Dictionary<string, object>();
+                _logger.LogWarning("[PlcService] All 3 reads inconsistent — skipping iteration");
+                return [];
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PlcService] Critical PLC Connection Error: {ex.Message}");
+                _logger.LogError(ex, "[PlcService] Critical PLC error");
                 if (plc != null)
                 {
-                    _plcConnections.TryRemove(ip, out _);
-                    try { plc.Disconnect(); } catch { }
+                    _plcConnections.TryRemove(ReadKey, out _);
+                    try { plc.Disconnect(); } catch { /* ignore */ }
                 }
-                return new Dictionary<string, object>();
+                return [];
             }
         }
+
         public Dictionary<string, object?> ReadSubPlcSignals(int machineId)
         {
-            if (machineId < 1 || machineId > 26)
+            if (machineId is < 1 or > 26)
                 throw new ArgumentOutOfRangeException(nameof(machineId), "Machine ID must be 1–26.");
 
             var ip = $"172.17.86.{219 + machineId}";
+            var cacheKey = $"sub_{ip}";
             var result = new Dictionary<string, object?>();
             PlcOmron? plc = null;
 
             try
             {
-                var cacheKey = $"sub_{ip}";
                 if (!_plcConnections.TryGetValue(cacheKey, out plc) || plc == null)
                 {
-                    byte remoteNode = (byte)(219 + machineId); // 220=M1 … 245=M26
+                    byte remoteNode = (byte)(219 + machineId);
                     plc = new PlcOmron(ip, 9600, false, remoteNode, 136);
                     _plcConnections[cacheKey] = plc;
                 }
                 plc.Connect();
 
-                // ── D Memory (words 30–775) ───────────────────────────────────────
+                // D Memory (words 30–775)
                 const ushort dStart = 30;
                 const ushort dEnd = 775;
-                const int totalDWords = dEnd - dStart + 1; // 746 words
+                const int totalDWords = dEnd - dStart + 1;
                 const int maxChunk = 500;
 
                 byte[] dBuf = new byte[totalDWords * 2];
@@ -312,7 +286,7 @@ namespace CMS.Server.Services
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[SubPlc M{machineId}] D read failed at offset {offset}: {ex.Message}");
+                        _logger.LogWarning("[SubPlc M{Id}] D read failed at offset {Offset}: {Msg}", machineId, offset, ex.Message);
                         dOk = false;
                     }
                 }
@@ -320,8 +294,6 @@ namespace CMS.Server.Services
                 if (dOk)
                 {
                     int Didx(int wordAddr) => (wordAddr - dStart) * 2;
-
-                    // Floats
                     result["D30"] = ReadFloatAt(dBuf, Didx(30));
                     result["D90"] = ReadFloatAt(dBuf, Didx(90));
                     result["D700"] = ReadFloatAt(dBuf, Didx(700));
@@ -340,26 +312,22 @@ namespace CMS.Server.Services
                     result["D765"] = ReadFloatAt(dBuf, Didx(765));
                     result["D770"] = ReadFloatAt(dBuf, Didx(770));
                     result["D775"] = ReadFloatAt(dBuf, Didx(775));
-
-                    // Ints
                     result["D40"] = ReadIntAt(dBuf, Didx(40));
                     result["D50"] = ReadIntAt(dBuf, Didx(50));
                     result["D110"] = ReadIntAt(dBuf, Didx(110));
                     result["D120"] = ReadIntAt(dBuf, Didx(120));
                     result["D190"] = ReadIntAt(dBuf, Didx(190));
-
-                    // Strings (200 bytes each)
-                    result["D200"] = ReadStringAt(dBuf, Didx(200), 200);
-                    result["D300"] = ReadStringAt(dBuf, Didx(300), 200);
-                    result["D400"] = ReadStringAt(dBuf, Didx(400), 200);
-                    result["D500"] = ReadStringAt(dBuf, Didx(500), 200);
+                    result["D200"] = ReadStringAt(dBuf, Didx(200));
+                    result["D300"] = ReadStringAt(dBuf, Didx(300));
+                    result["D400"] = ReadStringAt(dBuf, Didx(400));
+                    result["D500"] = ReadStringAt(dBuf, Didx(500));
                 }
 
-                // ── W Memory bits (words 5–65) ────────────────────────────────────
+                // W Memory bits (words 5–65)
                 try
                 {
                     const ushort wStart = 5;
-                    ushort wBitCount = (ushort)((65 - 5 + 1) * 16); // 976 bits
+                    ushort wBitCount = (ushort)((65 - 5 + 1) * 16);
                     byte[] wChunk = plc.Read(wStart, wBitCount, 0, MemoryAreaBits.Work);
 
                     bool Wbit(int word, int bit)
@@ -383,10 +351,10 @@ namespace CMS.Server.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[SubPlc M{machineId}] W read failed: {ex.Message}");
+                    _logger.LogWarning("[SubPlc M{Id}] W read failed: {Msg}", machineId, ex.Message);
                 }
 
-                // ── Holding Memory H30–H34 ────────────────────────────────────────
+                // Holding memory H30–H34
                 try
                 {
                     byte[] hChunk = plc.Read(30, 6, 0, (MemoryAreaBits)0xB2);
@@ -396,15 +364,14 @@ namespace CMS.Server.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[SubPlc M{machineId}] H read failed: {ex.Message}");
+                    _logger.LogWarning("[SubPlc M{Id}] H read failed: {Msg}", machineId, ex.Message);
                 }
 
-                // ── Input bits IN 0.00–0.08 ───────────────────────────────────────
+                // Input bits IN 0.00–0.08
                 try
                 {
                     byte[] inChunk = plc.Read(0, 16, 0, (MemoryAreaBits)0x80);
                     bool INbit(int bit) => bit < inChunk.Length && inChunk[bit] != 0;
-
                     result["IN0.00"] = INbit(0);
                     result["IN0.01"] = INbit(1);
                     result["IN0.02"] = INbit(2);
@@ -417,10 +384,10 @@ namespace CMS.Server.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[SubPlc M{machineId}] IN read failed: {ex.Message}");
+                    _logger.LogWarning("[SubPlc M{Id}] IN read failed: {Msg}", machineId, ex.Message);
                 }
 
-                // ── Output bits OUT 100.00 ────────────────────────────────────────
+                // Output bits OUT 100.00
                 try
                 {
                     byte[] outChunk = plc.Read(100, 16, 0, (MemoryAreaBits)0x82);
@@ -428,33 +395,31 @@ namespace CMS.Server.Services
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[SubPlc M{machineId}] OUT read failed: {ex.Message}");
+                    _logger.LogWarning("[SubPlc M{Id}] OUT read failed: {Msg}", machineId, ex.Message);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[SubPlc M{machineId}] Critical error: {ex.Message}");
+                _logger.LogError(ex, "[SubPlc M{Id}] Critical error", machineId);
                 if (plc != null)
                 {
-                    _plcConnections.TryRemove($"sub_{ip}", out _);
-                    try { plc.Disconnect(); } catch { }
+                    _plcConnections.TryRemove(cacheKey, out _);
+                    try { plc.Disconnect(); } catch { /* ignore */ }
                 }
                 throw;
             }
 
             return result;
         }
+
+        // ── Public write interface ─────────────────────────────────────────────
+
         public void UpdatePLCS(dynamic master)
         {
             PlcOmron? plc = null;
-
             try
             {
-                if (!_plcConnections.TryGetValue(WRITE_KEY, out plc) || plc == null)
-                {
-                    plc = new PlcOmron("172.17.86.80", 9600, false, 80, 1);
-                    _plcConnections[WRITE_KEY] = plc;
-                }
+                plc = GetWritePlc();
                 plc.Connect();
 
                 int baseOffset = (master.id_machine - 1) * 500;
@@ -477,29 +442,23 @@ namespace CMS.Server.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PlcService] Error in UpdatePLCS: {ex.Message}");
+                _logger.LogError(ex, "[PlcService] UpdatePLCS failed");
             }
         }
+
         public void UpdatePacker(dynamic staffList)
         {
             PlcOmron? plc = null;
-
             try
             {
-                if (!_plcConnections.TryGetValue(WRITE_KEY, out plc) || plc == null)
-                {
-                    plc = new PlcOmron("172.17.86.80", 9600, false, 80, 1);
-                    _plcConnections[WRITE_KEY] = plc;
-                }
+                plc = GetWritePlc();
                 plc.Connect();
 
                 foreach (var staff in staffList)
                 {
                     int baseOffset = (staff.id_machine - 1) * 500;
                     int ipNode = 220 + (staff.id_machine - 1);
-
                     WriteIntOmron(plc, 10, ipNode);
-
                     ushort addrPacker = (ushort)(700 + baseOffset);
                     WriteStringOmron(plc, 200, staff.packer);
                     WriteStringOmron(plc, addrPacker, staff.packer);
@@ -508,42 +467,35 @@ namespace CMS.Server.Services
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PlcService] Error in UpdatePLCS: {ex.Message}");
+                _logger.LogError(ex, "[PlcService] UpdatePacker failed");
             }
         }
+
         public void UpdateMeasureQC(machine_master master)
         {
             PlcOmron? plc = null;
-
             try
             {
-                if (!_plcConnections.TryGetValue(WRITE_KEY, out plc) || plc == null)
-                {
-                    plc = new PlcOmron("172.17.86.80", 9600, false, 80, 1);
-                    _plcConnections[WRITE_KEY] = plc;
-                }
+                plc = GetWritePlc();
                 plc.Connect();
 
                 int baseOffset = (master.id_machine - 1) * 3;
                 int ipNode = 220 + (master.id_machine - 1);
-
                 WriteIntOmron(plc, 20, ipNode);
-
                 ushort addrMeasureQC = (ushort)(7 + baseOffset);
                 WriteBoolOmron(plc, 3, 0, master.measure_qc);
                 WriteBoolOmron(plc, addrMeasureQC, 0, master.measure_qc);
-
                 WriteBoolOmron(plc, 3, 1, true);
-
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PlcService] Error in UpdateMeasureQC: {ex.Message}");
+                _logger.LogError(ex, "[PlcService] UpdateMeasureQC failed");
             }
         }
+
         public void ChangePassword(Dictionary<string, int> passwords)
         {
-            var departmentAddressMap = new Dictionary<string, ushort>(StringComparer.OrdinalIgnoreCase)
+            var addressMap = new Dictionary<string, ushort>(StringComparer.OrdinalIgnoreCase)
             {
                 ["maintenance"] = 10,
                 ["technician"] = 12,
@@ -551,42 +503,48 @@ namespace CMS.Server.Services
             };
 
             PlcOmron? plc = null;
-
             try
             {
-                if (!_plcConnections.TryGetValue(WRITE_KEY, out plc) || plc == null)
-                {
-                    plc = new PlcOmron("172.17.86.80", 9600, false, 80, 1);
-                    _plcConnections[WRITE_KEY] = plc;
-                }
+                plc = GetWritePlc();
                 plc.Connect();
 
                 foreach (var (department, password) in passwords)
                 {
-                    if (!departmentAddressMap.TryGetValue(department, out ushort address))
-                    {
-                        continue;
-                    }
-                    WriteHolding(plc, address, password);
+                    if (addressMap.TryGetValue(department, out ushort address))
+                        WriteHolding(plc, address, password);
                 }
 
                 WriteBoolOmron(plc, wordAddress: 1, bit: 1, value: true);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PlcService] Error in ChangePassword: {ex.Message}");
+                _logger.LogError(ex, "[PlcService] ChangePassword failed");
             }
         }
+
+        // ── Private helpers: PLC read ──────────────────────────────────────────
+
+        private PlcOmron GetWritePlc()
+        {
+            if (!_plcConnections.TryGetValue(WriteKey, out var plc) || plc == null)
+            {
+                plc = new PlcOmron(MasterIp, 9600, false, 80, 1);
+                _plcConnections[WriteKey] = plc;
+            }
+            return plc;
+        }
+
         private bool TryReadSnapshot(PlcOmron plc, out byte[] dBuffer, out bool[] wBits)
         {
-            dBuffer = null;
-            wBits = null;
+            dBuffer = null!;
+            wBits = null!;
 
-            // Read D area
-            ushort dStart = 500;
-            ushort dEnd = 13500;
-            int totalDWords = dEnd - dStart + 1;
+            // D area: words 500–13500
+            const ushort dStart = 500;
+            const ushort dEnd = 13500;
+            const int totalDWords = dEnd - dStart + 1;
             const int maxDWords = 500;
+
             byte[] buffer = new byte[totalDWords * 2];
 
             for (int offset = 0; offset < totalDWords; offset += maxDWords)
@@ -598,25 +556,24 @@ namespace CMS.Server.Services
                 try
                 {
                     byte[] chunk = plc.Read(chunkStart, chunkSize, 0, MemoryAreaBits.DataMemory);
-
                     if (chunk == null || chunk.Length < expectedBytes)
                     {
-                        Console.WriteLine($"[PlcService] D area short read at offset {offset}: " +
-                                          $"expected {expectedBytes}, got {chunk?.Length ?? 0}");
+                        _logger.LogWarning("[PlcService] D short read at offset {Offset}: expected {Exp}, got {Got}",
+                            offset, expectedBytes, chunk?.Length ?? 0);
                         return false;
                     }
-
                     Buffer.BlockCopy(chunk, 0, buffer, offset * 2, chunk.Length);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[PlcService] D area read failed at offset {offset}: {ex.Message}");
+                    _logger.LogWarning("[PlcService] D read failed at offset {Offset}: {Msg}", offset, ex.Message);
                     return false;
                 }
             }
 
-            ushort wStart = 5;
-            ushort wEnd = 81;
+            // W area: words 5–81
+            const ushort wStart = 5;
+            const ushort wEnd = 81;
             int totalWWords = wEnd - wStart + 1;
             int totalBits = totalWWords * 16;
             bool[] bits = new bool[totalBits];
@@ -624,20 +581,18 @@ namespace CMS.Server.Services
             try
             {
                 byte[] chunk = plc.Read(wStart, (ushort)totalBits, 0, MemoryAreaBits.Work);
-
                 if (chunk == null || chunk.Length < totalBits)
                 {
-                    Console.WriteLine($"[PlcService] W area short read: " +
-                                      $"expected {totalBits}, got {chunk?.Length ?? 0}");
+                    _logger.LogWarning("[PlcService] W short read: expected {Exp}, got {Got}",
+                        totalBits, chunk?.Length ?? 0);
                     return false;
                 }
-
                 for (int i = 0; i < totalBits; i++)
                     bits[i] = chunk[i] != 0;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[PlcService] W area read failed: {ex.Message}");
+                _logger.LogWarning("[PlcService] W read failed: {Msg}", ex.Message);
                 return false;
             }
 
@@ -645,120 +600,170 @@ namespace CMS.Server.Services
             wBits = bits;
             return true;
         }
+
         private bool AreSignalsConsistent(bool[] w1, bool[] w2, byte[] d1, byte[] d2)
         {
-            for (int i = 0; i < 26; i++)
+            for (int i = 0; i < MachineCount; i++)
             {
-                int Woffset = i * 3;
-                int Doffset = i * 500;
+                int wOffset = i * 3;
+                int dOffset = i * 500;
 
-                // W area bit signals
-                if (ReadBit(w1, Woffset, 0) != ReadBit(w2, Woffset, 0)) return false; // status_start
-                if (ReadBit(w1, Woffset, 1) != ReadBit(w2, Woffset, 1)) return false; // status_off
-                if (ReadBit(w1, Woffset, 5) != ReadBit(w2, Woffset, 5)) return false; // remark_signal
-                if (ReadBit(w1, Woffset, 6) != ReadBit(w2, Woffset, 6)) return false; // reject_signal
-                if (ReadBit(w1, Woffset + 1, 0) != ReadBit(w2, Woffset + 1, 0)) return false; // util_barrel
-                if (ReadBit(w1, Woffset + 1, 1) != ReadBit(w2, Woffset + 1, 1)) return false; // util_hyd_motor
-                if (ReadBit(w1, Woffset + 1, 2) != ReadBit(w2, Woffset + 1, 2)) return false; // util_dehumidifier
-                if (ReadBit(w1, Woffset + 1, 3) != ReadBit(w2, Woffset + 1, 3)) return false; // util_chiller
-                if (ReadBit(w1, Woffset + 1, 4) != ReadBit(w2, Woffset + 1, 4)) return false; // util_material
-                if (ReadBit(w1, Woffset + 1, 5) != ReadBit(w2, Woffset + 1, 5)) return false; // util_dry_cycle
+                // Stable W bits
+                if (ReadBit(w1, wOffset, 0) != ReadBit(w2, wOffset, 0)) return false; // status_start
+                if (ReadBit(w1, wOffset, 1) != ReadBit(w2, wOffset, 1)) return false; // status_off
+                if (ReadBit(w1, wOffset, 5) != ReadBit(w2, wOffset, 5)) return false; // remark_signal
+                if (ReadBit(w1, wOffset, 6) != ReadBit(w2, wOffset, 6)) return false; // reject_signal
+                if (ReadBit(w1, wOffset + 1, 0) != ReadBit(w2, wOffset + 1, 0)) return false; // util_barrel
+                if (ReadBit(w1, wOffset + 1, 1) != ReadBit(w2, wOffset + 1, 1)) return false; // util_hyd_motor
+                if (ReadBit(w1, wOffset + 1, 2) != ReadBit(w2, wOffset + 1, 2)) return false; // util_dehumidifier
+                if (ReadBit(w1, wOffset + 1, 3) != ReadBit(w2, wOffset + 1, 3)) return false; // util_chiller
+                if (ReadBit(w1, wOffset + 1, 4) != ReadBit(w2, wOffset + 1, 4)) return false; // util_material
+                if (ReadBit(w1, wOffset + 1, 5) != ReadBit(w2, wOffset + 1, 5)) return false; // util_dry_cycle
 
-                // D area string signals
-                string cat1 = ReadString(d1, 300 + Doffset);
-                string cat2 = ReadString(d2, 300 + Doffset);
-                if (cat1 != cat2) return false;
+                // Stop-category string
+                if (ReadString(d1, 300 + dOffset) != ReadString(d2, 300 + dOffset)) return false;
             }
-
             return true;
         }
-        private bool ReadBit(bool[] buffer, int wordIndex, int bit)
-        {
-            int index = wordIndex * 16 + bit;
-            if (index < 0 || index >= buffer.Length) return false;
-            return buffer[index];
-        }
-        private string ReadString(byte[] buffer, int wordIndex)
+
+        // ── Private helpers: memory parsing ────────────────────────────────────
+
+        private static int ReadIntFromD(byte[] buf, int wordIndex)
         {
             int byteIndex = wordIndex * 2;
-            if (byteIndex >= buffer.Length) return string.Empty;
-            if (buffer[byteIndex] == 0) return string.Empty;
-            return Encoding.ASCII.GetString(buffer, byteIndex, 100).Trim('\0', ' ');
+            if (byteIndex + 4 > buf.Length) return 0;
+            byte[] r = { buf[byteIndex + 1], buf[byteIndex], buf[byteIndex + 3], buf[byteIndex + 2] };
+            return BitConverter.ToInt32(r, 0);
         }
-        private static Dictionary<string, object> BuildResult(byte[] dBuffer, bool[] wBits)
+
+        private static float ReadFloatFromD(byte[] buf, int wordIndex)
         {
-            return new Dictionary<string, object>
-            {
-                ["Data"] = new Dictionary<string, object>
-                {
-                    ["D_RAW"] = dBuffer,
-                    ["W_RAW"] = wBits
-                }
-            };
+            int byteIndex = wordIndex * 2;
+            if (byteIndex + 4 > buf.Length) return 0f;
+            byte[] r = { buf[byteIndex + 1], buf[byteIndex], buf[byteIndex + 3], buf[byteIndex + 2] };
+            return BitConverter.ToSingle(r, 0);
         }
+
+        private static string ReadStringFromD(byte[] buf, int wordIndex)
+        {
+            int byteIndex = wordIndex * 2;
+            if (byteIndex >= buf.Length || buf[byteIndex] == 0) return string.Empty;
+            return Encoding.ASCII.GetString(buf, byteIndex, 100).Trim('\0', ' ');
+        }
+
+        private static bool ReadBitFromW(bool[] buf, ushort wordIndex, int bit)
+        {
+            int index = wordIndex * 16 + bit;
+            return index >= 0 && index < buf.Length && buf[index];
+        }
+
+        private static bool ReadBit(bool[] buf, int wordIndex, int bit)
+        {
+            int index = wordIndex * 16 + bit;
+            return index >= 0 && index < buf.Length && buf[index];
+        }
+
+        private static string ReadString(byte[] buf, int wordIndex)
+        {
+            int byteIndex = wordIndex * 2;
+            if (byteIndex >= buf.Length || buf[byteIndex] == 0) return string.Empty;
+            return Encoding.ASCII.GetString(buf, byteIndex, 100).Trim('\0', ' ');
+        }
+
         private static float ReadFloatAt(byte[] buf, int byteIndex)
         {
             if (byteIndex + 4 > buf.Length) return 0f;
             byte[] r = { buf[byteIndex + 1], buf[byteIndex], buf[byteIndex + 3], buf[byteIndex + 2] };
             return BitConverter.ToSingle(r, 0);
         }
+
         private static int ReadIntAt(byte[] buf, int byteIndex)
         {
             if (byteIndex + 4 > buf.Length) return 0;
             byte[] r = { buf[byteIndex + 1], buf[byteIndex], buf[byteIndex + 3], buf[byteIndex + 2] };
             return BitConverter.ToInt32(r, 0);
         }
+
         private static string ReadStringAt(byte[] buf, int byteIndex, int maxBytes = 200)
         {
             if (byteIndex >= buf.Length || buf[byteIndex] == 0) return string.Empty;
             int available = Math.Min(maxBytes, buf.Length - byteIndex);
             return Encoding.ASCII.GetString(buf, byteIndex, available).Trim('\0', ' ');
         }
+
+        private static Dictionary<string, object> BuildResult(byte[] dBuffer, bool[] wBits)
+            => new() { ["Data"] = new Dictionary<string, object> { ["D_RAW"] = dBuffer, ["W_RAW"] = wBits } };
+
+        // ── Private helpers: PLC write ─────────────────────────────────────────
+
         private static bool WriteIntOmron(PlcOmron plc, ushort address, int value)
         {
-            var bytes = BitConverter.GetBytes(value);
-
-            byte[] reorderedBytes = new byte[] { bytes[1], bytes[0], bytes[3], bytes[2] };
-
-            return plc.Write(address, reorderedBytes, 0, 2, MemoryAreaBits.DataMemory);
+            var b = BitConverter.GetBytes(value);
+            return plc.Write(address, new byte[] { b[1], b[0], b[3], b[2] }, 0, 2, MemoryAreaBits.DataMemory);
         }
+
         private static bool WriteFloatOmron(PlcOmron plc, ushort address, float value)
         {
-            var bytes = BitConverter.GetBytes(value);
-
-            byte[] reorderedBytes = new byte[] { bytes[1], bytes[0], bytes[3], bytes[2] };
-
-            return plc.Write(address, reorderedBytes, 0, 2, MemoryAreaBits.DataMemory);
+            var b = BitConverter.GetBytes(value);
+            return plc.Write(address, new byte[] { b[1], b[0], b[3], b[2] }, 0, 2, MemoryAreaBits.DataMemory);
         }
+
         private static bool WriteStringOmron(PlcOmron plc, ushort address, string value, int maxLength = 100)
         {
-            var stringBytes = Encoding.ASCII.GetBytes(value ?? "");
+            var stringBytes = Encoding.ASCII.GetBytes(value ?? string.Empty);
             var bytes = new byte[maxLength];
-
             Array.Copy(stringBytes, bytes, Math.Min(stringBytes.Length, maxLength));
-
-            if (bytes.Length % 2 != 0)
-            {
-                Array.Resize(ref bytes, bytes.Length + 1);
-            }
-
-            ushort wordCount = (ushort)(bytes.Length / 2);
-
-            return plc.Write(address, bytes, 0, wordCount, MemoryAreaBits.DataMemory);
+            if (bytes.Length % 2 != 0) Array.Resize(ref bytes, bytes.Length + 1);
+            return plc.Write(address, bytes, 0, (ushort)(bytes.Length / 2), MemoryAreaBits.DataMemory);
         }
+
         private static bool WriteBoolOmron(PlcOmron plc, ushort wordAddress, byte bit, bool value)
-        {
-            byte bitValue = (byte)(value ? 1 : 0);
+            => plc.Write(wordAddress, new byte[] { (byte)(value ? 1 : 0) }, bit, 1, MemoryAreaBits.Work);
 
-            return plc.Write(wordAddress, new byte[] { bitValue }, bit, 1, MemoryAreaBits.Work);
-        }
         private static bool WriteHolding(PlcOmron plc, ushort address, int value)
         {
-            var bytes = BitConverter.GetBytes(value);
-
-            byte[] reorderedBytes = new byte[] { bytes[1], bytes[0], bytes[3], bytes[2] };
-
-            return plc.Write(address, reorderedBytes, 0, 2, (MemoryAreaBits)0xB2);
+            var b = BitConverter.GetBytes(value);
+            return plc.Write(address, new byte[] { b[1], b[0], b[3], b[2] }, 0, 2, (MemoryAreaBits)0xB2);
         }
+    }
+
+    // ── Typed snapshot record (replaces anonymous object) ─────────────────────
+
+    /// <summary>
+    /// Strongly typed PLC data snapshot for a single machine.
+    /// Passed directly to BaseService.insertMachineMaster() so dynamic dispatch
+    /// still works via the existing service signature.
+    /// </summary>
+    public sealed record PlcSnapshot
+    {
+        public int id_machine { get; init; }
+        public DateTime time { get; init; }
+        public int shot { get; init; }
+        public int shot_accum { get; init; }
+        public float act_ct { get; init; }
+        public int mould_category_no { get; init; }
+        public string stop_category { get; init; } = string.Empty;
+        public string remark { get; init; } = string.Empty;
+        public float reject_panelling { get; init; }
+        public float reject_lumpy { get; init; }
+        public float reject_black_dot { get; init; }
+        public float reject_burst { get; init; }
+        public float reject_startup { get; init; }
+        public float reject_preform { get; init; }
+        public float reject_purging { get; init; }
+        public float reject_others { get; init; }
+        public bool status_start { get; init; }
+        public bool status_off { get; init; }
+        public bool production_running { get; init; }
+        public bool visual_qc { get; init; }
+        public bool done { get; init; }
+        public bool remark_signal { get; init; }
+        public bool reject_signal { get; init; }
+        public bool util_barrel { get; init; }
+        public bool util_hyd_motor { get; init; }
+        public bool util_dehumidifier { get; init; }
+        public bool util_chiller { get; init; }
+        public bool util_material { get; init; }
+        public bool util_dry_cycle { get; init; }
     }
 }

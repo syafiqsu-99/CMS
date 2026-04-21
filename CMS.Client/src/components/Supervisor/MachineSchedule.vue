@@ -257,7 +257,7 @@
     const item = changeMouldDialog.value.item;
     saving.value = true;
     try {
-      const res = await fetch('/api/machines/mould-change', {
+      const res = await fetch('/api/supervisor/mould-change', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

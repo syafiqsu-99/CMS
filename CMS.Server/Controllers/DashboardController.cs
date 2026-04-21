@@ -9,10 +9,12 @@ public class DashboardController : ControllerBase
 {
     private readonly DashboardService _dashboardService;
     private readonly SupervisorService _supervisorService;
-    public DashboardController(DashboardService dashboardService, SupervisorService supervisorService)
+    private readonly BaseService _baseService;
+    public DashboardController(DashboardService dashboardService, SupervisorService supervisorService, BaseService baseService)
     {
         _dashboardService = dashboardService;
         _supervisorService = supervisorService;
+        _baseService = baseService;
     }
 
     [HttpGet("Attendance")]
@@ -22,17 +24,20 @@ public class DashboardController : ControllerBase
         return Ok(data);
     }
 
-    // ── Staff Photo ───────────────────────────────────────────────────────────
-
-    [HttpGet("staff-photo/{staffId:int}")]
-    public IActionResult GetStaffPhoto(int staffId)
+    [HttpGet("staff-photo/{staff_id:int}")]
+    public IActionResult GetStaffPhoto(int staff_id)
     {
-        var path = _supervisorService.GetStaffPhotoPath(staffId);
-        if (string.IsNullOrEmpty(path))
-            return NotFound();
+        var path = _supervisorService.GetStaffPhotoPath(staff_id);
+        if (string.IsNullOrEmpty(path)) return NotFound();
 
-        var ext = Path.GetExtension(path).ToLowerInvariant();
-        var mime = ext == ".png" ? "image/png" : "image/jpeg";
+        var mime = Path.GetExtension(path).ToLowerInvariant() == ".png" ? "image/png" : "image/jpeg";
         return PhysicalFile(path, mime);
+    }
+
+    [HttpGet("timeline")]
+    public async Task<ActionResult> Timeline()
+    {
+        var data = await _baseService.LoadTimeline();
+        return Ok(data);
     }
 }

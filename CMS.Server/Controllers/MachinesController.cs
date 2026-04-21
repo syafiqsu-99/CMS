@@ -8,11 +8,13 @@ namespace CMS.Server.Controllers;
 public class MachinesController : ControllerBase
 {
     private readonly MachinesService _machineService;
-    
-    public MachinesController(MachinesService machineService)
+    private readonly BaseService _baseService;
+    public MachinesController(MachinesService machineService, BaseService baseService)
     {
         _machineService = machineService;
+        _baseService = baseService;
     }
+
     [HttpGet]
     public async Task<IActionResult> GetAll()
         => Ok(await _machineService.LoadMachineMasterAsync());
@@ -20,4 +22,11 @@ public class MachinesController : ControllerBase
     [HttpGet("{id:int}/utilities")]
     public async Task<IActionResult> Utilities(int id)
         => Ok(await _machineService.LoadUtilities(id));
+
+    [HttpGet("timeline")]
+    public async Task<ActionResult> Timeline()
+    {
+        var data = await _baseService.LoadTimeline();
+        return Ok(data);
+    }
 }

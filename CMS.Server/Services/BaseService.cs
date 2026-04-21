@@ -55,159 +55,100 @@ public class BaseService
         var time = DateTime.Now;
         var (productionDate, shift) = GetProductionDate(time);
 
-        var sql = @"
-                    WITH timeline AS(
-                        SELECT 1 AS id_machine, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()) AS start, COALESCE(ml.finish, GETDATE()) AS finish, COALESCE(UPPER(ml.category), 'N/A') AS category, COALESCE(ml.mould_category, 0) AS mould_category, ml.shift, ml.production_date
-                        FROM machine_log_1 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 2, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_2 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 3, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_3 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 4, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_4 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 5, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_5 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 6, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_6 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 7, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_7 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 8, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_8 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 9, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_9 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 10, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_10 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 11, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_11 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 12, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_12 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 13, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_13 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 14, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_14 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 15, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_15 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 16, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_16 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 17, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_17 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 18, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_18 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 19, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_19 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 20, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_20 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 21, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_21 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 22, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_22 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 23, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_23 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 24, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_24 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 25, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_25 ml WHERE production_date = @production_date AND shift = @shift
-                        UNION ALL
-                        SELECT 26, ml.machine_name, ml.id_type, ml.mould, COALESCE(ml.start, GETDATE()), COALESCE(ml.finish, GETDATE()), COALESCE(UPPER(ml.category), 'N/A'), COALESCE(ml.mould_category, 0), ml.shift, ml.production_date
-                        FROM machine_log_26 ml WHERE production_date = @production_date AND shift = @shift
-                    )
-                    SELECT
-                        mm.machine_name,
-                        tl.id_machine,
-                        mm.type,
-                        tl.id_type,
-                        tl.mould,
-                        tl.start,
-                        tl.finish,
-                        CAST(DATEDIFF(MINUTE, tl.start, tl.finish) / 60.0 AS FLOAT) AS duration,
-                        tl.category,
-                        tl.mould_category,
-                        (mm.shot * mm.qty_perct) AS output,
-                        CAST(COALESCE(
-                            CASE
-                            WHEN DATEPART(HOUR, GETDATE()) BETWEEN 6 AND 17 THEN
-                                (((DATEPART(HOUR, GETDATE()) - 6) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / (mm.sap_ct / NULLIF(mm.qty_perct, 0)))
-                            WHEN DATEPART(HOUR, GETDATE()) < 6 THEN
-                                (((DATEPART(HOUR, GETDATE()) + 24 - 18) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / (mm.sap_ct / NULLIF(mm.qty_perct, 0)))
-                            ELSE
-                                (((DATEPART(HOUR, GETDATE()) - 18) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / (mm.sap_ct / NULLIF(mm.qty_perct, 0)))
-                        END, 0) AS INT) AS plan_output,
-                        CAST(
-                            COALESCE(
-                                ((mm.shot * mm.qty_perct) /
-                                NULLIF(
-                                    CASE
-                                        WHEN DATEPART(HOUR, GETDATE()) BETWEEN 6 AND 17 THEN
-                                            (((DATEPART(HOUR, GETDATE()) - 6) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / (mm.sap_ct / NULLIF(mm.qty_perct, 0)))
-                                        WHEN DATEPART(HOUR, GETDATE()) < 6 THEN
-                                            (((DATEPART(HOUR, GETDATE()) + 24 - 18) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / (mm.sap_ct / NULLIF(mm.qty_perct, 0)))
-                                        ELSE
-                                            (((DATEPART(HOUR, GETDATE()) - 18) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / (mm.sap_ct / NULLIF(mm.qty_perct, 0)))
-                                    END, 0)
-                                ) * 100, 0
-                            ) AS FLOAT
-                        ) AS efficiency,
-                        tl.shift,
-                        tl.production_date
-                    FROM timeline tl
-                    LEFT JOIN machine_master mm
-                        ON tl.id_machine = mm.id_machine
-                    ORDER BY tl.start DESC;";
+        using var conn = await CreateConnectionAsync();
+
+        var existingTables = new HashSet<string>();
+        using (var cmdTables = new SqlCommand("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME LIKE 'machine_log_%'", conn))
+        using (var readerTables = await cmdTables.ExecuteReaderAsync())
+        {
+            while (await readerTables.ReadAsync())
+            {
+                existingTables.Add(readerTables.GetString(0).ToLower());
+            }
+        }
+
+        var machineIds = new List<int>();
+        using (var cmdIds = new SqlCommand("SELECT id_machine FROM machine_master", conn))
+        using (var readerIds = await cmdIds.ExecuteReaderAsync())
+        {
+            while (await readerIds.ReadAsync())
+            {
+                machineIds.Add(Convert.ToInt32(readerIds["id_machine"]));
+            }
+        }
+
+        var unionParts = new List<string>();
+        foreach (var id in machineIds)
+        {
+            if (existingTables.Contains($"machine_log_{id}"))
+            {
+                unionParts.Add($@"
+                SELECT {id} AS id_machine, start, finish, category, mould_category, shift, production_date 
+                FROM machine_log_{id} 
+                WHERE production_date = @production_date AND shift = @shift");
+            }
+        }
+
+        string timelineCte = unionParts.Any()
+            ? string.Join(" UNION ALL ", unionParts)
+            : "SELECT CAST(NULL AS INT) AS id_machine, CAST(NULL AS DATETIME) AS start, CAST(NULL AS DATETIME) AS finish, CAST(NULL AS VARCHAR(50)) AS category, CAST(NULL AS INT) AS mould_category, CAST(NULL AS INT) AS shift, CAST(NULL AS DATE) AS production_date WHERE 1=0";
+
+        var sql = $@"
+            WITH timeline AS (
+                {timelineCte}
+            )
+            SELECT
+                mm.machine_name,
+                mm.id_machine,
+                mm.type,
+                mm.id_type,
+                mm.mould,
+                tl.start,
+                tl.finish,
+                CAST(DATEDIFF(MINUTE, tl.start, tl.finish) / 60.0 AS FLOAT) AS duration,
+                COALESCE(UPPER(tl.category), 'N/A') AS category,
+                COALESCE(tl.mould_category, 0) AS mould_category,
+                (mm.shot * mm.qty_perct) AS output,
+                CAST(COALESCE(
+                    CASE
+                    WHEN DATEPART(HOUR, GETDATE()) BETWEEN 6 AND 17 THEN
+                        (((DATEPART(HOUR, GETDATE()) - 6) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / NULLIF(mm.sap_ct / NULLIF(mm.qty_perct, 0), 0))
+                    WHEN DATEPART(HOUR, GETDATE()) < 6 THEN
+                        (((DATEPART(HOUR, GETDATE()) + 24 - 18) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / NULLIF(mm.sap_ct / NULLIF(mm.qty_perct, 0), 0))
+                    ELSE
+                        (((DATEPART(HOUR, GETDATE()) - 18) * 3600 + DATEPART(MINUTE, GETDATE()) * 60 + DATEPART(SECOND, GETDATE())) / NULLIF(mm.sap_ct / NULLIF(mm.qty_perct, 0), 0))
+                END, 0) AS INT) AS plan_output,
+                tl.shift,
+                tl.production_date
+            FROM machine_master mm
+            LEFT JOIN timeline tl ON mm.id_machine = tl.id_machine
+            ORDER BY mm.id_machine ASC, tl.start DESC;";
 
         var result = new List<object>();
-
-        using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
-
         cmd.Parameters.AddWithValue("@shift", shift);
         cmd.Parameters.AddWithValue("@production_date", productionDate);
 
         using var reader = await cmd.ExecuteReaderAsync();
-
         while (await reader.ReadAsync())
         {
             result.Add(new
             {
-                machine_name = Convert.ToString(reader["machine_name"]),
+                machine_name = reader["machine_name"]?.ToString() ?? "UNKNOWN",
                 id_machine = Convert.ToInt32(reader["id_machine"]),
-                type = Convert.ToString(reader["type"]),
-                id_type = Convert.ToInt32(reader["id_type"]),
-                mould = Convert.ToInt32(reader["mould"]),
-                start = Convert.ToDateTime(reader["start"]),
-                finish = Convert.ToDateTime(reader["finish"]),
-                duration = Convert.ToSingle(reader["duration"]),
-                category = Convert.ToString(reader["category"]),
-                mould_category = Convert.ToInt32(reader["mould_category"]),
-                output = Convert.ToInt32(reader["output"]),
-                plan_output = Convert.ToInt32(reader["plan_output"]),
-                efficiency = Convert.ToSingle(reader["efficiency"]),
-                shift = Convert.ToInt32(reader["shift"]),
-                production_date = DateOnly.FromDateTime(Convert.ToDateTime(reader["production_date"])),
-                color = GetColor(Convert.ToString(reader["category"])),
+                type = reader["type"]?.ToString(),
+                id_type = reader["id_type"] != DBNull.Value ? Convert.ToInt32(reader["id_type"]) : 0,
+                mould = reader["mould"] != DBNull.Value ? Convert.ToInt32(reader["mould"]) : 0,
+                start = reader["start"] != DBNull.Value ? Convert.ToDateTime(reader["start"]) : (DateTime?)null,
+                finish = reader["finish"] != DBNull.Value ? Convert.ToDateTime(reader["finish"]) : (DateTime?)null,
+                duration = reader["duration"] != DBNull.Value ? Convert.ToSingle(reader["duration"]) : 0f,
+                category = reader["category"] != DBNull.Value ? Convert.ToString(reader["category"]) : "N/A",
+                mould_category = reader["mould_category"] != DBNull.Value ? Convert.ToInt32(reader["mould_category"]) : 0,
+                output = reader["output"] != DBNull.Value ? Convert.ToInt32(reader["output"]) : 0,
+                plan_output = reader["plan_output"] != DBNull.Value ? Convert.ToInt32(reader["plan_output"]) : 0,
+                shift = reader["shift"] != DBNull.Value ? Convert.ToInt32(reader["shift"]) : shift,
+                production_date = reader["production_date"] != DBNull.Value ? DateOnly.FromDateTime(Convert.ToDateTime(reader["production_date"])) : productionDate,
+                color = GetColor(reader["category"] != DBNull.Value ? Convert.ToString(reader["category"]) : "N/A")
             });
         }
 

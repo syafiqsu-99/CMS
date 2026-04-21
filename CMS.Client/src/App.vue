@@ -1,7 +1,10 @@
 <template>
   <v-app>
     <!-- Loading overlay -->
-    <v-overlay v-model="isLoading" persistent class="align-center justify-center loading-overlay" style="z-index: 9999">
+    <v-overlay v-model="isLoading"
+               persistent
+               class="align-center justify-center loading-overlay"
+               style="z-index: 9999">
       <div class="text-center">
         <v-progress-circular indeterminate size="80" width="8" color="white" />
         <div class="mt-6 text-h5 font-weight-bold text-white">{{ loadingMessage }}</div>
@@ -26,10 +29,9 @@
 </template>
 
 <script setup>
-  import { ref, provide, onMounted, onBeforeUnmount } from 'vue';
+  import { ref, provide, onMounted } from 'vue';
   import NavBar from '@/components/NavBar.vue';
   import { useMachineStore } from '@/store/machineStore';
-  import { usePolling } from '@/utils/usePolling';
 
   const store = useMachineStore();
 
@@ -73,13 +75,6 @@
     return false;
   }
 
-  // ── Machine master polling ───────────────────────────
-
-  const { start: startPolling, stop: stopPolling } = usePolling(
-    () => store.loadMachineMaster(),
-    10_000,
-  );
-
   // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
   onMounted(async () => {
@@ -88,17 +83,14 @@
       if (ready) {
         loadingMessage.value = 'Loading data…';
         await store.loadInitialData();
-        startPolling();
       }
     } catch (error) {
-      console.error("Initialization error:", error);
-      showSnackbar("An error occurred while loading data.", "error");
+      console.error('[App] Initialization error:', error);
+      showSnackbar('An error occurred while loading data.', 'error');
     } finally {
       isLoading.value = false;
     }
   });
-
-  onBeforeUnmount(stopPolling);
 </script>
 
 <style scoped>

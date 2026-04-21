@@ -1,6 +1,5 @@
-// CMS.Client/src/store/machineStore.js
 import { defineStore } from 'pinia';
-import { formatDate, getTodayString, getCurrentShift } from '@/utils/constant.js';
+import { formatDate } from '@/utils/constant.js';
 
 export const useMachineStore = defineStore('machine', {
   state: () => ({
@@ -16,10 +15,13 @@ export const useMachineStore = defineStore('machine', {
   }),
 
   getters: {
-    machineById: (state) => (id) => state.machineData.find(m => m.id_machine === id),
+    machineById: (state) => (id) =>
+      state.machineData.find(m => m.id_machine === id),
   },
 
   actions: {
+    // ── Machine master ───────────────────────────────────────────────────────
+
     async loadMachineMaster() {
       if (this._fetchingMaster) return this.machineData;
       this._fetchingMaster = true;
@@ -27,6 +29,7 @@ export const useMachineStore = defineStore('machine', {
         const res = await fetch('/api/machines');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const machines = await res.json();
+
         this.machineData = machines;
         const valid = machines.filter(m => m.machine_name !== 'TEST');
         this.totalMachines = valid.length;
@@ -41,7 +44,11 @@ export const useMachineStore = defineStore('machine', {
       }
     },
 
+    // ── SAP ─────
+
     async loadSAP() {
+      if (this._fetchingSAP) return this.SAPData;
+      this._fetchingSAP = true;
       try {
         const res = await fetch('/api/setting/sap');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -50,8 +57,12 @@ export const useMachineStore = defineStore('machine', {
       } catch (err) {
         console.error('[store] loadSAP:', err.message);
         return this.SAPData;
+      } finally {
+        this._fetchingSAP = false;
       }
     },
+
+    // ── Attendance ───────────────────────────────────────────────────────────
 
     async loadAttendance() {
       try {
@@ -65,6 +76,8 @@ export const useMachineStore = defineStore('machine', {
         return [];
       }
     },
+
+    // ── Production reports ───────────────────────────────────────────────────
 
     async loadDailyReport(date, shift) {
       try {
@@ -92,10 +105,10 @@ export const useMachineStore = defineStore('machine', {
       }
     },
 
+    // ── Bootstrap helper (called once on app init) ───────────────────────────
+
     async loadInitialData() {
-      await Promise.all([
-        this.loadMachineMaster(),
-      ]);
+      await this.loadMachineMaster();
     },
   },
 });

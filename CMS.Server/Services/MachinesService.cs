@@ -4,13 +4,11 @@ namespace CMS.Server.Services;
 
 public class MachinesService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
-    // ── Public API ─────────────────────────────────────────────────────────────
 
     public async Task<IReadOnlyList<object>> LoadMachineMasterAsync()
     {
         var (productionDate, shift) = GetProductionDate(DateTime.Now);
 
-        // Dynamic UNION ALL built from machine_master rows — handles any machine count.
         const string sql = @"
             WITH latest_logs AS (
                 SELECT ll.*
@@ -96,7 +94,6 @@ public class MachinesService(PlcService plcService, string connectionString) : B
                AND r.production_date = @production_date
                AND r.shift           = @shift";
 
-        // Build the dynamic UNION ALL from machine_master rows instead of hardcoding.
         var logUnion = await BuildLogUnionSqlAsync();
         var finalSql = BuildMasterSql(logUnion);
 

@@ -34,11 +34,4 @@ public class BaseController : ControllerBase
             });
         }
     }
-
-    [HttpGet("Timeline")]
-    public async Task<ActionResult> Timeline()
-    {
-        var data = await _baseService.LoadTimeline();
-        return Ok(data);
-    }
 }

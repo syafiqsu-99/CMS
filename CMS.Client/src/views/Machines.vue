@@ -1,8 +1,5 @@
-<!-- CMS.Client/src/views/Machines.vue -->
 <template>
-  <v-container fluid class="pa-2 h-100 d-flex flex-column">
-
-    <!-- Summary cards -->
+  <v-container fluid class="pa-2 h-100 d-flex flex-column" style="overflow: hidden;">
     <v-row no-gutters style="height: 12vh;">
       <v-col cols="3" v-for="card in summaryCards" :key="card.title" class="pa-1">
         <v-card class="h-100 d-flex flex-row" elevation="2">
@@ -18,43 +15,29 @@
       </v-col>
     </v-row>
 
-    <!-- Main split layout -->
-    <v-row class="flex-grow-1" no-gutters>
-      <!-- Machine list -->
-      <v-col cols="4" class="pa-1">
+    <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="min-height: 0;">
+      <!-- Left: machine list -->
+      <v-col cols="3" style="height: 100%; overflow-y: auto;">
         <MachineList :machines="groupedMachines"
-                     :chart-data="chartData"
-                     :selected-id="selectedMachine?.id_machine ?? null"
-                     @select="selectMachine" />
+                     :selected="selectedMachine"
+                     :chartData="chartData"
+                     @select="onSelectMachine" />
       </v-col>
 
-      <!-- Machine detail -->
-      <v-col cols="8" class="pa-1">
-        <v-card variant="flat"
-                class="pa-4 bg-grey-lighten-5"
-                style="height: calc(100vh - 100px); overflow-y: auto;"
-                elevation="0">
-          <MachineInfo :machine="selectedMachineData">
-            <!-- Info slot -->
-            <template #info>
-              <v-row dense v-if="selectedMachineData">
-                <v-col cols="6" md="3" v-for="field in infoFields" :key="field.label">
-                  <div class="text-caption text-grey">{{ field.label }}</div>
-                  <div class="text-body-2 font-weight-bold">{{ field.value }}</div>
-                </v-col>
-              </v-row>
-            </template>
+      <!-- Right: machine detail -->
+      <v-col cols="9" style="height: 100%; overflow-y: auto;">
+        <div v-if="selectedMachine && selectedMachineData" class="pa-2">
 
-            <!-- Timeline slot -->
+          <MachineInfo :machine="selectedMachine" :machineData="selectedMachineData">
+            <!-- Timeline Gantt slot -->
             <template #timeline>
-              <div v-if="selectedMachineData && chartData[selectedMachineData.id_machine]"
-                   style="height: 60px;">
+              <div v-if="chartData[selectedMachineData.id_machine]" style="height: 80px;">
                 <Bar :data="chartData[selectedMachineData.id_machine].data"
                      :options="chartData[selectedMachineData.id_machine].options" />
               </div>
             </template>
 
-            <!-- Utilities slot -->
+            <!-- Utility timeline slot -->
             <template #utilities>
               <div v-if="utilityChartData.length > 0">
                 <v-list dense class="py-0 bg-transparent">
@@ -64,8 +47,7 @@
                                class="px-0 py-2">
                     <v-row dense align="center" no-gutters>
                       <v-col cols="2" class="text-left">
-                        <div class="text-caption font-weight-medium text-truncate"
-                             :title="chart.utility_name">
+                        <div class="text-caption font-weight-medium text-truncate" :title="chart.utility_name">
                           {{ chart.utility_name }}
                         </div>
                       </v-col>
@@ -84,14 +66,22 @@
               </div>
             </template>
           </MachineInfo>
-        </v-card>
+
+        </div>
+
+        <!-- Empty state -->
+        <div v-else class="d-flex flex-column align-center justify-center" style="height: 100%;">
+          <v-icon size="80" color="grey-lighten-2">mdi-monitor-dashboard</v-icon>
+          <div class="text-h6 text-grey-darken-1 mt-4 font-weight-medium">Select a machine to view details</div>
+          <div class="text-caption text-grey mt-2">Choose from the list on the left</div>
+        </div>
       </v-col>
     </v-row>
   </v-container>
 </template>
 
 <script setup>
-  import { ref, computed, onMounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { Bar } from 'vue-chartjs';
   import {
     Chart as ChartJS, CategoryScale, LinearScale,
@@ -115,215 +105,166 @@
   const utilityChartData = ref([]);
   const utility_order = UTILITIES;
 
-  // ── Computed ────────────────────────────────────────────────────────────────
-
   const selectedMachineData = computed(() => {
     if (!selectedMachine.value || !store.machineData) return null;
-    const m = store.machineData.find(m => m.id_machine === selectedMachine.value.id_machine);
+    return store.machineData.find(m => m.id_machine === selectedMachine.value?.id_machine) ?? null;
+  });
+
+  watch(selectedMachineData, (m) => {
     if (m) fetchUtilityData(m.id_machine);
-    return m ?? null;
   });
 
-  const summaryCards = computed(() => [
-    { title: 'Total Machines', icon: 'mdi-factory', color: 'primary', value: store.totalMachines },
-    { title: 'Running', icon: 'mdi-play-circle', color: 'success', value: store.runningMachines },
-    { title: 'Stop', icon: 'mdi-stop-circle', color: 'error', value: store.stopMachines },
-    { title: 'Staff Assigned', icon: 'mdi-account-group', color: 'info', value: store.activeStaff },
-  ]);
+  function onSelectMachine(machine) {
+    selectedMachine.value = machine;
+  }
 
-  const infoFields = computed(() => {
-    const m = selectedMachineData.value;
-    if (!m) return [];
-    return [
-      { label: 'Machine', value: m.machine_name },
-      { label: 'Material', value: m.material || '—' },
-      { label: 'SAP Code', value: m.id_type || '—' },
-      { label: 'Mould', value: m.mould || '—' },
-      { label: 'Packer', value: m.packer || '—' },
-      { label: 'Product', value: m.type || '—' },
-    ];
-  });
+  async function fetchTimelineData() {
+    try {
+      const res = await fetch('/api/machines/timeline');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      machineLogs.value = data;
+      groupedMachines.value = groupByMachine(data);
 
-  // ── Methods ─────────────────────────────────────────────────────────────────
-
-  function selectMachine(machine) {
-    selectedMachine.value = machine.currentStatus;
+      if (!selectedMachine.value && groupedMachines.value.length > 0) {
+        selectedMachine.value = groupedMachines.value[0];
+      }
+      buildChartData();
+    } catch (err) {
+      console.error('[Machines] fetchTimelineData:', err.message);
+    }
   }
 
   function groupByMachine(data) {
     const grouped = {};
-    data.forEach(item => {
+    for (const item of data) {
       if (!grouped[item.id_machine]) {
         grouped[item.id_machine] = {
           id_machine: item.id_machine,
-          machine_name: item.machine_name,
+          machine_name: item.machine_name ?? 'UNDEFINED',
+          type: item.type ?? 'UNDEFINED',
+          output: item.output ?? 0,
+          plan_output: item.plan_output ?? 0,
+          currentStatus: { category: item.category ?? 'N/A', color: item.color ?? '#9e9e9e' },
           data: [],
-          currentStatus: null,
         };
       }
-      grouped[item.id_machine].data.push(item);
-    });
-    Object.values(grouped).forEach(m => {
-      m.data.sort((a, b) => new Date(b.start) - new Date(a.start));
-      m.currentStatus = m.data[0];
-    });
-    return Object.values(grouped);
+      if (item.start && item.finish) {
+        grouped[item.id_machine].data.push({
+          category: item.category ?? 'UNDEFINED',
+          start: item.start,
+          finish: item.finish,
+          color: item.color ?? 'rgba(0,0,0,0.1)',
+        });
+      }
+    }
+    return Object.values(grouped).sort((a, b) => a.id_machine - b.id_machine);
+  }
+
+  function buildChartData() {
+    const { minTime, maxTime } = getTimeBounds();
+    const built = {};
+
+    for (const machine of groupedMachines.value) {
+      const points = machine.data
+        .filter(d => d.start && d.finish)
+        .map(d => ({
+          x: [d.start, d.finish],
+          y: machine.machine_name,
+          backgroundColor: d.color,
+        }));
+
+      built[machine.id_machine] = {
+        data: {
+          datasets: points.length
+            ? [{ data: points, backgroundColor: points.map(p => p.backgroundColor), barThickness: 20 }]
+            : [],
+        },
+        options: {
+          animation: false,
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { enabled: true } },
+          scales: {
+            x: {
+              type: 'time',
+              min: minTime,
+              max: maxTime,
+              time: { unit: 'hour', tooltipFormat: 'hh:mm a', displayFormats: { hour: 'ha' } },
+              ticks: { stepSize: 2, color: '#000000', font: { size: 10 } },
+              grid: { display: true, color: 'rgba(0,0,0,0.1)' },
+            },
+            y: { stacked: true, display: false },
+          },
+        },
+      };
+    }
+    chartData.value = built;
+  }
+
+  async function fetchUtilityData(id_machine) {
+    try {
+      const res = await fetch(`/api/machines/${id_machine}/utilities`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      utilityData.value = await res.json();
+      buildUtilityChartData();
+    } catch (err) {
+      console.error('[Machines] fetchUtilityData:', err.message);
+    }
   }
 
   function getTimeBounds() {
     const now = DateTime.now();
-    const hour = now.hour;
     let minTime, maxTime;
-    if (hour >= 6 && hour < 18) {
-      minTime = now.set({ hour: 6, minute: 0, second: 0 }).toJSDate();
-      maxTime = now.set({ hour: 18, minute: 0, second: 0 }).toJSDate();
+
+    const currentHour = now.hour;
+
+    if (currentHour >= 6 && currentHour < 18) {
+      minTime = now.startOf('day').plus({ hours: 6 }).toJSDate();
+      maxTime = now.startOf('day').plus({ hours: 18 }).toJSDate();
     } else {
-      minTime = (hour >= 18
-        ? now.set({ hour: 18, minute: 0, second: 0 })
-        : now.minus({ days: 1 }).set({ hour: 18, minute: 0, second: 0 })
-      ).toJSDate();
-      maxTime = (hour < 6
-        ? now.set({ hour: 6, minute: 0, second: 0 })
-        : now.plus({ days: 1 }).set({ hour: 6, minute: 0, second: 0 })
-      ).toJSDate();
+      if (currentHour >= 18) {
+        minTime = now.startOf('day').plus({ hours: 18 }).toJSDate();
+        maxTime = now.plus({ days: 1 }).startOf('day').plus({ hours: 6 }).toJSDate();
+      } else {
+        minTime = now.minus({ days: 1 }).startOf('day').plus({ hours: 18 }).toJSDate();
+        maxTime = now.startOf('day').plus({ hours: 6 }).toJSDate();
+      }
     }
+
     return { minTime, maxTime };
   }
 
-  function renderCharts() {
+  function buildUtilityChartData() {
     const { minTime, maxTime } = getTimeBounds();
-    chartData.value = {};
-
-    groupedMachines.value.forEach((machine) => {
-      const datasets = machine.data.map((item) => {
-        const startTime = DateTime.fromISO(item.start, { zone: 'local' });
-        const endTime = DateTime.fromISO(item.finish, { zone: 'local' });
-
-        const getColorWithAlpha = (color, alpha) => {
-          if (!color) return `rgba(0, 0, 0, ${alpha})`;
-          if (color.startsWith('#')) {
-            const r = parseInt(color.slice(1, 3), 16);
-            const g = parseInt(color.slice(3, 5), 16);
-            const b = parseInt(color.slice(5, 7), 16);
-            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-          }
-          if (color.startsWith('rgb(')) {
-            return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
-          }
-          return color;
-        };
-
-        const backgroundColor = getColorWithAlpha(item.color, 0.8);
-        const borderColor = getColorWithAlpha(item.color, 1);
-
-        return {
-          label: item.category,
-          data: [
-            {
-              x: [startTime.toJSDate(), endTime.toJSDate()],
-              y: machine.machine_name,
-              category: item.category,
-            },
-          ],
-          backgroundColor,
-          borderColor,
-          borderWidth: 1,
-        };
-      });
-
-      chartData.value[machine.id_machine] = {
-        data: { datasets },
-        options: {
-          animation: false,
-          responsive: true,
-          maintainAspectRatio: false,
-          indexAxis: "y",
-          barPercentage: 1,
-          categoryPercentage: 1,
-          plugins: {
-            tooltip: {
-              callbacks: {
-                title: () => [],
-                label: function (context) {
-                  const range = context.raw.x;
-                  const start = new Date(range[0]);
-                  const end = new Date(range[1]);
-                  return `${context.raw.category}: ${start.getHours().toString().padStart(2, "0")}:${start.getMinutes().toString().padStart(2, "0")} - ${end.getHours().toString().padStart(2, "0")}:${end.getMinutes().toString().padStart(2, "0")}`;
-                },
-              },
-            },
-            legend: { display: false },
-          },
-          scales: {
-            x: {
-              type: "time",
-              time: {
-                unit: "hour",
-                tooltipFormat: "hh:mm a",
-                displayFormats: { hour: "ha" },
-              },
-              min: minTime,
-              max: maxTime,
-              ticks: {
-                stepSize: 2,
-                color: "#000000",
-                font: { size: 10 }
-              },
-              grid: { display: true, color: 'rgba(0,0,0,0.1)' },
-            },
-            y: {
-              stacked: true,
-              display: false,
-            },
-          },
-        },
-      };
-    });
-  }
-
-  function renderUtilityTimeline() {
-    const { minTime, maxTime } = getTimeBounds();
-
-    const groupedData = {};
-    utilityData.value.forEach(item => {
-      if (!groupedData[item.utility_name]) {
-        groupedData[item.utility_name] = [];
-      }
-      groupedData[item.utility_name].push(item);
-    });
 
     utilityChartData.value = utility_order.map(utilityName => {
-      const items = groupedData[utilityName] || [];
-    
-      const dataPoints = items.map(item => {
-        const start = DateTime.fromISO(item.start).toJSDate();
-        const finish = DateTime.fromISO(item.finish).toJSDate();
-        const categoryBit = item.category;
+      const rows = utilityData.value.filter(d => d.utility_name === utilityName);
+      const dataPoints = rows.map(d => {
+        const start = new Date(d.start);
+        const finish = d.finish ? new Date(d.finish) : new Date();
+        const categoryBit = d.category === 'ON' ? 1 : 0;
         const categoryLabel = categoryBit === 1 ? 'RUNNING' : 'OFF';
-      
         return {
           x: [start, finish],
           y: utilityName,
           category: categoryBit,
-          categoryLabel: categoryLabel,
-          backgroundColor: categoryBit === 1 ? '#00ff00' : '#ff0000'
+          categoryLabel,
+          backgroundColor: categoryBit === 1 ? '#00ff00' : '#ff0000',
         };
       });
-    
+
       return {
         utility_name: utilityName,
         data: {
-          datasets: dataPoints.length > 0 ? [{
-            data: dataPoints,
-            backgroundColor: dataPoints.map(d => d.backgroundColor),
-            borderColor: dataPoints.map(d => d.backgroundColor.replace('0.6', '1')),
-            borderWidth: 1,
-            barThickness: 20
-          }] : []
+          datasets: dataPoints.length
+            ? [{ data: dataPoints, backgroundColor: dataPoints.map(d => d.backgroundColor), borderWidth: 1, barThickness: 20 }]
+            : [],
         },
         options: {
           animation: false,
-          indexAxis: "y",
+          indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
@@ -332,71 +273,55 @@
               callbacks: {
                 title: () => [],
                 label: (ctx) => {
-                  const start = new Date(ctx.raw.x[0]);
-                  const end = new Date(ctx.raw.x[1]);
-                  const duration = Math.round((end - start) / (1000 * 60));
-                  const status = ctx.raw.categoryLabel;
-                  return [
-                    `${status}: ${start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
-                  ];
-                }
-              }
-            }
+                  const s = new Date(ctx.raw.x[0]);
+                  const e = new Date(ctx.raw.x[1]);
+                  return `${ctx.raw.categoryLabel}: ${s.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - ${e.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+                },
+              },
+            },
           },
           scales: {
             x: {
-              type: "time",
+              type: 'time',
               min: minTime,
               max: maxTime,
-              time: {
-                unit: "hour",
-                tooltipFormat: "hh:mm a",
-                displayFormats: { hour: "ha" },
-              },
-              ticks: {
-                stepSize: 2,
-                color: "#000000",
-                font: { size: 10 }
-              },
+              time: { unit: 'hour', tooltipFormat: 'hh:mm a', displayFormats: { hour: 'ha' } },
+              ticks: { stepSize: 2, color: '#000000', font: { size: 10 } },
               grid: { display: true, color: 'rgba(0,0,0,0.1)' },
             },
-            y: {
-              stacked: true,
-              display: false,
-            },
-          }
-        }
+            y: { stacked: true, display: false },
+          },
+        },
       };
     });
   }
 
-  async function fetchTimelineData() {
-    try {
-      const res = await fetch('/api/base/Timeline');
-      const data = await res.json();
-      machineLogs.value = data;
-      groupedMachines.value = groupByMachine(data);
-      if (groupedMachines.value.length > 0)
-        selectedMachine.value = groupedMachines.value[0].currentStatus;
-      renderCharts();
-    } catch (err) {
-      console.error('Error fetching timeline:', err);
-    }
+  const summaryCards = computed(() => [
+    { title: "Total Machines", icon: "mdi-factory", color: "primary", value: store.totalMachines },
+    { title: "Running", icon: "mdi-play-circle", color: "success", value: store.runningMachines },
+    { title: "Stop", icon: "mdi-stop-circle", color: "error", value: store.stopMachines },
+    { title: "Staff Assigned", icon: "mdi-account-group", color: "info", value: store.activeStaff },
+  ]);
+
+  const POLL_INTERVAL = 10_000;
+  let timelineTimer = null;
+
+  function startPolling() {
+    if (timelineTimer) return;
+    timelineTimer = setInterval(fetchTimelineData, POLL_INTERVAL);
   }
 
-  async function fetchUtilityData(id_machine) {
-    try {
-      const res = await fetch(`/api/machines/${id_machine}/utilities`);
-      const data = await res.json();
-      utilityData.value = data;
-      renderUtilityTimeline();
-    } catch (err) {
-      console.error('Error fetching utilities:', err);
-    }
+  function stopPolling() {
+    if (timelineTimer) { clearInterval(timelineTimer); timelineTimer = null; }
   }
 
   onMounted(async () => {
-    await Promise.all([store.loadMachineMaster(), store.loadAttendance()]);
-    await fetchTimelineData();
+    await Promise.all([
+      store.loadMachineMaster(),
+      fetchTimelineData(),
+    ]);
+    startPolling();
   });
+
+  onUnmounted(() => { stopPolling(); });
 </script>

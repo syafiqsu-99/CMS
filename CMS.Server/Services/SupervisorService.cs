@@ -6,8 +6,6 @@ namespace CMS.Server.Services;
 
 public class SupervisorService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
-    // ── Daily / Prev Report ───────────────────────────────────────────────────
-
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
     {
         var sql = @"
@@ -316,8 +314,7 @@ public class SupervisorService(PlcService plcService, string connectionString) :
         await using var conn = await CreateConnectionAsync();
         foreach (var row in reportList)
         {
-            if (!row.TryGetValue("id_machine", out var idMachineEl) ||
-                !idMachineEl.TryGetInt32(out int idMachine)) continue;
+            if (!row.TryGetValue("id_machine", out var idMachineEl) || !idMachineEl.TryGetInt32(out int idMachine)) continue;
 
             var sql = @"
                 UPDATE report SET
@@ -682,7 +679,116 @@ public class SupervisorService(PlcService plcService, string connectionString) :
         return await LoadPrevReport(reloadDate, reloadShift);
     }
 
-    // ── Staff Schedule ────────────────────────────────────────────────────────
+    public async Task UpdateMouldChange(Dictionary<string, JsonElement> payload)
+    {
+        var time = DateTime.Now;
+        var (productionDate, shift) = GetProductionDate(time);
+
+        var tableName = $"machine_log_{payload["id_machine"].GetInt32()}";
+
+        var sql = $@"
+            IF NOT EXISTS (SELECT 1 FROM reject WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
+            BEGIN
+                INSERT INTO reject (id_machine, machine_name, id_type, mould, total_weight, reject_panelling, reject_lumpy, reject_black_dot, reject_burst, reject_startup, reject_preform, reject_purging, reject_others, shift, production_date) 
+                VALUES (@id_machine, @machine_name, @id_type, @mould, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, @shift, @production_date);
+            END
+
+            DECLARE @status_start INT;
+            DECLARE @category NVARCHAR(MAX);
+            DECLARE @problem NVARCHAR(MAX);
+            DECLARE @mould_category NVARCHAR(MAX);
+
+            SELECT TOP 1
+                @status_start = status_start,
+                @category = category,
+                @problem = problem,
+                @mould_category = mould_category
+            FROM [{tableName}]
+            WHERE finish IS NULL;
+
+            IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
+            BEGIN
+                UPDATE [{tableName}] SET finish = @time WHERE finish IS NULL;
+            END
+
+            INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start) 
+            VALUES (@machine_name, @id_type, @mould, @time, 0, 
+            CASE
+                WHEN @status_start = 1 THEN 'PRODUCTION RUNNING'
+                ELSE NULLIF(@category, '')
+            END,
+            NULLIF(@problem, ''),
+            CASE
+                WHEN NULLIF(@category, '') = 'MOULD CHANGE'
+                     AND COALESCE(@mould_category, '') <> ''
+                THEN @mould_category
+                ELSE '0'
+            END,
+            @shift, @production_date, @status_start);
+
+            IF NOT EXISTS (SELECT 1 FROM report WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
+            BEGIN
+                INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould) 
+                VALUES (@id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould);
+            END
+            ELSE
+            BEGIN
+                UPDATE report SET time = @time
+                WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift
+            END
+
+            UPDATE m
+            SET
+                m.material = s.material,
+                m.id_type = @id_type,
+                m.mould = @mould,
+                m.type = s.type,
+                m.jo_no = 0,
+                m.qty_order = 0,
+                m.wip_opening = 0,
+                m.wip_closing = 0,
+                m.finish_good = 0,
+                m.qty_accum = 0,
+                m.qty_perct = s.qty_perct,
+                m.sap_ct = s.sap_ct,
+                m.part_weight = s.part_weight,
+                m.gross_weight = s.gross_weight,
+                m.shift = @shift
+            FROM machine_master m
+            LEFT JOIN sap s
+                ON s.id_type = @id_type
+                AND s.mould = @mould
+            WHERE m.id_machine = @id_machine;
+
+            SELECT id_machine, part_weight, type, packer FROM machine_master WHERE id_machine = @id_machine";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.Clear();
+        cmd.Parameters.AddWithValue("@id_machine", payload["id_machine"].GetInt32());
+        cmd.Parameters.AddWithValue("@machine_name", payload["machine_name"].GetString());
+        cmd.Parameters.AddWithValue("@id_type", payload["id_type"].GetInt32());
+        cmd.Parameters.AddWithValue("@mould", payload["mould"].GetInt32());
+        cmd.Parameters.AddWithValue("@shift", shift);
+        cmd.Parameters.AddWithValue("@production_date", productionDate);
+        cmd.Parameters.AddWithValue("@time", time);
+
+        using var reader = await cmd.ExecuteReaderAsync();
+
+        if (await reader.ReadAsync())
+        {
+            var result = new
+            {
+                id_machine = Convert.ToInt32(reader["id_machine"]),
+                packer = Convert.ToString(reader["packer"]),
+                type = Convert.ToString(reader["type"]),
+                part_weight = Convert.ToSingle(reader["part_weight"]),
+            };
+
+            _plcService.UpdatePLCS(result);
+        }
+    }
 
     public async Task<object> LoadStaffSchedule()
     {
@@ -916,17 +1022,24 @@ public class SupervisorService(PlcService plcService, string connectionString) :
         }
     }
 
-    public async Task<int> AddStaff(string staffName, string staffRole)
+    public async Task<int> AddStaff(int staff_id, string staff_name, string staff_role)
     {
-        const string sql = "INSERT INTO staff_list (staff_name, staff_role, status) VALUES (@name, @role, 'INACTIVE')";
+        const string sql = @"
+            INSERT INTO staff_list (staff_id, staff_name, staff_role, status) 
+            VALUES (@staff_id, @staff_name, @staff_role, 'INACTIVE');
+            SELECT CAST(SCOPE_IDENTITY() AS INT);";
+
         await using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@name", staffName);
-        cmd.Parameters.AddWithValue("@role", staffRole);
-        return (int)(await cmd.ExecuteScalarAsync())!;
+        cmd.Parameters.AddWithValue("@staff_id", staff_id);
+        cmd.Parameters.AddWithValue("@staff_name", staff_name);
+        cmd.Parameters.AddWithValue("@staff_role", staff_role);
+
+        var result = await cmd.ExecuteScalarAsync();
+        return result != DBNull.Value && result != null ? Convert.ToInt32(result) : 0;
     }
 
-    public async Task UpdateStaff(int staffId, string staffName, string staffRole)
+    public async Task UpdateStaff(int? staffId, string staffName, string staffRole)
     {
         const string sql = "UPDATE staff SET staff_name = @name, staff_role = @role WHERE staff_id = @id";
         await using var conn = await CreateConnectionAsync();
@@ -963,7 +1076,6 @@ public class SupervisorService(PlcService plcService, string connectionString) :
         if (ext != ".jpg" && ext != ".jpeg" && ext != ".png")
             throw new InvalidOperationException("Only JPG and PNG files are allowed.");
 
-        // Remove old photo(s) to avoid stale files
         foreach (var old in Directory.GetFiles(folder, $"{staffId}.*"))
             File.Delete(old);
 
@@ -971,44 +1083,6 @@ public class SupervisorService(PlcService plcService, string connectionString) :
         await using var stream = new FileStream(savePath, FileMode.Create);
         await file.CopyToAsync(stream);
     }
-
-    // ── Attendance ────────────────────────────────────────────────────────────
-
-    public async Task<object> LoadAttendance()
-    {
-        var time = DateTime.Now;
-        var (productionDate, shift) = GetProductionDate(time);
-
-        var sql = @"
-                SELECT * FROM staff_list WHERE @production_date BETWEEN start_date AND end_date";
-
-        var result = new List<object>();
-
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
-
-        cmd.Parameters.AddWithValue("@production_date", productionDate);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-
-        while (await reader.ReadAsync())
-        {
-            result.Add(new
-            {
-                staff_id = Convert.ToInt32(reader["staff_id"]),
-                staff_name = Convert.ToString(reader["staff_name"]),
-                staff_role = Convert.ToString(reader["staff_role"]),
-                status = Convert.ToString(reader["status"]),
-                machine_name = Convert.ToString(reader["machine_name"]),
-                start_date = Convert.ToDateTime(reader["start_date"]),
-                end_date = Convert.ToDateTime(reader["end_date"]),
-                shift = reader["work_shift"] != DBNull.Value ? Convert.ToInt32(reader["work_shift"]) : (int?)null
-            });
-        }
-        return result;
-    }
-
-    // ── Shift Calendar ────────────────────────────────────────────────────────
 
     public async Task<object> LoadShiftCalendar(int year, int month)
     {
@@ -1093,116 +1167,207 @@ public class SupervisorService(PlcService plcService, string connectionString) :
         }
     }
 
-    // ── Machine Management ────────────────────────────────────────────────────────
-    public async Task UpdateMouldChange(Dictionary<string, JsonElement> payload)
+    public async Task<List<object>> LoadSAP()
     {
-        var time = DateTime.Now;
-        var (productionDate, shift) = GetProductionDate(time);
+        const string sql = "SELECT * FROM sap ORDER BY id_type, mould";
+        var result = new List<object>();
 
-        var tableName = $"machine_log_{payload["id_machine"].GetInt32()}";
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        using var reader = await cmd.ExecuteReaderAsync();
 
-        var sql = $@"
-            IF NOT EXISTS (SELECT 1 FROM reject WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
-            BEGIN
-                INSERT INTO reject (id_machine, machine_name, id_type, mould, total_weight, reject_panelling, reject_lumpy, reject_black_dot, reject_burst, reject_startup, reject_preform, reject_purging, reject_others, shift, production_date) 
-                VALUES (@id_machine, @machine_name, @id_type, @mould, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, @shift, @production_date);
-            END
+        while (await reader.ReadAsync())
+            result.Add(MapSapRow(reader));
 
-            DECLARE @status_start INT;
-            DECLARE @category NVARCHAR(MAX);
-            DECLARE @problem NVARCHAR(MAX);
-            DECLARE @mould_category NVARCHAR(MAX);
+        return result;
+    }
 
-            SELECT TOP 1
-                @status_start = status_start,
-                @category = category,
-                @problem = problem,
-                @mould_category = mould_category
-            FROM [{tableName}]
-            WHERE finish IS NULL;
+    public async Task<(List<object> Items, int TotalCount)> LoadSAPPaged(int page, int pageSize, string? search)
+    {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+        int offset = (page - 1) * pageSize;
 
-            IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
-            BEGIN
-                UPDATE [{tableName}] SET finish = @time WHERE finish IS NULL;
-            END
+        bool hasSearch = !string.IsNullOrWhiteSpace(search);
+        string whereClause = hasSearch
+            ? @"WHERE CAST(id_type AS NVARCHAR) LIKE @search
+                   OR type LIKE @search"
+            : "";
 
-            INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start) 
-            VALUES (@machine_name, @id_type, @mould, @time, 0, 
-            CASE
-                WHEN @status_start = 1 THEN 'PRODUCTION RUNNING'
-                ELSE NULLIF(@category, '')
-            END,
-            NULLIF(@problem, ''),
-            CASE
-                WHEN NULLIF(@category, '') = 'MOULD CHANGE'
-                     AND COALESCE(@mould_category, '') <> ''
-                THEN @mould_category
-                ELSE '0'
-            END,
-            @shift, @production_date, @status_start);
+        string sql = $@"
+            SELECT COUNT(*) FROM sap {whereClause};
 
-            IF NOT EXISTS (SELECT 1 FROM report WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
-            BEGIN
-                INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould) 
-                VALUES (@id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould);
-            END
-            ELSE
-            BEGIN
-                UPDATE report SET time = @time
-                WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift
-            END
+            SELECT id_type, mould, type, qty_perct, process,
+                   material, part_weight, tolerance, gross_weight, sap_ct
+            FROM   sap
+            {whereClause}
+            ORDER BY id_type, mould
+            OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;";
 
-            UPDATE m
-            SET
-                m.material = s.material,
-                m.id_type = @id_type,
-                m.mould = @mould,
-                m.type = s.type,
-                m.jo_no = 0,
-                m.qty_order = 0,
-                m.wip_opening = 0,
-                m.wip_closing = 0,
-                m.finish_good = 0,
-                m.qty_accum = 0,
-                m.qty_perct = s.qty_perct,
-                m.sap_ct = s.sap_ct,
-                m.part_weight = s.part_weight,
-                m.gross_weight = s.gross_weight,
-                m.shift = @shift
-            FROM machine_master m
-            LEFT JOIN sap s
-                ON s.id_type = @id_type
-                AND s.mould = @mould
-            WHERE m.id_machine = @id_machine;
-
-            SELECT id_machine, part_weight, type, packer FROM machine_master WHERE id_machine = @id_machine";
+        var items = new List<object>();
+        int total = 0;
 
         using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.Clear();
-        cmd.Parameters.AddWithValue("@id_machine", payload["id_machine"].GetInt32());
-        cmd.Parameters.AddWithValue("@machine_name", payload["machine_name"].GetString());
-        cmd.Parameters.AddWithValue("@id_type", payload["id_type"].GetInt32());
-        cmd.Parameters.AddWithValue("@mould", payload["mould"].GetInt32());
-        cmd.Parameters.AddWithValue("@shift", shift);
-        cmd.Parameters.AddWithValue("@production_date", productionDate);
-        cmd.Parameters.AddWithValue("@time", time);
+        cmd.Parameters.AddWithValue("@offset", offset);
+        cmd.Parameters.AddWithValue("@pageSize", pageSize);
+        if (hasSearch)
+            cmd.Parameters.AddWithValue("@search", $"%{search!.Trim()}%");
 
         using var reader = await cmd.ExecuteReaderAsync();
 
         if (await reader.ReadAsync())
-        {
-            var result = new
-            {
-                id_machine = Convert.ToInt32(reader["id_machine"]),
-                packer = Convert.ToString(reader["packer"]),
-                type = Convert.ToString(reader["type"]),
-                part_weight = Convert.ToSingle(reader["part_weight"]),
-            };
+            total = reader.GetInt32(0);
 
-            _plcService.UpdatePLCS(result);
+        await reader.NextResultAsync();
+        while (await reader.ReadAsync())
+            items.Add(MapSapRow(reader));
+
+        return (items, total);
+    }
+
+    public async Task UpdateSAP(Dictionary<string, JsonElement> SAPList)
+    {
+        var sql = @"
+            UPDATE sap
+            SET id_type      = @id_type,
+                mould        = @mould,
+                type         = @type,
+                qty_perct    = @qty_perct,
+                process      = @process,
+                material     = @material,
+                part_weight  = @part_weight,
+                tolerance    = @tolerance,
+                gross_weight = @gross_weight,
+                sap_ct       = @sap_ct
+            WHERE id_type = @keys_id_type AND mould = @keys_mould;
+
+            UPDATE m
+            SET m.material     = s.material,
+                m.type         = s.type,
+                m.qty_perct    = s.qty_perct,
+                m.sap_ct       = s.sap_ct,
+                m.part_weight  = s.part_weight,
+                m.gross_weight = s.gross_weight
+            FROM machine_master AS m
+            JOIN sap AS s ON s.id_type = @id_type AND s.mould = @mould
+            WHERE m.id_type = s.id_type AND m.mould = s.mould;
+
+            UPDATE r
+            SET r.material     = s.material,
+                r.type         = s.type,
+                r.qty_perct    = s.qty_perct,
+                r.sap_ct       = s.sap_ct,
+                r.part_weight  = s.part_weight,
+                r.gross_weight = s.gross_weight
+            FROM report AS r
+            JOIN sap AS s ON s.id_type = @id_type AND s.mould = @mould
+            WHERE r.id_type = s.id_type AND r.mould = s.mould;";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.AddWithValue("@keys_id_type", SAPList["keys_id_type"].GetInt32());
+        cmd.Parameters.AddWithValue("@keys_mould", SAPList["keys_mould"].GetInt32());
+        cmd.Parameters.AddWithValue("@id_type", SAPList["id_type"].GetInt32());
+        cmd.Parameters.AddWithValue("@mould", SAPList["mould"].GetInt32());
+        cmd.Parameters.AddWithValue("@type", SAPList["type"].GetString());
+        cmd.Parameters.AddWithValue("@qty_perct", SAPList["qty_perct"].GetInt32());
+        cmd.Parameters.AddWithValue("@process", SAPList["process"].GetString());
+        cmd.Parameters.AddWithValue("@material", SAPList["material"].GetString());
+        cmd.Parameters.AddWithValue("@part_weight", SAPList["part_weight"].GetDouble());
+        cmd.Parameters.AddWithValue("@tolerance", SAPList["tolerance"].GetDouble());
+        cmd.Parameters.AddWithValue("@gross_weight", SAPList["gross_weight"].GetDouble());
+        cmd.Parameters.AddWithValue("@sap_ct", SAPList["sap_ct"].GetDouble());
+
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task DeleteSAP(int id_type, int mould)
+    {
+        const string sql = "DELETE FROM sap WHERE id_type = @id_type AND mould = @mould";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@id_type", id_type);
+        cmd.Parameters.AddWithValue("@mould", mould);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task InsertSAP(Dictionary<string, JsonElement> SAPList)
+    {
+        const string sql = @"
+            INSERT INTO sap (id_type, mould, type, qty_perct, process, material, part_weight, tolerance, gross_weight, sap_ct)
+            VALUES (@id_type, @mould, @type, @qty_perct, @process, @material, @part_weight, @tolerance, @gross_weight, @sap_ct)";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@id_type", SAPList["id_type"].GetInt32());
+        cmd.Parameters.AddWithValue("@mould", SAPList["mould"].GetInt32());
+        cmd.Parameters.AddWithValue("@type", SAPList["type"].GetString());
+        cmd.Parameters.AddWithValue("@qty_perct", SAPList["qty_perct"].GetInt32());
+        cmd.Parameters.AddWithValue("@process", SAPList["process"].GetString());
+        cmd.Parameters.AddWithValue("@material", SAPList["material"].GetString());
+        cmd.Parameters.AddWithValue("@part_weight", SAPList["part_weight"].GetDouble());
+        cmd.Parameters.AddWithValue("@tolerance", SAPList["tolerance"].GetDouble());
+        cmd.Parameters.AddWithValue("@gross_weight", SAPList["gross_weight"].GetDouble());
+        cmd.Parameters.AddWithValue("@sap_ct", SAPList["sap_ct"].GetDouble());
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    public async Task ImportSAP(List<Dictionary<string, JsonElement>> sapList)
+    {
+        using var conn = await CreateConnectionAsync();
+        await using var transaction = conn.BeginTransaction();
+        try
+        {
+            const string deleteSql = "DELETE FROM sap WHERE id_type = @id_type AND mould = @mould";
+            const string insertSql = @"
+                INSERT INTO sap (id_type, mould, type, qty_perct, process, material, part_weight, tolerance, gross_weight, sap_ct)
+                VALUES (@id_type, @mould, @type, @qty_perct, @process, @material, @part_weight, @tolerance, @gross_weight, @sap_ct)";
+
+            foreach (var item in sapList)
+            {
+                await using var del = new SqlCommand(deleteSql, conn, transaction);
+                del.Parameters.AddWithValue("@id_type", item["id_type"].GetInt32());
+                del.Parameters.AddWithValue("@mould", item["mould"].GetInt32());
+                await del.ExecuteNonQueryAsync();
+
+                await using var ins = new SqlCommand(insertSql, conn, transaction);
+                ins.Parameters.AddWithValue("@id_type", item["id_type"].GetInt32());
+                ins.Parameters.AddWithValue("@mould", item["mould"].GetInt32());
+                ins.Parameters.AddWithValue("@type", item["type"].GetString());
+                ins.Parameters.AddWithValue("@qty_perct", item["qty_perct"].GetInt32());
+                ins.Parameters.AddWithValue("@process", item["process"].GetString());
+                ins.Parameters.AddWithValue("@material", item["material"].GetString());
+                ins.Parameters.AddWithValue("@part_weight", item["part_weight"].GetDouble());
+                ins.Parameters.AddWithValue("@tolerance", item["tolerance"].GetDouble());
+                ins.Parameters.AddWithValue("@gross_weight", item["gross_weight"].GetDouble());
+                ins.Parameters.AddWithValue("@sap_ct", item["sap_ct"].GetDouble());
+                await ins.ExecuteNonQueryAsync();
+            }
+
+            await transaction.CommitAsync();
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
         }
     }
 
+    private static object MapSapRow(SqlDataReader reader) => new
+    {
+        id_type = Convert.ToInt32(reader["id_type"]),
+        mould = Convert.ToInt32(reader["mould"]),
+        type = Convert.ToString(reader["type"]),
+        qty_perct = Convert.ToInt32(reader["qty_perct"]),
+        process = Convert.ToString(reader["process"]),
+        material = Convert.ToString(reader["material"]),
+        part_weight = Convert.ToSingle(reader["part_weight"]),
+        tolerance = Convert.ToSingle(reader["tolerance"]),
+        gross_weight = Convert.ToSingle(reader["gross_weight"]),
+        sap_ct = Convert.ToSingle(reader["sap_ct"]),
+    };
 }

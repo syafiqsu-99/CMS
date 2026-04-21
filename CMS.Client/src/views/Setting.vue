@@ -1,4 +1,3 @@
-<!-- CMS.Client/src/views/Setting.vue -->
 <template>
   <v-container fluid class="pa-2 h-100 d-flex flex-column">
     <v-row no-gutters align="center" justify="center">
@@ -7,11 +6,14 @@
       </v-col>
     </v-row>
 
-    <v-row class="flex-grow-1" no-gutters>
+    <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="height: 90vh;">
       <v-col cols="12" class="pa-1 d-flex" style="height: 100%;">
-        <v-card variant="text" elevation="2" style="width: 100%; height: 100%; overflow: hidden;"
+        <v-card variant="text"
+                elevation="2"
+                style="width: 100%; height: 100%; overflow: hidden;"
                 class="d-flex flex-column">
           <v-card-text class="d-flex flex-column pa-2" style="height: 100%; overflow: hidden;">
+
             <v-tabs v-model="activeTab" color="primary" density="compact" class="flex-grow-0">
               <v-tab value="password">
                 <v-icon start>mdi-lock-outline</v-icon>
@@ -31,6 +33,7 @@
                 <PlcSignalMonitor />
               </v-window-item>
             </v-window>
+
           </v-card-text>
         </v-card>
       </v-col>
@@ -39,9 +42,32 @@
 </template>
 
 <script setup>
-  import { ref } from 'vue';
+  import { ref, onMounted, onUnmounted } from 'vue';
+  import { useMachineStore } from '@/store/machineStore';
   import PasswordTab from '@/components/Setting/PasswordTab.vue';
   import PlcSignalMonitor from '@/components/Setting/PlcSignalMonitor.vue';
 
+  const store = useMachineStore();
   const activeTab = ref('password');
+
+  const POLL_INTERVAL = 10_000;
+  let statusTimer = null;
+
+  function startPolling() {
+    if (statusTimer) return; // prevent duplicate intervals
+    statusTimer = setInterval(() => store.loadMachineMaster(), POLL_INTERVAL);
+  }
+
+  function stopPolling() {
+    if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+  }
+
+  onMounted(async () => {
+    await store.loadMachineMaster();
+    startPolling();
+  });
+
+  onUnmounted(() => {
+    stopPolling();
+  });
 </script>
