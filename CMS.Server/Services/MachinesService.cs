@@ -13,9 +13,7 @@ public class MachinesService(PlcService plcService, string connectionString) : B
         var time = DateTime.Now;
         var (productionDate, shift) = GetProductionDate(time);
 
-        var logUnion = await BuildMachineLogUnionAsync(
-            columns: "machine_name, id_type, mould, start, finish, category, problem, mould_category, shot, act_ct, shift, production_date, status_start",
-            whereClause: "production_date = @production_date AND shift = @shift");
+        var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date AND shift = @shift");
 
         var sql = $@"
                 WITH latest_logs AS (

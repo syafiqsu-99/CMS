@@ -8,9 +8,7 @@ public class SupervisorService(PlcService plcService, string connectionString) :
 {
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
     {
-        var logUnion = await BuildMachineLogUnionAsync(
-            columns: "machine_name, id_type, mould, start, finish, category, problem, mould_category, shot, act_ct, shift, production_date, status_start",
-            whereClause: "production_date = @production_date AND shift = @shift");
+        var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date AND shift = @shift");
 
         var sql = $@"
                 WITH all_logs AS (

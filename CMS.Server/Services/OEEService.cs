@@ -43,8 +43,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
 
     private async Task<string> BuildTodayOeeSqlAsync(DateOnly today)
     {
-        var logCte = await BuildMachineLogUnionAsync(
-            "machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start");
+        var logCte = await BuildMachineLogUnionAsync("");
 
         return $@"
             WITH CombinedLogs AS (
@@ -205,9 +204,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
 
     public async Task<object> LoadDowntimeAsync(DateOnly start_date, DateOnly end_date)
     {
-        var logUnion = await BuildMachineLogUnionAsync(
-            columns: "id_type, mould, category, start, finish, production_date",
-            whereClause: "production_date BETWEEN @start_date AND @end_date");
+        var logUnion = await BuildMachineLogUnionAsync("production_date BETWEEN @start_date AND @end_date");
 
         var sql = $@"
             WITH CombinedLogs AS (
@@ -450,37 +447,15 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
         var time = DateTime.Now;
         var (productionDate, _) = GetProductionDate(time);
 
+        var logUnion = await BuildMachineLogUnionAsync("production_date BETWEEN @start_date AND @end_date");
+
         string sql;
 
         if (start_date == end_date && start_date == productionDate)
         {
-            sql = @"
+            sql = $@"
                     WITH CombinedLogs AS (
-                        SELECT 1  AS id_machine, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_1
-                        UNION ALL SELECT 2,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_2
-                        UNION ALL SELECT 3,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_3
-                        UNION ALL SELECT 4,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_4
-                        UNION ALL SELECT 5,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_5
-                        UNION ALL SELECT 6,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_6
-                        UNION ALL SELECT 7,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_7
-                        UNION ALL SELECT 8,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_8
-                        UNION ALL SELECT 9,  machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_9
-                        UNION ALL SELECT 10, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_10
-                        UNION ALL SELECT 11, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_11
-                        UNION ALL SELECT 12, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_12
-                        UNION ALL SELECT 13, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_13
-                        UNION ALL SELECT 14, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_14
-                        UNION ALL SELECT 15, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_15
-                        UNION ALL SELECT 16, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_16
-                        UNION ALL SELECT 17, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_17
-                        UNION ALL SELECT 18, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_18
-                        UNION ALL SELECT 19, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_19
-                        UNION ALL SELECT 20, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_20
-                        UNION ALL SELECT 21, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_21
-                        UNION ALL SELECT 22, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_22
-                        UNION ALL SELECT 23, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_23
-                        UNION ALL SELECT 24, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_24
-                        UNION ALL SELECT 25, machine_name, id_type, mould, start, finish, category, shot, act_ct, shift, production_date, status_start FROM machine_log_25
+                        {logUnion}
                     ),
                     MachineAvailable AS (
                         SELECT id_machine,

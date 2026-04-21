@@ -163,44 +163,93 @@
 
   function buildChartData() {
     const { minTime, maxTime } = getTimeBounds();
-    const built = {};
+    chartData.value = {};
 
-    for (const machine of groupedMachines.value) {
-      const points = machine.data
-        .filter(d => d.start && d.finish)
-        .map(d => ({
-          x: [d.start, d.finish],
-          y: machine.machine_name,
-          backgroundColor: d.color,
-        }));
+    groupedMachines.value.forEach((machine) => {
+      const datasets = machine.data.map((item) => {
+        const startTime = DateTime.fromISO(item.start, { zone: 'local' });
+        const endTime = DateTime.fromISO(item.finish, { zone: 'local' });
 
-      built[machine.id_machine] = {
-        data: {
-          datasets: points.length
-            ? [{ data: points, backgroundColor: points.map(p => p.backgroundColor), barThickness: 20 }]
-            : [],
-        },
+        const getColorWithAlpha = (color, alpha) => {
+          if (!color) return `rgba(0, 0, 0, ${alpha})`;
+          if (color.startsWith('#')) {
+            const r = parseInt(color.slice(1, 3), 16);
+            const g = parseInt(color.slice(3, 5), 16);
+            const b = parseInt(color.slice(5, 7), 16);
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          }
+          if (color.startsWith('rgb(')) {
+            return color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+          }
+          return color;
+        };
+
+        const backgroundColor = getColorWithAlpha(item.color, 0.8);
+        const borderColor = getColorWithAlpha(item.color, 1);
+
+        return {
+          label: item.category,
+          data: [
+            {
+              x: [startTime.toJSDate(), endTime.toJSDate()],
+              y: machine.machine_name,
+              category: item.category,
+            },
+          ],
+          backgroundColor,
+          borderColor,
+          borderWidth: 1,
+        };
+      });
+
+      chartData.value[machine.id_machine] = {
+        data: { datasets },
         options: {
           animation: false,
-          indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false }, tooltip: { enabled: true } },
+          indexAxis: "y",
+          barPercentage: 1,
+          categoryPercentage: 1,
+          plugins: {
+            tooltip: {
+              callbacks: {
+                title: () => [],
+                label: function (context) {
+                  const range = context.raw.x;
+                  const start = new Date(range[0]);
+                  const end = new Date(range[1]);
+                  return `${context.raw.category}: ${start.getHours().toString().padStart(2, "0")}:${start.getMinutes().toString().padStart(2, "0")} - ${end.getHours().toString().padStart(2, "0")}:${end.getMinutes().toString().padStart(2, "0")}`;
+                },
+              },
+            },
+            legend: { display: false },
+          },
           scales: {
             x: {
-              type: 'time',
+              type: "time",
+              time: {
+                unit: "hour",
+                tooltipFormat: "hh:mm a",
+                displayFormats: { hour: "ha" },
+              },
               min: minTime,
               max: maxTime,
-              time: { unit: 'hour', tooltipFormat: 'hh:mm a', displayFormats: { hour: 'ha' } },
-              ticks: { stepSize: 2, color: '#000000', font: { size: 10 } },
+              ticks: {
+                stepSize: 2,
+                color: "#000000",
+                font: { size: 10 }
+              },
               grid: { display: true, color: 'rgba(0,0,0,0.1)' },
             },
-            y: { stacked: true, display: false },
+            y: {
+              stacked: true,
+              display: false,
+            },
           },
         },
       };
-    }
-    chartData.value = built;
+    });
   }
 
   async function fetchUtilityData(id_machine) {
@@ -239,32 +288,46 @@
   function buildUtilityChartData() {
     const { minTime, maxTime } = getTimeBounds();
 
+    const groupedData = {};
+    utilityData.value.forEach(item => {
+      if (!groupedData[item.utility_name]) {
+        groupedData[item.utility_name] = [];
+      }
+      groupedData[item.utility_name].push(item);
+    });
+
     utilityChartData.value = utility_order.map(utilityName => {
-      const rows = utilityData.value.filter(d => d.utility_name === utilityName);
-      const dataPoints = rows.map(d => {
-        const start = new Date(d.start);
-        const finish = d.finish ? new Date(d.finish) : new Date();
-        const categoryBit = d.category === 'ON' ? 1 : 0;
+      const items = groupedData[utilityName] || [];
+    
+      const dataPoints = items.map(item => {
+        const start = DateTime.fromISO(item.start).toJSDate();
+        const finish = DateTime.fromISO(item.finish).toJSDate();
+        const categoryBit = item.category;
         const categoryLabel = categoryBit === 1 ? 'RUNNING' : 'OFF';
+      
         return {
           x: [start, finish],
           y: utilityName,
           category: categoryBit,
-          categoryLabel,
-          backgroundColor: categoryBit === 1 ? '#00ff00' : '#ff0000',
+          categoryLabel: categoryLabel,
+          backgroundColor: categoryBit === 1 ? '#00ff00' : '#ff0000'
         };
       });
-
+    
       return {
         utility_name: utilityName,
         data: {
-          datasets: dataPoints.length
-            ? [{ data: dataPoints, backgroundColor: dataPoints.map(d => d.backgroundColor), borderWidth: 1, barThickness: 20 }]
-            : [],
+          datasets: dataPoints.length > 0 ? [{
+            data: dataPoints,
+            backgroundColor: dataPoints.map(d => d.backgroundColor),
+            borderColor: dataPoints.map(d => d.backgroundColor.replace('0.6', '1')),
+            borderWidth: 1,
+            barThickness: 20
+          }] : []
         },
         options: {
           animation: false,
-          indexAxis: 'y',
+          indexAxis: "y",
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
@@ -273,25 +336,40 @@
               callbacks: {
                 title: () => [],
                 label: (ctx) => {
-                  const s = new Date(ctx.raw.x[0]);
-                  const e = new Date(ctx.raw.x[1]);
-                  return `${ctx.raw.categoryLabel}: ${s.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - ${e.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
-                },
-              },
-            },
+                  const start = new Date(ctx.raw.x[0]);
+                  const end = new Date(ctx.raw.x[1]);
+                  const duration = Math.round((end - start) / (1000 * 60));
+                  const status = ctx.raw.categoryLabel;
+                  return [
+                    `${status}: ${start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} - ${end.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`,
+                  ];
+                }
+              }
+            }
           },
           scales: {
             x: {
-              type: 'time',
+              type: "time",
               min: minTime,
               max: maxTime,
-              time: { unit: 'hour', tooltipFormat: 'hh:mm a', displayFormats: { hour: 'ha' } },
-              ticks: { stepSize: 2, color: '#000000', font: { size: 10 } },
+              time: {
+                unit: "hour",
+                tooltipFormat: "hh:mm a",
+                displayFormats: { hour: "ha" },
+              },
+              ticks: {
+                stepSize: 2,
+                color: "#000000",
+                font: { size: 10 }
+              },
               grid: { display: true, color: 'rgba(0,0,0,0.1)' },
             },
-            y: { stacked: true, display: false },
-          },
-        },
+            y: {
+              stacked: true,
+              display: false,
+            },
+          }
+        }
       };
     });
   }
