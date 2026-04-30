@@ -121,6 +121,7 @@
   const downtimeData = ref([]);
   const detailDialog = ref(false);
   const selectedMachine = ref(null);
+  const exporting = ref(false);
 
   // ── Summary metrics derived from machine data ─────────────────────────────────
 
@@ -160,7 +161,7 @@
 
     // Use the new API routes
     const [oeeRes, rejectRes, outputRes, downtimeRes] = await Promise.all([
-      fetch(`/api/oee?start_date=${start}&end_date=${end}&shift=1`),
+      fetch(`/api/oee?start_date=${start}&end_date=${end}`),
       fetch(`/api/oee/reject?start_date=${start}&end_date=${end}`),
       fetch(`/api/oee/output?start_date=${start}&end_date=${end}`),
       fetch(`/api/oee/downtime?start_date=${start}&end_date=${end}`),
@@ -204,12 +205,11 @@
     exporting.value = true;
     try {
       const params = new URLSearchParams({
-        start_date: formatDateParam(startDate.value),
-        end_date:   formatDateParam(endDate.value),
-        shift:      currentShift,
+        start_date: dateString(startDate.value),
+        end_date: dateString(endDate.value),
       });
 
-      const response = await fetch(`/api/MachineLog/ExportOEE?${params}`, { method: 'GET' });
+      const response = await fetch(`/api/oee/ExportOEE?${params}`, { method: 'GET' });
 
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
@@ -220,7 +220,7 @@
       const nameMatch   = disposition.match(/filename[^;=\n]*=["']?([^"';\n]+)/i);
       const fileName    = nameMatch
         ? nameMatch[1].trim()
-        : `OEE_Report_${formatDateParam(startDate.value)}_to_${formatDateParam(endDate.value)}.xlsx`;
+        : `OEE_Report_${dateString(startDate.value)}_to_${dateString(endDate.value)}.xlsx`;
 
       const blob = await response.blob();
       const url  = URL.createObjectURL(blob);

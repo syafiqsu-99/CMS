@@ -3,13 +3,13 @@ namespace CMS.Server.Services;
 
 public class OEEService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
-    public async Task<IReadOnlyList<object>> CalculateOeeAsync(DateOnly startDate, DateOnly endDate, int shift)
+    public async Task<IReadOnlyList<object>> CalculateOeeAsync(DateOnly startDate, DateOnly endDate)
     {
         var (today, currentShift) = GetProductionDate(DateTime.Now);
         bool isToday = startDate == endDate && startDate == today;
 
         string sql = isToday
-            ? await BuildTodayOeeSqlAsync(today)
+            ? await BuildTodayOeeSqlAsync(today, currentShift)
             : await BuildRangeOeeSqlAsync();
 
         var result = new List<object>();
@@ -18,7 +18,10 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
         cmd.Parameters.AddWithValue("@today", today);
         cmd.Parameters.AddWithValue("@start_date", startDate);
         cmd.Parameters.AddWithValue("@end_date", endDate);
-        cmd.Parameters.AddWithValue("@shift", isToday ? currentShift : shift);
+        if (isToday)
+        {
+            cmd.Parameters.AddWithValue("@currentShift", currentShift);
+        }
 
         await using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
@@ -41,9 +44,9 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
         return result;
     }
 
-    private async Task<string> BuildTodayOeeSqlAsync(DateOnly today)
+    private async Task<string> BuildTodayOeeSqlAsync(DateOnly today,int currentShift)
     {
-        var logCte = await BuildMachineLogUnionAsync("");
+        var logCte = await BuildMachineLogUnionAsync("production_date = @today and shift = @currentShift");
 
         return $@"
             WITH CombinedLogs AS (
@@ -58,7 +61,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                              THEN DATEDIFF(SECOND,start,COALESCE(finish,GETDATE()))/3600.0 ELSE 0 END) AS down_time,
                     AVG(NULLIF(act_ct,0)) AS act_ct
                 FROM CombinedLogs
-                WHERE production_date=@today AND shift=@shift
+                WHERE production_date=@today AND shift=@currentShift
                 GROUP BY id_machine, machine_name, id_type, mould
             ),
             WithSAP AS (
@@ -76,7 +79,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                 FROM WithSAP w
                 LEFT JOIN reject r
                     ON r.id_machine=w.id_machine AND r.id_type=w.id_type AND r.mould=w.mould
-                    AND r.production_date=@today AND r.shift=@shift
+                    AND r.production_date=@today AND r.shift=@currentShift
             ),
             MachineSummary AS (
                 SELECT id_machine, machine_name,
@@ -442,16 +445,22 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
         });
     }
 
-    public async Task<List<OEERawRow>> LoadOEERawForExport(DateOnly start_date, DateOnly end_date, int shift)
+    public async Task<List<OEERawRow>> LoadOEERawForExport(DateOnly start_date, DateOnly end_date)
     {
         var time = DateTime.Now;
-        var (productionDate, _) = GetProductionDate(time);
+        var (productionDate, currentShift) = GetProductionDate(time);
 
-        var logUnion = await BuildMachineLogUnionAsync("production_date BETWEEN @start_date AND @end_date");
+        bool isToday = start_date == end_date && start_date == productionDate;
+
+        var logCondition = isToday
+            ? "production_date = @today AND shift = @currentShift"
+            : "production_date BETWEEN @start_date AND @end_date";
+
+        var logUnion = await BuildMachineLogUnionAsync(logCondition);
 
         string sql;
 
-        if (start_date == end_date && start_date == productionDate)
+        if (isToday)
         {
             sql = $@"
                     WITH CombinedLogs AS (
@@ -461,7 +470,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                         SELECT id_machine,
                                SUM(DATEDIFF(SECOND, start, COALESCE(finish, GETDATE()))) / 3600.0 AS available_hours
                         FROM CombinedLogs
-                        WHERE production_date = @today AND shift = @shift
+                        WHERE production_date = @today AND shift = @currentShift
                         GROUP BY id_machine
                     ),
                     MachineAgg AS (
@@ -479,7 +488,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                                      ELSE 0 END) AS unallocated,
                             SUM(CAST(cl.shot AS FLOAT) * COALESCE(NULLIF(cl.act_ct, 0), 0)) / 3600.0 AS total_actual_time
                         FROM CombinedLogs cl
-                        WHERE cl.production_date = @today AND cl.shift = @shift
+                        WHERE cl.production_date = @today AND cl.shift = @currentShift
                         GROUP BY cl.id_machine, cl.machine_name, cl.id_type, cl.mould
                     ),
                     WithSAP AS (
@@ -508,7 +517,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                            AND r.id_type    = ws.id_type
                            AND r.mould      = ws.mould
                            AND r.production_date = @today
-                           AND r.shift      = @shift
+                           AND r.shift      = @currentShift
                     )
                     SELECT
                         w.id_machine,
@@ -633,7 +642,10 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
         cmd.Parameters.AddWithValue("@today", productionDate);
         cmd.Parameters.AddWithValue("@start_date", start_date);
         cmd.Parameters.AddWithValue("@end_date", end_date);
-        cmd.Parameters.AddWithValue("@shift", shift);
+        if (isToday)
+        {
+            cmd.Parameters.AddWithValue("@currentShift", currentShift);
+        }
 
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())

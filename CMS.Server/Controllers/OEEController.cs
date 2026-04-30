@@ -19,9 +19,8 @@ public class OeeController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> Oee(
         [FromQuery] DateOnly start_date,
-        [FromQuery] DateOnly end_date,
-        [FromQuery] int shift)
-        => Ok(await _oeeService.CalculateOeeAsync(start_date, end_date, shift));
+        [FromQuery] DateOnly end_date)
+        => Ok(await _oeeService.CalculateOeeAsync(start_date, end_date));
 
     [HttpGet("reject")]
     public async Task<IActionResult> Reject(
@@ -78,31 +77,26 @@ public class OeeController : ControllerBase
     [HttpGet("ExportOEE")]
     public async Task<IActionResult> ExportOEE(
         [FromQuery] DateOnly start_date,
-        [FromQuery] DateOnly end_date,
-        [FromQuery] int shift)
+        [FromQuery] DateOnly end_date)
     {
         try
         {
-            if (shift != 1 && shift != 2)
-                return BadRequest(new { message = "Invalid shift. Use 1 (Morning) or 2 (Night)." });
 
             if (end_date < start_date)
                 return BadRequest(new { message = "end_date must be on or after start_date." });
 
-            var rawRows = await _oeeService.LoadOEERawForExport(start_date, end_date, shift);
+            var rawRows = await _oeeService.LoadOEERawForExport(start_date, end_date);
 
             if (rawRows.Count == 0)
                 return NotFound(new
                 {
                     message = "No OEE data found for the specified date range and shift.",
                     start_date = start_date.ToString("yyyy-MM-dd"),
-                    end_date = end_date.ToString("yyyy-MM-dd"),
-                    shift
+                    end_date = end_date.ToString("yyyy-MM-dd")
                 });
 
             var excelBytes = _excelService.GenerateOEEReport(rawRows, start_date, end_date);
 
-            var shiftName = shift == 1 ? "Morning" : "Night";
             var fileName = $"OEE_Report_{start_date:yyyy-MM-dd}_to_{end_date:yyyy-MM-dd}.xlsx";
 
             return File(

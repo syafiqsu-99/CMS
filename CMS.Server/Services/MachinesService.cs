@@ -1,6 +1,4 @@
-﻿using DocumentFormat.OpenXml.Bibliography;
-using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
-using Microsoft.Data.SqlClient;
+﻿using Microsoft.Data.SqlClient;
 using static CMS.Server.Services.MachineLogService;
 
 namespace CMS.Server.Services;
@@ -13,70 +11,79 @@ public class MachinesService(PlcService plcService, string connectionString) : B
         var time = DateTime.Now;
         var (productionDate, shift) = GetProductionDate(time);
 
-        var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date AND shift = @shift");
+        var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date and shift = @shift");
 
         var sql = $@"
-                WITH latest_logs AS (
-                    {logUnion}
-                )
-                SELECT
-                    mm.id_machine, 
-                    mm.machine_name, 
-                    COALESCE(mm.packer, '') AS packer, 
-                    COALESCE(mm.id_type, 123456) AS id_type, 
-                    COALESCE(mm.mould, 0) AS mould,
-                    COALESCE(mm.type, '') AS type,
-                    CAST(COALESCE(mm.status_start, 0) AS BIT) AS status_start,
-                    CAST(COALESCE(mm.status_off, 1) AS BIT) AS status_off,
-                    COALESCE(mm.qty_perct, 0) as qty_perct,
-                    COALESCE(mm.act_ct, 0) as act_ct,
-                    COALESCE(mm.sap_ct, 0) as sap_ct,
-                    COALESCE(mm.shot, 0) AS shot,
-                    COALESCE(mm.material, '') AS material,
-                    COALESCE(mm.part_weight, 0) AS part_weight,
-                    COALESCE(mm.visual_qc, 0) AS visual_qc,
-                    COALESCE(mm.measure_qc, 0) AS measure_qc,
-                    COALESCE(mm.shift_output, 0) AS output,
-                    CASE 
-                        WHEN COALESCE(mm.id_type, 123456) = 123456 AND COALESCE(mm.mould, 0) = 0 THEN 0
-                        WHEN COALESCE(mm.sap_ct, 0) = 0 THEN 0
-                        ELSE CAST(
-                            (DATEDIFF(SECOND, 
-                                CASE 
-                                    WHEN CAST(GETDATE() AS TIME) >= '06:00:00' AND CAST(GETDATE() AS TIME) < '18:00:00' 
-                                        THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME) + CAST('06:00:00' AS DATETIME)
-                                    WHEN CAST(GETDATE() AS TIME) >= '18:00:00' 
-                                        THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME) + CAST('18:00:00' AS DATETIME)
-                                    ELSE CAST(CAST(DATEADD(DAY, -1, GETDATE()) AS DATE) AS DATETIME) + CAST('18:00:00' AS DATETIME)
-                                END,
-                                GETDATE()
-                            ) / NULLIF(mm.sap_ct, 0)) * COALESCE(mm.qty_perct, 0)
-                        AS INT)
-                    END AS planned_output,
-                    COALESCE(r.total_weight, 0) AS reject_weight,
-                    CASE 
-                        WHEN COALESCE(mm.part_weight, 0) = 0 THEN 0
-                        ELSE CAST(COALESCE(r.total_weight, 0) / NULLIF(mm.part_weight, 0) AS INT)
-                    END AS reject_pcs,
-                    ll.start, 
-                    COALESCE(ll.finish,  CAST(GETDATE() AS DATETIME)) AS finish,
-                    CASE 
-                        WHEN (NULLIF(ll.category, '') IS NULL) 
-                             AND mm.status_start = 1 
-                             AND mm.status_off = 1 
-                        THEN 'PRODUCTION RUNNING'
-                        ELSE NULLIF(ll.category, '')
-                    END AS category,
-                    COALESCE(ll.problem, '') AS problem,
-                    COALESCE(ll.mould_category, 0) AS mould_category
-                FROM machine_master mm
-                JOIN latest_logs ll ON mm.id_machine = ll.id_machine
-                LEFT JOIN reject r 
-                    ON r.id_machine = mm.id_machine 
-                    AND r.id_type = mm.id_type 
-                    AND r.mould = mm.mould
-                    AND r.production_date = @production_date
-                    AND r.shift = @shift";
+            WITH all_logs AS (
+                {logUnion}
+            ),
+            latest_logs AS (
+                -- This assigns a row number to each log per machine, sorted by newest first
+                SELECT *, ROW_NUMBER() OVER(PARTITION BY id_machine ORDER BY start DESC) as rn
+                FROM all_logs
+            )
+            SELECT
+                mm.id_machine, 
+                mm.machine_name, 
+                COALESCE(mm.packer, '') AS packer, 
+                COALESCE(mm.id_type, 123456) AS id_type, 
+                COALESCE(mm.mould, 0) AS mould,
+                COALESCE(mm.type, '') AS type,
+                CAST(COALESCE(mm.status_start, 0) AS BIT) AS status_start,
+                CAST(COALESCE(mm.status_off, 1) AS BIT) AS status_off,
+                COALESCE(mm.qty_perct, 0) as qty_perct,
+                COALESCE(mm.act_ct, 0) as act_ct,
+                COALESCE(mm.sap_ct, 0) as sap_ct,
+                COALESCE(mm.shot, 0) AS shot,
+                COALESCE(mm.material, '') AS material,
+                COALESCE(mm.part_weight, 0) AS part_weight,
+                COALESCE(mm.visual_qc, 0) AS visual_qc,
+                COALESCE(mm.measure_qc, 0) AS measure_qc,
+                COALESCE(mm.shift_output, 0) AS output,
+                CASE 
+                    WHEN COALESCE(mm.id_type, 123456) = 123456 AND COALESCE(mm.mould, 0) = 0 THEN 0
+                    WHEN COALESCE(mm.sap_ct, 0) = 0 THEN 0
+                    ELSE CAST(
+                        (DATEDIFF(SECOND, 
+                            CASE 
+                                WHEN CAST(GETDATE() AS TIME) >= '06:00:00' AND CAST(GETDATE() AS TIME) < '18:00:00' 
+                                    THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME) + CAST('06:00:00' AS DATETIME)
+                                WHEN CAST(GETDATE() AS TIME) >= '18:00:00' 
+                                    THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME) + CAST('18:00:00' AS DATETIME)
+                                ELSE CAST(CAST(DATEADD(DAY, -1, GETDATE()) AS DATE) AS DATETIME) + CAST('18:00:00' AS DATETIME)
+                            END,
+                            GETDATE()
+                        ) / NULLIF(mm.sap_ct, 0)) * COALESCE(mm.qty_perct, 0)
+                    AS INT)
+                END AS planned_output,
+                COALESCE(r.total_weight, 0) AS reject_weight,
+                CASE 
+                    WHEN COALESCE(mm.part_weight, 0) = 0 THEN 0
+                    ELSE CAST(COALESCE(r.total_weight, 0) / NULLIF(mm.part_weight, 0) AS INT)
+                END AS reject_pcs,
+                
+                -- Used COALESCE to fallback to current time if the machine has NO logs yet
+                COALESCE(ll.start, CAST(GETDATE() AS DATETIME)) AS start, 
+                COALESCE(ll.finish, CAST(GETDATE() AS DATETIME)) AS finish,
+                CASE 
+                    WHEN (NULLIF(ll.category, '') IS NULL) 
+                         AND mm.status_start = 1 
+                         AND mm.status_off = 1 
+                    THEN 'PRODUCTION RUNNING'
+                    ELSE COALESCE(NULLIF(ll.category, ''), 'N/A')
+                END AS category,
+                COALESCE(ll.problem, '') AS problem,
+                COALESCE(ll.mould_category, 0) AS mould_category
+            FROM machine_master mm
+            -- LEFT JOIN ensures the machine still shows up even if it has 0 logs
+            -- rn = 1 ensures we ONLY get the Top 1 latest log
+            LEFT JOIN latest_logs ll ON mm.id_machine = ll.id_machine AND ll.rn = 1
+            LEFT JOIN reject r 
+                ON r.id_machine = mm.id_machine 
+                AND r.id_type = mm.id_type 
+                AND r.mould = mm.mould
+                AND r.production_date = @production_date
+                AND r.shift = @shift";
 
         var result = new List<object>();
 
