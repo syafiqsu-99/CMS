@@ -2,12 +2,12 @@
   <v-container fluid class="pa-4">
     <div class="text-subtitle-1 font-weight-bold mb-4">PLC Department Passwords</div>
 
+    <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-4" />
+
     <v-row>
-      <v-col v-for="dept in DEPARTMENTS"
-             :key="dept.key"
-             cols="12" md="4">
+      <v-col v-for="dept in DEPARTMENTS" :key="dept.key" cols="12" md="3">
         <v-card variant="outlined" class="pa-4 rounded-lg">
-          <div class="d-flex align-center mb-3">
+          <div class="d-flex align-center mb-1">
             <v-icon :color="dept.color" class="mr-2">{{ dept.icon }}</v-icon>
             <span class="text-subtitle-2 font-weight-bold">{{ dept.label }}</span>
             <v-spacer />
@@ -16,6 +16,12 @@
                         hide-details
                         density="compact" />
           </div>
+
+          <!-- Last updated timestamp from SQL -->
+          <div class="text-caption text-medium-emphasis mb-3">
+            Last set: {{ lastUpdated[dept.key] ?? '—' }}
+          </div>
+
           <v-text-field v-model.number="passwordForm[dept.key]"
                         label="New Password"
                         type="number"
@@ -39,7 +45,6 @@
       </span>
     </div>
 
-    <!-- Confirm dialog -->
     <v-dialog v-model="confirmDialog" max-width="400px">
       <v-card>
         <v-card-title class="text-subtitle-1 font-weight-bold py-3 px-4 d-flex align-center ga-2">
@@ -76,53 +81,77 @@
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { DEPARTMENTS } from '@/utils/constant.js';
+  import { ref, onMounted } from 'vue';
+  import { DEPARTMENTS } from '@/utils/constant.js';
 
-const defaultPasswords = () =>
-  Object.fromEntries(DEPARTMENTS.map(d => [d.key, 0]));
+  const defaultPasswords = () => Object.fromEntries(DEPARTMENTS.map(d => [d.key, 0]));
 
-const passwordForm   = ref(defaultPasswords());
-const selectedDepts  = ref(DEPARTMENTS.map(d => d.key));
-const saving         = ref(false);
-const statusMessage  = ref('');
-const statusColor    = ref('text-success');
-const confirmDialog  = ref(false);
+  const passwordForm = ref(defaultPasswords());
+  const selectedDepts = ref(DEPARTMENTS.map(d => d.key));
+  const lastUpdated = ref({});
+  const loading = ref(false);
+  const saving = ref(false);
+  const statusMessage = ref('');
+  const statusColor = ref('text-success');
+  const confirmDialog = ref(false);
 
-const getDept = key => DEPARTMENTS.find(d => d.key === key);
+  const getDept = key => DEPARTMENTS.find(d => d.key === key);
 
-function resetPasswordForm() {
-  passwordForm.value  = defaultPasswords();
-  selectedDepts.value = DEPARTMENTS.map(d => d.key);
-  statusMessage.value = '';
-}
+  async function loadPasswords() {
+    loading.value = true;
+    try {
+      const res = await fetch('/api/setting/password');
+      if (!res.ok) throw new Error(res.statusText);
 
-async function applyPasswords() {
-  saving.value        = true;
-  confirmDialog.value = false;
-  statusMessage.value = '';
-
-  const payload = Object.fromEntries(
-    selectedDepts.value.map(key => [key, passwordForm.value[key]])
-  );
-
-  try {
-    const res = await fetch('/api/setting/password', {
-      method:  'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(payload),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error ?? 'Unknown error');
+      const data = await res.json();
+      data.forEach(row => {
+        passwordForm.value[row.department] = row.password;
+        lastUpdated.value[row.department] = new Date(row.updatedAt).toLocaleString('en-MY');
+      });
+    } catch (err) {
+      statusMessage.value = `✗ Failed to load passwords: ${err.message}`;
+      statusColor.value = 'text-error';
+    } finally {
+      loading.value = false;
     }
-    statusMessage.value = '✓ Passwords written to PLC successfully.';
-    statusColor.value   = 'text-success';
-  } catch (err) {
-    statusMessage.value = `✗ Failed: ${err.message}`;
-    statusColor.value   = 'text-error';
-  } finally {
-    saving.value = false;
   }
-}
+
+  function resetPasswordForm() {
+    passwordForm.value = defaultPasswords();
+    selectedDepts.value = DEPARTMENTS.map(d => d.key);
+    statusMessage.value = '';
+    loadPasswords();
+  }
+
+  async function applyPasswords() {
+    saving.value = true;
+    confirmDialog.value = false;
+    statusMessage.value = '';
+
+    const payload = Object.fromEntries(
+      selectedDepts.value.map(key => [key, passwordForm.value[key]])
+    );
+
+    try {
+      const res = await fetch('/api/setting/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: res.statusText }));
+        throw new Error(err.error ?? 'Unknown error');
+      }
+      statusMessage.value = '✓ Passwords written to PLC successfully.';
+      statusColor.value = 'text-success';
+      await loadPasswords();
+    } catch (err) {
+      statusMessage.value = `✗ Failed: ${err.message}`;
+      statusColor.value = 'text-error';
+    } finally {
+      saving.value = false;
+    }
+  }
+
+  onMounted(loadPasswords);
 </script>

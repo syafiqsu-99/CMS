@@ -39,7 +39,7 @@ namespace CMS.Server.Services
                 tableNames.Add($"machine_log_{i}");
 
             tableNames.AddRange([
-                "reject", "report", "sap", "staff_list", "utilities", "attendance", "machine_master", "calendar"
+                "reject", "report", "sap", "staff_list", "utilities", "attendance", "machine_master", "calendar", "plc_passwords"
             ]);
 
             using var conn = await CreateConnection();
@@ -57,9 +57,22 @@ namespace CMS.Server.Services
                 using var cmd = new SqlCommand(ddl, conn);
                 await cmd.ExecuteNonQueryAsync();
                 createdTables.Add(table);
+
+                if (table == "plc_passwords")
+                    await SeedPlcPasswordsAsync(conn);
             }
 
             return new { createdTables };
+        }
+
+        private static async Task SeedPlcPasswordsAsync(SqlConnection conn)
+        {
+            const string sql = @"
+                INSERT INTO plc_passwords (department, password)
+                VALUES ('production', 0), ('technician', 0), ('maintenance', 0), ('qc', 0)";
+
+            using var cmd = new SqlCommand(sql, conn);
+            await cmd.ExecuteNonQueryAsync();
         }
 
         private static async Task<bool> TableExistsAsync(SqlConnection conn, string tableName)
@@ -269,6 +282,16 @@ namespace CMS.Server.Services
                     finish DAETIME NULL,
                     PRIMARY KEY (production_date, shift)
                 );";
+
+            if (table == "plc_passwords")
+                return @"
+                CREATE TABLE plc_passwords(
+                    department  NVARCHAR(20) NOT NULL PRIMARY KEY,
+                    password    INT          NOT NULL DEFAULT 0,
+                    updated_at  DATETIME2    NOT NULL DEFAULT GETDATE()
+                )";
+
+            return "";
 
             return "";
         }

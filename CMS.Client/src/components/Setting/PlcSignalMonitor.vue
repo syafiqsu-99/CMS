@@ -1,7 +1,8 @@
 <template>
-  <v-container fluid class="pa-2 d-flex flex-column" style="height: 100%;">
+  <div class="d-flex flex-column h-100 pa-2">
+
     <!-- Toolbar -->
-    <div class="d-flex align-center ga-2 mb-2 flex-wrap">
+    <div class="d-flex align-center ga-2 mb-2 flex-wrap flex-shrink-0">
       <v-select v-model="selectedGroup"
                 :items="signalGroupItems"
                 label="Signal Group"
@@ -11,13 +12,9 @@
                 style="max-width: 200px;" />
       <v-spacer />
       <v-chip color="success" size="small" variant="tonal" prepend-icon="mdi-check-circle-outline">
-        {{ onlineCount }} / {{ MACHINE_COUNT }} Online
+        {{ onlineCount }} / {{ machines.length }} Online
       </v-chip>
-      <v-chip v-if="errorCount > 0"
-              color="error"
-              size="small"
-              variant="tonal"
-              prepend-icon="mdi-alert-circle-outline">
+      <v-chip v-if="errorCount > 0" color="error" size="small" variant="tonal" prepend-icon="mdi-alert-circle-outline">
         {{ errorCount }} Error
       </v-chip>
       <span v-if="lastUpdated" class="text-caption text-medium-emphasis">
@@ -49,246 +46,253 @@
       </v-btn>
     </div>
 
-    <!-- Signal table -->
-    <div class="flex-grow-1" style="overflow: auto; min-height: 0;">
-      <table class="signal-table">
-        <thead>
-          <tr>
-            <th class="col-frozen col-machine">Machine</th>
-            <th class="col-frozen col-ip">IP</th>
-            <th class="col-frozen col-status">Status</th>
-            <th v-for="sig in visibleSignals" :key="sig.address" class="col-signal">
-              <div class="sig-header">
-                <span class="sig-name">{{ sig.name }}</span>
-                <v-chip :color="typeColor(sig.dataType)" size="x-small" variant="tonal">
-                  {{ sig.dataType }}
-                </v-chip>
-                <span class="sig-addr">{{ sig.address }}</span>
-              </div>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="m in MACHINE_COUNT" :key="m" :class="['machine-row', machineRowClass(m)]">
-            <td class="col-frozen col-machine font-weight-bold text-body-2">M{{ m }}</td>
-            <td class="col-frozen col-ip text-caption" style="font-family: monospace;">
-              {{ MACHINE_IP_PREFIX }}{{ 219 + m }}
-            </td>
-            <td class="col-frozen col-status">
-              <v-chip :color="machineStatus(m)" size="x-small" variant="flat">
-                {{ machineStatusLabel(m) }}
-              </v-chip>
-            </td>
-            <td v-for="sig in visibleSignals"
-                :key="sig.address"
-                :class="cellClass(m, sig)">
-              <template v-if="machineData[m]">
-                <template v-if="sig.dataType === 'bit'">
-                  <v-icon :color="machineData[m][sig.address] ? 'success' : 'error'"
-                          size="16">
-                    {{ machineData[m][sig.address] ? 'mdi-circle' : 'mdi-circle-outline' }}
-                  </v-icon>
-                </template>
-                <template v-else-if="sig.dataType === 'string'">
-                  <span class="cell-string">{{ machineData[m][sig.address] || '—' }}</span>
-                </template>
-                <template v-else>
-                  <span class="cell-numeric">{{ formatNumeric(machineData[m][sig.address], sig) }}</span>
-                </template>
-              </template>
-              <template v-else>
-                <span class="text-disabled text-caption">—</span>
-              </template>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </v-container>
+    <!-- Virtual Data Table -->
+    <v-data-table-virtual :headers="tableHeaders"
+                          :items="tableItems"
+                          height="70vh"
+                          fixed-header
+                          density="compact"
+                          hover
+                          :row-props="getRowProps"
+                          class="border rounded">
+      <!-- Dynamic Headers for Signals -->
+      <template v-for="sig in visibleSignals"
+                :key="'header_' + sig.address"
+                v-slot:[`header.sig_${sig.address}`]>
+        <div class="d-flex flex-column align-center justify-center py-1">
+          <span class="font-weight-bold" style="white-space: nowrap;">{{ sig.name }}</span>
+          <v-chip :color="typeColor(sig.dataType)" size="x-small" variant="tonal" class="my-1">
+            {{ sig.dataType }}
+          </v-chip>
+          <span class="text-caption text-medium-emphasis text-monospace">{{ sig.address }}</span>
+        </div>
+      </template>
+
+      <!-- Status Column -->
+      <template v-slot:item.status="{ item }">
+        <v-chip :color="item.statusColor" size="x-small" variant="flat">
+          {{ item.statusLabel }}
+        </v-chip>
+      </template>
+
+      <!-- IP Column -->
+      <template v-slot:item.ip="{ item }">
+        <span class="text-caption text-monospace">{{ item.ip }}</span>
+      </template>
+
+      <!-- Dynamic Columns for Signal Data -->
+      <template v-for="sig in visibleSignals"
+                :key="'item_' + sig.address"
+                v-slot:[`item.sig_${sig.address}`]="{ item }">
+
+        <div class="text-center" style="white-space: nowrap;">
+          <template v-if="item.hasData">
+            <!-- Bit -->
+            <template v-if="sig.dataType === 'bit'">
+              <v-icon :color="item[`sig_${sig.address}`] ? 'success' : 'error'" size="small">
+                {{ item[`sig_${sig.address}`] ? 'mdi-circle' : 'mdi-circle-outline' }}
+              </v-icon>
+            </template>
+            <!-- String -->
+            <template v-else-if="sig.dataType === 'string'">
+              <span class="d-inline-block text-truncate text-monospace" style="max-width: 120px;">
+                {{ item[`sig_${sig.address}`] || '—' }}
+              </span>
+            </template>
+            <!-- Numeric -->
+            <template v-else>
+              <span class="text-monospace">{{ formatNumeric(item[`sig_${sig.address}`], sig) }}</span>
+            </template>
+          </template>
+          <!-- No Data -->
+          <template v-else>
+            <span class="text-disabled text-caption">—</span>
+          </template>
+        </div>
+      </template>
+    </v-data-table-virtual>
+
+  </div>
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted, watch } from 'vue';
-import { SIGNAL_DEFS, POLL_INTERVALS, MACHINE_COUNT, MACHINE_IP_PREFIX } from '@/utils/constant.js';
+  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { useMachineStore } from '@/store/machineStore';
+  import { SIGNAL_DEFS, POLL_INTERVALS, MACHINE_IP_PREFIX } from '@/utils/constant.js';
 
-const selectedGroup = ref('All');
-const polling       = ref(false);
-const fetching      = ref(false);
-const pollInterval  = ref(2000);
-const lastUpdated   = ref('');
-const machineData   = ref({});   // { 1: {addr: val, ...}, 2: null, ... }
-const machineErrors = ref({});
+  const store = useMachineStore();
 
-let pollTimer = null;
+  const selectedGroup = ref('All');
+  const polling = ref(false);
+  const fetching = ref(false);
+  const pollInterval = ref(2000);
+  const lastUpdated = ref('');
+  const machineData = ref({});
+  const machineErrors = ref({});
+  let pollTimer = null;
 
-const signalGroupItems = computed(() =>
-  ['All', ...new Set(SIGNAL_DEFS.map(s => s.group))]
-);
-const visibleSignals = computed(() =>
-  selectedGroup.value === 'All'
-    ? SIGNAL_DEFS
-    : SIGNAL_DEFS.filter(s => s.group === selectedGroup.value)
-);
-const hasData     = computed(() => Object.keys(machineData.value).length > 0);
-const onlineCount = computed(() =>
-  Array.from({ length: MACHINE_COUNT }, (_, i) => i + 1)
-    .filter(m => machineData.value[m] && !machineErrors.value[m]).length
-);
-const errorCount = computed(() =>
-  Array.from({ length: MACHINE_COUNT }, (_, i) => i + 1)
-    .filter(m => machineErrors.value[m]).length
-);
+  // --- Signal Computations ---
+  const signalGroupItems = computed(() => ['All', ...new Set(SIGNAL_DEFS.map(s => s.group))]);
 
-function typeColor(dt) {
-  return { bit: 'purple', int: 'blue', float: 'teal', string: 'orange' }[dt] ?? 'grey';
-}
-function machineStatus(m) {
-  if (!hasData.value)    return 'default';
-  if (machineErrors.value[m]) return 'error';
-  if (machineData.value[m])   return 'success';
-  return 'default';
-}
-function machineStatusLabel(m) {
-  if (!hasData.value)    return '—';
-  if (machineErrors.value[m]) return 'Error';
-  if (machineData.value[m])   return 'Online';
-  return '—';
-}
-function machineRowClass(m) {
-  if (machineErrors.value[m]) return 'row-error';
-  return m % 2 === 0 ? 'row-even' : 'row-odd';
-}
-function cellClass(m, sig) {
-  return sig.dataType === 'bit' && machineData.value[m]?.[sig.address] === true
-    ? 'cell-bit-on' : '';
-}
-function formatNumeric(val, sig) {
-  if (val === null || val === undefined) return '—';
-  const n = Number(val);
-  if (isNaN(n)) return String(val);
-  const str = sig.dataType === 'float' ? n.toFixed(2) : n.toLocaleString();
-  return sig.unit ? `${str} ${sig.unit}` : str;
-}
+  const visibleSignals = computed(() =>
+    selectedGroup.value === 'All'
+      ? SIGNAL_DEFS
+      : SIGNAL_DEFS.filter(s => s.group === selectedGroup.value)
+  );
 
-function togglePolling() { polling.value ? stopPolling() : startPolling(); }
-function startPolling() {
-  polling.value = true;
-  fetchAllSignals();
-  pollTimer = setInterval(fetchAllSignals, pollInterval.value);
-}
-function stopPolling() {
-  polling.value = false;
-  clearInterval(pollTimer);
-  pollTimer = null;
-}
-
-watch(pollInterval, () => { if (polling.value) { stopPolling(); startPolling(); } });
-
-async function fetchAllSignals() {
-  fetching.value = true;
-  try {
-    const res = await fetch('/api/setting/plc-signals');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const all = await res.json();
-
-    for (let m = 1; m <= MACHINE_COUNT; m++) {
-      const data = all[String(m)];
-      machineData.value[m]   = data ?? null;
-      machineErrors.value[m] = data ? null : 'No data';
+  // --- Machine Computations ---
+  const machines = computed(() => {
+    if (store.machineData.length > 0) {
+      return store.machineData
+        .filter(m => m.machine_name !== 'TEST')
+        .map(m => ({ id: m.id_machine, name: m.machine_name }));
     }
-    lastUpdated.value = new Date().toLocaleTimeString();
-  } catch (err) {
-    for (let m = 1; m <= MACHINE_COUNT; m++)
-      machineErrors.value[m] = err.message;
-  } finally {
-    fetching.value = false;
-  }
-}
+    const ids = Object.keys(machineData.value).map(Number).sort((a, b) => a - b);
+    return ids.map(id => ({
+      id,
+      name: machineData.value[id]?.machine_name ?? `M${id}`,
+    }));
+  });
 
-onUnmounted(() => stopPolling());
+  const onlineCount = computed(() =>
+    machines.value.filter(m => machineData.value[m.id] && !machineErrors.value[m.id]).length
+  );
+
+  const errorCount = computed(() =>
+    machines.value.filter(m => !!machineErrors.value[m.id]).length
+  );
+
+  // --- Table Configuration ---
+  const tableHeaders = computed(() => {
+    const baseHeaders = [
+      { title: 'M#', key: 'id', width: '60px', sortable: false },
+      { title: 'Machine', key: 'name', width: '130px', sortable: false },
+      { title: 'IP', key: 'ip', width: '120px', sortable: false },
+      { title: 'Status', key: 'status', width: '90px', sortable: false }
+    ];
+
+    const dynamicHeaders = visibleSignals.value.map(sig => ({
+      title: sig.name,
+      key: `sig_${sig.address}`,
+      minWidth: '130px',
+      align: 'center',
+      sortable: false
+    }));
+
+    return [...baseHeaders, ...dynamicHeaders];
+  });
+
+  const tableItems = computed(() => {
+    return machines.value.map(m => {
+      // Create base row structure
+      const row = {
+        id: m.id,
+        name: m.name,
+        ip: `${MACHINE_IP_PREFIX}${219 + m.id}`,
+        statusLabel: machineStatusLabel(m.id),
+        statusColor: machineStatus(m.id),
+        isError: !!machineErrors.value[m.id],
+        hasData: !!machineData.value[m.id]
+      };
+
+      // Flatten PLC data dynamically into row item so the table can read it natively
+      if (machineData.value[m.id]) {
+        for (const sig of visibleSignals.value) {
+          row[`sig_${sig.address}`] = machineData.value[m.id][sig.address];
+        }
+      }
+
+      return row;
+    });
+  });
+
+  // Row styling injected by v-data-table-virtual
+  function getRowProps({ item }) {
+    if (item.isError) return { class: 'bg-red-lighten-5' };
+    return {};
+  }
+
+  // --- Helpers ---
+  function typeColor(dt) {
+    return { bit: 'purple', int: 'blue', float: 'teal', string: 'orange' }[dt] ?? 'grey';
+  }
+
+  function machineStatus(id) {
+    if (machineErrors.value[id]) return 'error';
+    if (machineData.value[id]) return 'success';
+    return 'default';
+  }
+
+  function machineStatusLabel(id) {
+    if (machineErrors.value[id]) return 'Error';
+    if (machineData.value[id]) return 'Online';
+    return '—';
+  }
+
+  function formatNumeric(val, sig) {
+    if (val === null || val === undefined) return '—';
+    const n = Number(val);
+    if (isNaN(n)) return String(val);
+    const str = sig.dataType === 'float' ? n.toFixed(2) : n.toLocaleString();
+    return sig.unit ? `${str} ${sig.unit}` : str;
+  }
+
+  // --- Fetch & Polling ---
+  function togglePolling() {
+    polling.value ? stopPolling() : startPolling();
+  }
+
+  function startPolling() {
+    polling.value = true;
+    fetchAllSignals();
+    pollTimer = setInterval(fetchAllSignals, pollInterval.value);
+  }
+
+  function stopPolling() {
+    polling.value = false;
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+
+  watch(pollInterval, () => {
+    if (polling.value) {
+      stopPolling();
+      startPolling();
+    }
+  });
+
+  async function fetchAllSignals() {
+    fetching.value = true;
+    try {
+      const res = await fetch('/api/setting/plc-signals');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const all = await res.json();
+
+      for (const [key, data] of Object.entries(all)) {
+        const id = Number(key);
+        if (data === null || data === undefined) {
+          machineErrors.value[id] = 'Unreachable';
+          machineData.value[id] = null;
+        } else {
+          machineData.value[id] = data;
+          machineErrors.value[id] = null;
+        }
+      }
+
+      lastUpdated.value = new Date().toLocaleTimeString();
+    } catch (err) {
+      machines.value.forEach(m => { machineErrors.value[m.id] = err.message; });
+    } finally {
+      fetching.value = false;
+    }
+  }
+
+  // --- Lifecycle ---
+  onMounted(async () => {
+    if (store.machineData.length === 0) {
+      await store.loadMachineMaster();
+    }
+  });
+
+  onUnmounted(() => stopPolling());
 </script>
-
-<style scoped>
-  .signal-table {
-    border-collapse: collapse;
-    width: max-content;
-    font-size: 12px;
-  }
-
-    .signal-table th, .signal-table td {
-      padding: 4px 8px;
-      border: 1px solid #e0e0e0;
-      white-space: nowrap;
-    }
-
-  .col-frozen {
-    position: sticky;
-    background: #fff;
-    z-index: 1;
-  }
-
-  .col-machine {
-    left: 0;
-    min-width: 60px;
-  }
-
-  .col-ip {
-    left: 60px;
-    min-width: 110px;
-  }
-
-  .col-status {
-    left: 170px;
-    min-width: 70px;
-  }
-
-  .col-signal {
-    min-width: 90px;
-    text-align: center;
-  }
-
-  .sig-header {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .sig-name {
-    font-weight: 600;
-  }
-
-  .sig-addr {
-    font-family: monospace;
-    color: #666;
-    font-size: 10px;
-  }
-
-  .row-even {
-    background: #fafafa;
-  }
-
-  .row-odd {
-    background: #fff;
-  }
-
-  .row-error {
-    background: #fff3f3;
-  }
-
-  .cell-bit-on {
-    background: #e8f5e9;
-  }
-
-  .cell-numeric {
-    font-family: monospace;
-  }
-
-  .cell-string {
-    font-family: monospace;
-    max-width: 120px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
-  }
-</style>

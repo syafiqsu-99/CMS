@@ -248,9 +248,6 @@ namespace CMS.Server.Services
 
         public Dictionary<string, object?> ReadSubPlcSignals(int machineId)
         {
-            if (machineId is < 1 or > 26)
-                throw new ArgumentOutOfRangeException(nameof(machineId), "Machine ID must be 1–26.");
-
             var ip = $"172.17.86.{219 + machineId}";
             var cacheKey = $"sub_{ip}";
             var result = new Dictionary<string, object?>();
@@ -266,8 +263,8 @@ namespace CMS.Server.Services
                 }
                 plc.Connect();
 
-                // D Memory (words 30–775)
-                const ushort dStart = 30;
+                // D Memory: words 48–775
+                const ushort dStart = 48;
                 const ushort dEnd = 775;
                 const int totalDWords = dEnd - dStart + 1;
                 const int maxChunk = 500;
@@ -294,8 +291,19 @@ namespace CMS.Server.Services
                 if (dOk)
                 {
                     int Didx(int wordAddr) => (wordAddr - dStart) * 2;
-                    result["D30"] = ReadFloatAt(dBuf, Didx(30));
-                    result["D90"] = ReadFloatAt(dBuf, Didx(90));
+
+                    // Production
+                    result["D48"] = ReadIntAt(dBuf, Didx(48));        // Shot
+                    result["D50"] = ReadIntAt(dBuf, Didx(50));        // Shot Accum
+                    result["D90"] = ReadFloatAt(dBuf, Didx(90));      // Cycle Time (float)
+
+                    // Strings
+                    result["D200"] = ReadStringAt(dBuf, Didx(200));    // Type
+                    result["D300"] = ReadStringAt(dBuf, Didx(300));    // Packer
+                    result["D400"] = ReadStringAt(dBuf, Didx(400));    // Stop Category
+                    result["D500"] = ReadStringAt(dBuf, Didx(500));    // Remark
+
+                    // Reject (pcs)
                     result["D700"] = ReadFloatAt(dBuf, Didx(700));
                     result["D705"] = ReadFloatAt(dBuf, Didx(705));
                     result["D710"] = ReadFloatAt(dBuf, Didx(710));
@@ -304,6 +312,8 @@ namespace CMS.Server.Services
                     result["D725"] = ReadFloatAt(dBuf, Didx(725));
                     result["D730"] = ReadFloatAt(dBuf, Didx(730));
                     result["D735"] = ReadFloatAt(dBuf, Didx(735));
+
+                    // Reject (kg)
                     result["D740"] = ReadFloatAt(dBuf, Didx(740));
                     result["D745"] = ReadFloatAt(dBuf, Didx(745));
                     result["D750"] = ReadFloatAt(dBuf, Didx(750));
@@ -312,22 +322,14 @@ namespace CMS.Server.Services
                     result["D765"] = ReadFloatAt(dBuf, Didx(765));
                     result["D770"] = ReadFloatAt(dBuf, Didx(770));
                     result["D775"] = ReadFloatAt(dBuf, Didx(775));
-                    result["D40"] = ReadIntAt(dBuf, Didx(40));
-                    result["D50"] = ReadIntAt(dBuf, Didx(50));
-                    result["D110"] = ReadIntAt(dBuf, Didx(110));
-                    result["D120"] = ReadIntAt(dBuf, Didx(120));
-                    result["D190"] = ReadIntAt(dBuf, Didx(190));
-                    result["D200"] = ReadStringAt(dBuf, Didx(200));
-                    result["D300"] = ReadStringAt(dBuf, Didx(300));
-                    result["D400"] = ReadStringAt(dBuf, Didx(400));
-                    result["D500"] = ReadStringAt(dBuf, Didx(500));
                 }
 
-                // W Memory bits (words 5–65)
+                // W Memory bits: words 20–65
                 try
                 {
-                    const ushort wStart = 5;
-                    ushort wBitCount = (ushort)((65 - 5 + 1) * 16);
+                    const ushort wStart = 20;
+                    const ushort wEnd = 65;
+                    ushort wBitCount = (ushort)((wEnd - wStart + 1) * 16);
                     byte[] wChunk = plc.Read(wStart, wBitCount, 0, MemoryAreaBits.Work);
 
                     bool Wbit(int word, int bit)
@@ -336,66 +338,26 @@ namespace CMS.Server.Services
                         return idx >= 0 && idx < wChunk.Length && wChunk[idx] != 0;
                     }
 
-                    result["W5.00"] = Wbit(5, 0);
-                    result["W6.00"] = Wbit(6, 0);
-                    result["W7.00"] = Wbit(7, 0);
-                    result["W8.00"] = Wbit(8, 0);
-                    result["W9.00"] = Wbit(9, 0);
-                    result["W60.00"] = Wbit(60, 0);
-                    result["W61.00"] = Wbit(61, 0);
-                    result["W62.00"] = Wbit(62, 0);
-                    result["W63.00"] = Wbit(63, 0);
-                    result["W63.01"] = Wbit(63, 1);
-                    result["W64.00"] = Wbit(64, 0);
-                    result["W65.00"] = Wbit(65, 0);
+                    // Status bits (W20)
+                    result["W20.00"] = Wbit(20, 0);   // Status Start
+                    result["W20.01"] = Wbit(20, 1);   // Status Off
+                    result["W20.02"] = Wbit(20, 2);   // Prod Running
+                    result["W20.03"] = Wbit(20, 3);   // Visual QC
+                    result["W20.05"] = Wbit(20, 5);   // Remark Signal
+                    result["W20.06"] = Wbit(20, 6);   // Reject Signal
+
+                    // Utility bits
+                    result["W60.00"] = Wbit(60, 0);   // Barrel
+                    result["W61.00"] = Wbit(61, 0);   // Hyd. Motor
+                    result["W62.00"] = Wbit(62, 0);   // Dehumidifier
+                    result["W63.00"] = Wbit(63, 0);   // Dehumidifier Switch
+                    result["W63.01"] = Wbit(63, 1);   // Chiller
+                    result["W64.00"] = Wbit(64, 0);   // Material
+                    result["W65.00"] = Wbit(65, 0);   // Dry Cycle
                 }
                 catch (Exception ex)
                 {
                     _logger.LogWarning("[SubPlc M{Id}] W read failed: {Msg}", machineId, ex.Message);
-                }
-
-                // Holding memory H30–H34
-                try
-                {
-                    byte[] hChunk = plc.Read(30, 6, 0, (MemoryAreaBits)0xB2);
-                    result["H30"] = ReadIntAt(hChunk, 0);
-                    result["H32"] = ReadIntAt(hChunk, 4);
-                    result["H34"] = ReadIntAt(hChunk, 8);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning("[SubPlc M{Id}] H read failed: {Msg}", machineId, ex.Message);
-                }
-
-                // Input bits IN 0.00–0.08
-                try
-                {
-                    byte[] inChunk = plc.Read(0, 16, 0, (MemoryAreaBits)0x80);
-                    bool INbit(int bit) => bit < inChunk.Length && inChunk[bit] != 0;
-                    result["IN0.00"] = INbit(0);
-                    result["IN0.01"] = INbit(1);
-                    result["IN0.02"] = INbit(2);
-                    result["IN0.03"] = INbit(3);
-                    result["IN0.04"] = INbit(4);
-                    result["IN0.05"] = INbit(5);
-                    result["IN0.06"] = INbit(6);
-                    result["IN0.07"] = INbit(7);
-                    result["IN0.08"] = INbit(8);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning("[SubPlc M{Id}] IN read failed: {Msg}", machineId, ex.Message);
-                }
-
-                // Output bits OUT 100.00
-                try
-                {
-                    byte[] outChunk = plc.Read(100, 16, 0, (MemoryAreaBits)0x82);
-                    result["OUT100.00"] = outChunk.Length > 0 && outChunk[0] != 0;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning("[SubPlc M{Id}] OUT read failed: {Msg}", machineId, ex.Message);
                 }
             }
             catch (Exception ex)

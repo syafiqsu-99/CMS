@@ -87,7 +87,7 @@ public class OeeController : ControllerBase
 
             var rawRows = await _oeeService.LoadOEERawForExport(start_date, end_date);
 
-            if (rawRows.Count == 0)
+            if (rawRows == null || !rawRows.Any())
                 return NotFound(new
                 {
                     message = "No OEE data found for the specified date range and shift.",

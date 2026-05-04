@@ -1,5 +1,4 @@
-﻿// CMS.Server/Controllers/SettingController.cs
-using CMS.Server.Services;
+﻿using CMS.Server.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
@@ -11,8 +10,15 @@ public class SettingController(SettingService settingService) : ControllerBase
 {
     // ── Password ───────────────────────────────────────────────────────────────
 
+    [HttpGet("password")]
+    public async Task<IActionResult> GetPasswords()
+    {
+        var result = await settingService.LoadDepartmentPasswords();
+        return Ok(result);
+    }
+
     [HttpPut("password")]
-    public IActionResult UpdatePasswords([FromBody] Dictionary<string, JsonElement> payload)
+    public async Task<IActionResult> UpdatePasswords([FromBody] Dictionary<string, JsonElement> payload)
     {
         try
         {
@@ -28,7 +34,8 @@ public class SettingController(SettingService settingService) : ControllerBase
             if (passwords.Count == 0)
                 return BadRequest(new { error = "No valid department passwords supplied." });
 
-            return Ok(settingService.ChangeDepartmentPasswords(passwords));
+            var result = await settingService.ChangeDepartmentPasswords(passwords);
+            return Ok(result);
         }
         catch (Exception ex)
         {
@@ -39,17 +46,17 @@ public class SettingController(SettingService settingService) : ControllerBase
     // ── PLC Signals ────────────────────────────────────────────────────────────
 
     [HttpGet("plc-signals")]
-    public IActionResult GetPlcSignals([FromQuery] int? machineId)
+    public async Task<IActionResult> GetPlcSignals([FromQuery] int? machineId)
     {
         if (machineId.HasValue)
         {
-            if (machineId.Value < 1 || machineId.Value > 26)
-                return BadRequest(new { error = "machineId must be between 1 and 26." });
+            if (machineId.Value < 1)
+                return BadRequest(new { error = "machineId must be a positive integer." });
 
             try { return Ok(settingService.ReadSubPlcSignals(machineId.Value)); }
             catch (Exception ex) { return StatusCode(503, new { error = ex.Message }); }
         }
 
-        return Ok(settingService.ReadAllPlcSignals());
+        return Ok(await settingService.ReadAllPlcSignals());
     }
 }
