@@ -263,8 +263,11 @@
 
   async function fetchAllSignals() {
     fetching.value = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
     try {
-      const res = await fetch('/api/setting/plc-signals');
+      const res = await fetch('/api/setting/plc-signals', { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const all = await res.json();
 
@@ -281,8 +284,13 @@
 
       lastUpdated.value = new Date().toLocaleTimeString();
     } catch (err) {
-      machines.value.forEach(m => { machineErrors.value[m.id] = err.message; });
+      if (err.name === 'AbortError') {
+        machines.value.forEach(m => { machineErrors.value[m.id] = 'Timeout'; });
+      } else {
+        machines.value.forEach(m => { machineErrors.value[m.id] = err.message; });
+      }
     } finally {
+      clearTimeout(timeout);
       fetching.value = false;
     }
   }

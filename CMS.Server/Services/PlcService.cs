@@ -32,6 +32,11 @@ namespace CMS.Server.Services
         private const int PollDelayMs = 200;
         private const int MachineCount = 26;
 
+        private IReadOnlyList<(int id, string name, string ip)> _cachedMachines = [];
+        private DateTime _machinesCachedAt = DateTime.MinValue;
+        private readonly SemaphoreSlim _machineCacheLock = new(1, 1);
+        private const int MachineCacheMinutes = 5;
+
         private int _iterationCount;
 
         public PlcService(IServiceScopeFactory scopeFactory, ILogger<PlcService> logger)
@@ -246,6 +251,55 @@ namespace CMS.Server.Services
             }
         }
 
+        public async Task<IReadOnlyList<(int id, string name, string ip)>> GetCachedMachinesAsync()
+        {
+            if ((DateTime.UtcNow - _machinesCachedAt).TotalMinutes < MachineCacheMinutes)
+                return _cachedMachines;
+
+            await _machineCacheLock.WaitAsync();
+            try
+            {
+                // Double-check after acquiring lock
+                if ((DateTime.UtcNow - _machinesCachedAt).TotalMinutes < MachineCacheMinutes)
+                    return _cachedMachines;
+
+                using var scope = _scopeFactory.CreateScope();
+                var baseService = scope.ServiceProvider.GetRequiredService<BaseService>();
+                var ids = await baseService.GetMachineIdsAsync();
+
+                _cachedMachines = ids;
+                _machinesCachedAt = DateTime.UtcNow;
+                return _cachedMachines;
+            }
+            finally
+            {
+                _machineCacheLock.Release();
+            }
+        }
+
+        // ── Reads all sub-PLC signals in parallel ─────────────────────────────────────
+        public async Task<Dictionary<string, object?>> ReadAllSubPlcSignalsAsync()
+        {
+            var machines = await GetCachedMachinesAsync();
+            var result = new ConcurrentDictionary<string, object?>();
+
+            await Parallel.ForEachAsync(machines, new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (machine, _) =>
+            {
+                try
+                {
+                    var data = await Task.Run(() => ReadSubPlcSignals(machine.id));
+                    if (data != null) data["machine_name"] = machine.name;
+                    result[machine.id.ToString()] = data;
+                }
+                catch
+                {
+                    result[machine.id.ToString()] = null;
+                }
+            });
+
+            return new Dictionary<string, object?>(result);
+        }
+
         public Dictionary<string, object?> ReadSubPlcSignals(int machineId)
         {
             var ip = $"172.17.86.{219 + machineId}";
@@ -258,9 +312,11 @@ namespace CMS.Server.Services
                 if (!_plcConnections.TryGetValue(cacheKey, out plc) || plc == null)
                 {
                     byte remoteNode = (byte)(219 + machineId);
+                    // Timeout of 3s: fail fast on unreachable PLCs instead of waiting for OS TCP timeout
                     plc = new PlcOmron(ip, 9600, false, remoteNode, 136);
                     _plcConnections[cacheKey] = plc;
                 }
+
                 plc.Connect();
 
                 // D Memory: words 48–775
@@ -298,10 +354,10 @@ namespace CMS.Server.Services
                     result["D90"] = ReadFloatAt(dBuf, Didx(90));      // Cycle Time (float)
 
                     // Strings
-                    result["D200"] = ReadStringAt(dBuf, Didx(200));    // Type
-                    result["D300"] = ReadStringAt(dBuf, Didx(300));    // Packer
-                    result["D400"] = ReadStringAt(dBuf, Didx(400));    // Stop Category
-                    result["D500"] = ReadStringAt(dBuf, Didx(500));    // Remark
+                    result["D200"] = ReadStringAt(dBuf, Didx(200), maxBytes: 200); // Type
+                    result["D300"] = ReadStringAt(dBuf, Didx(300), maxBytes: 200); // Packer
+                    result["D400"] = ReadStringAt(dBuf, Didx(400), maxBytes: 200); // Stop Category
+                    result["D500"] = ReadStringAt(dBuf, Didx(500), maxBytes: 200); // Remark
 
                     // Reject (pcs)
                     result["D700"] = ReadFloatAt(dBuf, Didx(700));
@@ -648,9 +704,17 @@ namespace CMS.Server.Services
 
         private static string ReadStringAt(byte[] buf, int byteIndex, int maxBytes = 200)
         {
-            if (byteIndex >= buf.Length || buf[byteIndex] == 0) return string.Empty;
+            if (byteIndex >= buf.Length) return string.Empty;
+
             int available = Math.Min(maxBytes, buf.Length - byteIndex);
-            return Encoding.ASCII.GetString(buf, byteIndex, available).Trim('\0', ' ');
+
+            int length = 0;
+            while (length < available && buf[byteIndex + length] != 0)
+                length++;
+
+            if (length == 0) return string.Empty;
+
+            return Encoding.ASCII.GetString(buf, byteIndex, length).Trim();
         }
 
         private static Dictionary<string, object> BuildResult(byte[] dBuffer, bool[] wBits)

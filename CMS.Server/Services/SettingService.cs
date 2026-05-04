@@ -53,36 +53,9 @@ public class SettingService(PlcService plcService, string connectionString) : Ba
         return new { success = true, updated = passwords.Keys };
     }
 
-    public object ReadSubPlcSignals(int machineId)
+    public Dictionary<string, object?> ReadSubPlcSignals(int machineId)
         => plcService.ReadSubPlcSignals(machineId);
 
     public async Task<Dictionary<string, object?>> ReadAllPlcSignals()
-    {
-        const string sql = "SELECT id_machine, machine_name FROM machine_master ORDER BY id_machine";
-
-        var machines = new List<(int id, string name)>();
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-            machines.Add((reader.GetInt32(0), reader.GetString(1)));
-
-        var result = new Dictionary<string, object?>();
-
-        await Parallel.ForEachAsync(machines, async (machine, _) =>
-        {
-            try
-            {
-                var data = await Task.Run(() => plcService.ReadSubPlcSignals(machine.id));
-                if (data != null) data["machine_name"] = machine.name;
-                lock (result) result[machine.id.ToString()] = data;
-            }
-            catch
-            {
-                lock (result) result[machine.id.ToString()] = null;
-            }
-        });
-
-        return result;
-    }
+        => await plcService.ReadAllSubPlcSignalsAsync();
 }

@@ -29,18 +29,24 @@ public class BaseService
 
     #region DynamicMachineLogHelpers
 
-    protected async Task<IReadOnlyList<int>> GetMachineIdsAsync()
+    public async Task<IReadOnlyList<(int id, string name, string ip)>> GetMachineIdsAsync()
     {
-        const string sql = "SELECT id_machine FROM machine_master ORDER BY id_machine";
-        var ids = new List<int>();
+        const string sql = "SELECT id_machine, machine_name FROM machine_master ORDER BY id_machine";
+        var machines = new List<(int, string, string)>();
 
         await using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
         await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-            ids.Add(reader.GetInt32(0));
 
-        return ids;
+        while (await reader.ReadAsync())
+        {
+            int id = reader.GetInt32(0);
+            string name = reader.GetString(1);
+            string ip = $"172.17.86.{219 + id}";
+            machines.Add((id, name, ip));
+        }
+
+        return machines;
     }
 
     protected async Task<string> BuildMachineLogUnionAsync(string whereClause = "")

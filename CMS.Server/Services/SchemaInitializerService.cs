@@ -292,8 +292,6 @@ namespace CMS.Server.Services
                 )";
 
             return "";
-
-            return "";
         }
     }
 }
