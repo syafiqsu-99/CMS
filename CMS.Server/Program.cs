@@ -32,9 +32,7 @@ builder.Services.AddSingleton<MachinesService>(sp =>
     new MachinesService(sp.GetRequiredService<PlcService>(), connectionString));
 builder.Services.AddSingleton<SettingService>(sp =>
     new SettingService(sp.GetRequiredService<PlcService>(), connectionString));
-
-if (!builder.Environment.IsDevelopment())
-    builder.Services.AddHostedService(sp => sp.GetRequiredService<PlcService>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<PlcService>());
 
 // ── App pipeline ──────────────────────────────────────────────────────────────
 var app = builder.Build();

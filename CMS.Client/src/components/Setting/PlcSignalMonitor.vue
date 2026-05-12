@@ -1,8 +1,8 @@
 <template>
   <div class="d-flex flex-column h-100 pa-2">
 
-    <!-- Toolbar -->
-    <div class="d-flex align-center ga-2 mb-2 flex-wrap flex-shrink-0">
+    <!-- Status bar -->
+    <div class="d-flex align-center ga-2 mb-2 flex-shrink-0 flex-wrap">
       <v-select v-model="selectedGroup"
                 :items="signalGroupItems"
                 label="Signal Group"
@@ -17,36 +17,13 @@
       <v-chip v-if="errorCount > 0" color="error" size="small" variant="tonal" prepend-icon="mdi-alert-circle-outline">
         {{ errorCount }} Error
       </v-chip>
-      <span v-if="lastUpdated" class="text-caption text-medium-emphasis">
-        Updated: {{ lastUpdated }}
-      </span>
-      <v-select v-model="pollInterval"
-                :items="POLL_INTERVALS"
-                item-title="title"
-                item-value="value"
-                label="Interval"
-                variant="outlined"
-                density="compact"
-                hide-details
-                style="max-width: 95px;" />
-      <v-btn :color="polling ? 'error' : 'success'"
-             :prepend-icon="polling ? 'mdi-pause' : 'mdi-play'"
-             variant="flat"
-             size="small"
-             @click="togglePolling">
-        {{ polling ? 'Pause' : 'Start' }}
-      </v-btn>
-      <v-btn color="primary"
-             prepend-icon="mdi-refresh"
-             variant="outlined"
-             size="small"
-             :loading="fetching"
-             @click="fetchAllSignals">
-        Refresh
-      </v-btn>
+      <v-chip v-if="readingCount > 0" color="warning" size="small" variant="tonal" prepend-icon="mdi-timer-sand">
+        {{ readingCount }} Reading
+      </v-chip>
+      <span v-if="lastUpdated" class="text-caption text-medium-emphasis">Updated: {{ lastUpdated }}</span>
     </div>
 
-    <!-- Virtual Data Table -->
+    <!-- Table -->
     <v-data-table-virtual :headers="tableHeaders"
                           :items="tableItems"
                           height="70vh"
@@ -54,84 +31,140 @@
                           density="compact"
                           hover
                           :row-props="getRowProps"
-                          class="border rounded">
-      <!-- Dynamic Headers for Signals -->
+                          class="border rounded plc-table">
+
+      <!-- Custom column headers -->
       <template v-for="sig in visibleSignals"
-                :key="'header_' + sig.address"
+                :key="'hdr_' + sig.address"
                 v-slot:[`header.sig_${sig.address}`]>
-        <div class="d-flex flex-column align-center justify-center py-1">
-          <span class="font-weight-bold" style="white-space: nowrap;">{{ sig.name }}</span>
-          <v-chip :color="typeColor(sig.dataType)" size="x-small" variant="tonal" class="my-1">
+        <div class="d-flex flex-column align-center justify-center py-1" style="white-space: nowrap;">
+          <span class="font-weight-bold text-caption">{{ sig.name }}</span>
+          <v-chip :color="typeColor(sig.dataType)" size="x-small" variant="tonal" class="mt-1">
             {{ sig.dataType }}
           </v-chip>
           <span class="text-caption text-medium-emphasis text-monospace">{{ sig.address }}</span>
         </div>
       </template>
 
-      <!-- Status Column -->
+      <!-- Status chip -->
       <template v-slot:item.status="{ item }">
         <v-chip :color="item.statusColor" size="x-small" variant="flat">
           {{ item.statusLabel }}
         </v-chip>
       </template>
 
-      <!-- IP Column -->
+      <!-- IP -->
       <template v-slot:item.ip="{ item }">
         <span class="text-caption text-monospace">{{ item.ip }}</span>
       </template>
 
-      <!-- Dynamic Columns for Signal Data -->
+      <!-- Signal cells -->
       <template v-for="sig in visibleSignals"
-                :key="'item_' + sig.address"
+                :key="'cell_' + sig.address"
                 v-slot:[`item.sig_${sig.address}`]="{ item }">
-
-        <div class="text-center" style="white-space: nowrap;">
-          <template v-if="item.hasData">
-            <!-- Bit -->
+        <!-- Whole-row "Reading" is handled via row slot; individual cells show — when no data -->
+        <div class="d-flex justify-center align-center">
+          <template v-if="item.isReading">
+            <span class="text-caption text-medium-emphasis font-italic">—</span>
+          </template>
+          <template v-else-if="item.hasData">
+            <!-- Boolean: filled circle, green = true, red = false -->
             <template v-if="sig.dataType === 'bit'">
-              <v-icon :color="item[`sig_${sig.address}`] ? 'success' : 'error'" size="small">
-                {{ item[`sig_${sig.address}`] ? 'mdi-circle' : 'mdi-circle-outline' }}
+              <v-icon :color="item[`sig_${sig.address}`] ? '#4caf50' : '#f44336'" size="16">
+                mdi-circle
               </v-icon>
             </template>
             <!-- String -->
             <template v-else-if="sig.dataType === 'string'">
-              <span class="d-inline-block text-truncate text-monospace" style="max-width: 120px;">
+              <span class="text-monospace text-caption" style="white-space: nowrap;">
                 {{ item[`sig_${sig.address}`] || '—' }}
               </span>
             </template>
             <!-- Numeric -->
             <template v-else>
-              <span class="text-monospace">{{ formatNumeric(item[`sig_${sig.address}`], sig) }}</span>
+              <span class="text-monospace text-caption">{{ formatNumeric(item[`sig_${sig.address}`], sig) }}</span>
             </template>
           </template>
-          <!-- No Data -->
           <template v-else>
             <span class="text-disabled text-caption">—</span>
           </template>
         </div>
       </template>
+
+      <!-- "Reading" rows: override the entire row body with a single spanning cell -->
+      <template v-slot:item="{ item, columns, props: rowProps }">
+        <tr v-bind="rowProps" v-if="item.isReading" class="reading-row">
+          <td :colspan="columns.length" class="text-left pa-2">
+            <span class="text-caption text-medium-emphasis font-italic">
+              <v-icon size="14" class="mr-1">mdi-timer-sand</v-icon>
+              {{ item.name }} — Reading…
+            </span>
+          </td>
+        </tr>
+        <!-- Normal row: let Vuetify render cells as usual via default slot passthrough -->
+        <template v-else>
+          <tr v-bind="rowProps">
+            <td v-for="col in columns" :key="col.key" :style="col.nowrap ? 'white-space:nowrap' : ''">
+              <!-- Fixed columns -->
+              <template v-if="col.key === 'id'">
+                {{ item.id }}
+              </template>
+              <template v-else-if="col.key === 'name'">
+                <span style="white-space: nowrap;">{{ item.name }}</span>
+              </template>
+              <template v-else-if="col.key === 'ip'">
+                <span class="text-caption text-monospace">{{ item.ip }}</span>
+              </template>
+              <template v-else-if="col.key === 'status'">
+                <v-chip :color="item.statusColor" size="x-small" variant="flat">{{ item.statusLabel }}</v-chip>
+              </template>
+              <!-- Signal columns -->
+              <template v-else>
+                <div class="d-flex justify-center align-center">
+                  <template v-if="item.hasData">
+                    <template v-if="signalByKey[col.key]?.dataType === 'bit'">
+                      <v-icon :color="item[col.key] ? '#4caf50' : '#f44336'" size="16">mdi-circle</v-icon>
+                    </template>
+                    <template v-else-if="signalByKey[col.key]?.dataType === 'string'">
+                      <span class="text-monospace text-caption" style="white-space: nowrap;">
+                        {{ item[col.key] || '—' }}
+                      </span>
+                    </template>
+                    <template v-else>
+                      <span class="text-monospace text-caption">
+                        {{ formatNumeric(item[col.key], signalByKey[col.key]) }}
+                      </span>
+                    </template>
+                  </template>
+                  <template v-else>
+                    <span class="text-disabled text-caption">—</span>
+                  </template>
+                </div>
+              </template>
+            </td>
+          </tr>
+        </template>
+      </template>
+
     </v-data-table-virtual>
 
   </div>
 </template>
 
 <script setup>
-  import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+  import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useMachineStore } from '@/store/machineStore';
-  import { SIGNAL_DEFS, POLL_INTERVALS, MACHINE_IP_PREFIX } from '@/utils/constant.js';
+  import { SIGNAL_DEFS, MACHINE_IP_PREFIX } from '@/utils/constant.js';
 
   const store = useMachineStore();
 
   const selectedGroup = ref('All');
-  const polling = ref(false);
-  const fetching = ref(false);
-  const pollInterval = ref(2000);
   const lastUpdated = ref('');
-  const machineData = ref({});
-  const machineErrors = ref({});
+  const cacheState = ref({});   // id -> null (Reading) | { online: bool, data: {} }
   let pollTimer = null;
+  const POLL_MS = 5000;
 
-  // --- Signal Computations ---
+  // --- Signal group filter ---
   const signalGroupItems = computed(() => ['All', ...new Set(SIGNAL_DEFS.map(s => s.group))]);
 
   const visibleSignals = computed(() =>
@@ -140,167 +173,136 @@
       : SIGNAL_DEFS.filter(s => s.group === selectedGroup.value)
   );
 
-  // --- Machine Computations ---
-  const machines = computed(() => {
-    if (store.machineData.length > 0) {
-      return store.machineData
-        .filter(m => m.machine_name !== 'TEST')
-        .map(m => ({ id: m.id_machine, name: m.machine_name }));
-    }
-    const ids = Object.keys(machineData.value).map(Number).sort((a, b) => a - b);
-    return ids.map(id => ({
-      id,
-      name: machineData.value[id]?.machine_name ?? `M${id}`,
-    }));
+  // Lookup map: `sig_${address}` -> signal def, used in the row slot
+  const signalByKey = computed(() => {
+    const map = {};
+    for (const sig of visibleSignals.value)
+      map[`sig_${sig.address}`] = sig;
+    return map;
   });
 
-  const onlineCount = computed(() =>
-    machines.value.filter(m => machineData.value[m.id] && !machineErrors.value[m.id]).length
+  // --- Machine list ---
+  const machines = computed(() =>
+    store.machineData
+      .sort((a, b) => a.id_machine - b.id_machine)
+      .map(m => ({ id: m.id_machine, name: m.machine_name }))
   );
 
-  const errorCount = computed(() =>
-    machines.value.filter(m => !!machineErrors.value[m.id]).length
-  );
+  // --- Summary counts ---
+  const onlineCount = computed(() => machines.value.filter(m => cacheState.value[m.id]?.online === true).length);
+  const errorCount = computed(() => machines.value.filter(m => { const s = cacheState.value[m.id]; return s !== undefined && s !== null && s.online === false; }).length);
+  const readingCount = computed(() => machines.value.filter(m => cacheState.value[m.id] == null).length);
 
-  // --- Table Configuration ---
-  const tableHeaders = computed(() => {
-    const baseHeaders = [
-      { title: 'M#', key: 'id', width: '60px', sortable: false },
-      { title: 'Machine', key: 'name', width: '130px', sortable: false },
-      { title: 'IP', key: 'ip', width: '120px', sortable: false },
-      { title: 'Status', key: 'status', width: '90px', sortable: false }
-    ];
-
-    const dynamicHeaders = visibleSignals.value.map(sig => ({
+  // --- Table headers (no fixed widths — let browser size naturally) ---
+  const tableHeaders = computed(() => [
+    { title: 'M#', key: 'id', sortable: false },
+    { title: 'Machine', key: 'name', sortable: false },
+    { title: 'IP', key: 'ip', sortable: false },
+    { title: 'Status', key: 'status', sortable: false },
+    ...visibleSignals.value.map(sig => ({
       title: sig.name,
       key: `sig_${sig.address}`,
-      minWidth: '130px',
       align: 'center',
-      sortable: false
-    }));
+      sortable: false,
+    })),
+  ]);
 
-    return [...baseHeaders, ...dynamicHeaders];
-  });
+  // --- Table rows ---
+  const tableItems = computed(() =>
+    machines.value.map(m => {
+      const entry = cacheState.value[m.id];
+      const isReading = entry == null;
+      const hasData = !!entry?.data;
 
-  const tableItems = computed(() => {
-    return machines.value.map(m => {
-      // Create base row structure
       const row = {
         id: m.id,
         name: m.name,
         ip: `${MACHINE_IP_PREFIX}${219 + m.id}`,
-        statusLabel: machineStatusLabel(m.id),
-        statusColor: machineStatus(m.id),
-        isError: !!machineErrors.value[m.id],
-        hasData: !!machineData.value[m.id]
+        statusLabel: resolveStatusLabel(entry),
+        statusColor: resolveStatusColor(entry),
+        isReading,
+        hasData,
       };
 
-      // Flatten PLC data dynamically into row item so the table can read it natively
-      if (machineData.value[m.id]) {
-        for (const sig of visibleSignals.value) {
-          row[`sig_${sig.address}`] = machineData.value[m.id][sig.address];
-        }
+      if (hasData) {
+        for (const sig of visibleSignals.value)
+          row[`sig_${sig.address}`] = entry.data[sig.address];
       }
 
       return row;
-    });
-  });
+    })
+  );
 
-  // Row styling injected by v-data-table-virtual
   function getRowProps({ item }) {
-    if (item.isError) return { class: 'bg-red-lighten-5' };
+    if (item.isReading) return { class: 'bg-grey-lighten-4' };
+    if (cacheState.value[item.id]?.online === false) return { class: 'bg-red-lighten-5' };
     return {};
   }
 
   // --- Helpers ---
+  function resolveStatusLabel(entry) {
+    if (entry == null) return 'Reading';
+    return entry.online ? 'Online' : 'Error';
+  }
+
+  function resolveStatusColor(entry) {
+    if (entry == null) return 'warning';
+    return entry.online ? 'success' : 'error';
+  }
+
   function typeColor(dt) {
     return { bit: 'purple', int: 'blue', float: 'teal', string: 'orange' }[dt] ?? 'grey';
-  }
-
-  function machineStatus(id) {
-    if (machineErrors.value[id]) return 'error';
-    if (machineData.value[id]) return 'success';
-    return 'default';
-  }
-
-  function machineStatusLabel(id) {
-    if (machineErrors.value[id]) return 'Error';
-    if (machineData.value[id]) return 'Online';
-    return '—';
   }
 
   function formatNumeric(val, sig) {
     if (val === null || val === undefined) return '—';
     const n = Number(val);
     if (isNaN(n)) return String(val);
-    const str = sig.dataType === 'float' ? n.toFixed(2) : n.toLocaleString();
-    return sig.unit ? `${str} ${sig.unit}` : str;
+    const str = sig?.dataType === 'float' ? n.toFixed(2) : n.toLocaleString();
+    return sig?.unit ? `${str} ${sig.unit}` : str;
   }
 
-  // --- Fetch & Polling ---
-  function togglePolling() {
-    polling.value ? stopPolling() : startPolling();
-  }
-
-  function startPolling() {
-    polling.value = true;
-    fetchAllSignals();
-    pollTimer = setInterval(fetchAllSignals, pollInterval.value);
-  }
-
-  function stopPolling() {
-    polling.value = false;
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-
-  watch(pollInterval, () => {
-    if (polling.value) {
-      stopPolling();
-      startPolling();
-    }
-  });
-
+  // --- Fetch cache snapshot ---
   async function fetchAllSignals() {
-    fetching.value = true;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
     try {
-      const res = await fetch('/api/setting/plc-signals', { signal: controller.signal });
+      const res = await fetch('/api/setting/plc-signals');
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const all = await res.json();
+      const payload = await res.json();
 
-      for (const [key, data] of Object.entries(all)) {
+      for (const [key, entry] of Object.entries(payload)) {
         const id = Number(key);
-        if (data === null || data === undefined) {
-          machineErrors.value[id] = 'Unreachable';
-          machineData.value[id] = null;
+        if (entry === null || entry === undefined) {
+          if (!(id in cacheState.value)) cacheState.value[id] = null;
         } else {
-          machineData.value[id] = data;
-          machineErrors.value[id] = null;
+          cacheState.value[id] = entry;
         }
       }
 
       lastUpdated.value = new Date().toLocaleTimeString();
     } catch (err) {
-      if (err.name === 'AbortError') {
-        machines.value.forEach(m => { machineErrors.value[m.id] = 'Timeout'; });
-      } else {
-        machines.value.forEach(m => { machineErrors.value[m.id] = err.message; });
-      }
-    } finally {
-      clearTimeout(timeout);
-      fetching.value = false;
+      console.error('[PlcSignalMonitor] fetch error:', err.message);
     }
   }
 
-  // --- Lifecycle ---
+  // --- Lifecycle: auto-start polling on mount ---
   onMounted(async () => {
-    if (store.machineData.length === 0) {
-      await store.loadMachineMaster();
-    }
+    if (store.machineData.length === 0) await store.loadMachineMaster();
+    fetchAllSignals();
+    pollTimer = setInterval(fetchAllSignals, POLL_MS);
   });
 
-  onUnmounted(() => stopPolling());
+  onUnmounted(() => {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  });
 </script>
+
+<style scoped>
+  .plc-table :deep(table) {
+    table-layout: auto;
+  }
+
+  .reading-row td {
+    background-color: rgb(var(--v-theme-surface-variant), 0.3);
+  }
+</style>

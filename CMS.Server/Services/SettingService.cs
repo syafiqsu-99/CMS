@@ -56,6 +56,6 @@ public class SettingService(PlcService plcService, string connectionString) : Ba
     public Dictionary<string, object?> ReadSubPlcSignals(int machineId)
         => plcService.ReadSubPlcSignals(machineId);
 
-    public async Task<Dictionary<string, object?>> ReadAllPlcSignals()
-        => await plcService.ReadAllSubPlcSignalsAsync();
+    public Dictionary<string, object?> GetAllPlcSignals()
+        => plcService.GetSubPlcSignalCache();
 }

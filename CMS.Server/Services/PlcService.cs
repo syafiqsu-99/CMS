@@ -7,42 +7,44 @@ using System.Text;
 
 namespace CMS.Server.Services
 {
-    /// <summary>
-    /// Single consolidated service that owns both PLC communication (read/write)
-    /// and the background polling loop that persists data to the database.
-    /// 
-    /// Replaces the old PlcService + PlcMonitorService pair.
-    /// </summary>
     public sealed class PlcService : BackgroundService
     {
         // ── Connection cache ───────────────────────────────────────────────────
         private static readonly ConcurrentDictionary<string, PlcOmron> _plcConnections = new();
 
-        // ── Guard: prevents a slow DB/PLC cycle from overlapping the next tick ─
+        // ── Guard: prevents a slow master PLC cycle from overlapping next tick ─
         private readonly SemaphoreSlim _pollLock = new(1, 1);
 
         // ── DI ────────────────────────────────────────────────────────────────
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<PlcService> _logger;
+        private readonly IHostEnvironment _env;
 
-        // ── PLC addresses ─────────────────────────────────────────────────────
+        // ── Master PLC addresses ───────────────────────────────────────────────
         private const string MasterIp = "172.17.86.80";
         private const string ReadKey = MasterIp + "_read";
         private const string WriteKey = MasterIp + "_write";
         private const int PollDelayMs = 200;
-        private const int MachineCount = 26;
 
+        // ── Machine list cache (shared by both loops) ──────────────────────────
         private IReadOnlyList<(int id, string name, string ip)> _cachedMachines = [];
         private DateTime _machinesCachedAt = DateTime.MinValue;
         private readonly SemaphoreSlim _machineCacheLock = new(1, 1);
         private const int MachineCacheMinutes = 5;
 
+        // ── Sub-PLC signal cache — written by sweep loop, read by controller ──
+        // null entry = machine registered but not yet read (shows "Reading" on frontend)
+        private readonly ConcurrentDictionary<int, Dictionary<string, object?>?> _subPlcCache = new();
+        private readonly ConcurrentDictionary<int, bool> _subPlcOnline = new();
+        private const int SubPlcSweepDelayMs = 5000;
+
         private int _iterationCount;
 
-        public PlcService(IServiceScopeFactory scopeFactory, ILogger<PlcService> logger)
+        public PlcService(IServiceScopeFactory scopeFactory, ILogger<PlcService> logger, IHostEnvironment env)
         {
             _scopeFactory = scopeFactory;
             _logger = logger;
+            _env = env;
         }
 
         // ── BackgroundService lifecycle ────────────────────────────────────────
@@ -59,13 +61,34 @@ namespace CMS.Server.Services
             return base.StopAsync(cancellationToken);
         }
 
-        // ── Main poll loop ─────────────────────────────────────────────────────
+        // ── Entry point ────────────────────────────────────────────────────────
+        // Sub-PLC sweep always runs (dev + production).
+        // Master PLC loop only runs in production (matches Program.cs registration guard).
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
+            if (_env.IsDevelopment())
+            {
+                _logger.LogInformation("[PlcService] Development mode — sub-PLC sweep only.");
+                await RunSubPlcSweepLoopAsync(stoppingToken);
+            }
+            else
+            {
+                await Task.WhenAll(
+                    RunMasterPlcLoopAsync(stoppingToken),
+                    RunSubPlcSweepLoopAsync(stoppingToken)
+                );
+            }
+
+            _logger.LogWarning("[PlcService] All loops exited.");
+        }
+
+        // ── Master PLC loop (production only) ─────────────────────────────────
+
+        private async Task RunMasterPlcLoopAsync(CancellationToken stoppingToken)
+        {
             while (!stoppingToken.IsCancellationRequested)
             {
-                // Non-blocking wait: if the previous iteration is still running, skip this tick
                 if (!await _pollLock.WaitAsync(0, stoppingToken))
                 {
                     await Task.Delay(PollDelayMs, stoppingToken);
@@ -92,8 +115,8 @@ namespace CMS.Server.Services
                     var dRaw = combinedData.GetValueOrDefault("D_RAW") as byte[] ?? Array.Empty<byte>();
                     var wRaw = combinedData.GetValueOrDefault("W_RAW") as bool[] ?? Array.Empty<bool>();
 
-                    // Build typed snapshot for all 26 machines
-                    var snapshots = BuildSnapshots(dRaw, wRaw, timestamp);
+                    var machines = await GetCachedMachinesAsync();
+                    var snapshots = BuildSnapshots(dRaw, wRaw, timestamp, machines.Count);
 
                     await PersistSnapshotsAsync(snapshots, stoppingToken);
                 }
@@ -113,16 +136,118 @@ namespace CMS.Server.Services
                 await Task.Delay(PollDelayMs, stoppingToken);
             }
 
-            _logger.LogWarning("[PlcService] Poll loop ended. Total iterations: {Count}", _iterationCount);
+            _logger.LogWarning("[PlcService] Master poll loop ended. Total iterations: {Count}", _iterationCount);
+        }
+
+        // ── Sub-PLC sweep loop (dev + production) ─────────────────────────────
+        // Cycles through all machines one-by-one. A slow/failed read for one
+        // machine does not block the others — the loop simply moves on and
+        // preserves the last known-good data for that machine.
+
+        private async Task RunSubPlcSweepLoopAsync(CancellationToken stoppingToken)
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    var machines = await GetCachedMachinesAsync();
+
+                    foreach (var machine in machines)
+                    {
+                        if (stoppingToken.IsCancellationRequested) break;
+
+                        try
+                        {
+                            var data = await Task.Run(() => ReadSubPlcSignals(machine.id), stoppingToken);
+                            data["machine_name"] = machine.name;
+                            _subPlcCache[machine.id] = data;
+                            _subPlcOnline[machine.id] = true;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning("[SubPlc M{Id}] Sweep read failed: {Msg}", machine.id, ex.Message);
+                            _subPlcOnline[machine.id] = false;
+                            // Cache entry is intentionally NOT cleared — stale data is better than blank.
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "[PlcService] Sub-PLC sweep loop error");
+                }
+
+                await Task.Delay(SubPlcSweepDelayMs, stoppingToken).ConfigureAwait(false);
+            }
+
+            _logger.LogWarning("[PlcService] Sub-PLC sweep loop ended.");
+        }
+
+        // ── Sub-PLC cache read — zero I/O, called by controller ───────────────
+
+        public Dictionary<string, object?> GetSubPlcSignalCache()
+        {
+            var result = new Dictionary<string, object?>();
+
+            // Machines that have been read at least once
+            foreach (var (id, data) in _subPlcCache)
+            {
+                result[id.ToString()] = new Dictionary<string, object?>
+                {
+                    ["data"] = data,
+                    ["online"] = _subPlcOnline.GetValueOrDefault(id, false),
+                };
+            }
+
+            // Machines registered but not yet reached by the sweep (still "Reading")
+            foreach (var machine in _cachedMachines)
+            {
+                if (!result.ContainsKey(machine.id.ToString()))
+                    result[machine.id.ToString()] = null;
+            }
+
+            return result;
+        }
+
+        // ── Machine list cache ─────────────────────────────────────────────────
+
+        public async Task<IReadOnlyList<(int id, string name, string ip)>> GetCachedMachinesAsync()
+        {
+            if ((DateTime.UtcNow - _machinesCachedAt).TotalMinutes < MachineCacheMinutes)
+                return _cachedMachines;
+
+            await _machineCacheLock.WaitAsync();
+            try
+            {
+                if ((DateTime.UtcNow - _machinesCachedAt).TotalMinutes < MachineCacheMinutes)
+                    return _cachedMachines;
+
+                using var scope = _scopeFactory.CreateScope();
+                var baseService = scope.ServiceProvider.GetRequiredService<BaseService>();
+                _cachedMachines = await baseService.GetMachineIdsAsync();
+                _machinesCachedAt = DateTime.UtcNow;
+                return _cachedMachines;
+            }
+            finally
+            {
+                _machineCacheLock.Release();
+            }
         }
 
         // ── Snapshot builder ───────────────────────────────────────────────────
 
-        private static List<PlcSnapshot> BuildSnapshots(byte[] dRaw, bool[] wRaw, DateTime timestamp)
+        private static List<PlcSnapshot> BuildSnapshots(byte[] dRaw, bool[] wRaw, DateTime timestamp, int machineCount)
         {
-            var list = new List<PlcSnapshot>(MachineCount);
+            var list = new List<PlcSnapshot>(machineCount);
 
-            for (int i = 0; i < MachineCount; i++)
+            for (int i = 0; i < machineCount; i++)
             {
                 int dOffset = i * 500;
                 int wOffset = i * 3;
@@ -132,7 +257,6 @@ namespace CMS.Server.Services
                     id_machine = i + 1,
                     time = timestamp,
 
-                    // D-memory (integers / floats / strings)
                     shot = Math.Min(ReadIntFromD(dRaw, 30 + dOffset), 10_000),
                     shot_accum = Math.Min(ReadIntFromD(dRaw, 32 + dOffset), 10_000),
                     act_ct = Math.Min(ReadFloatFromD(dRaw, 60 + dOffset), 1_000f),
@@ -149,7 +273,6 @@ namespace CMS.Server.Services
                     reject_purging = Math.Min(ReadFloatFromD(dRaw, 280 + dOffset), 10_000f),
                     reject_others = Math.Min(ReadFloatFromD(dRaw, 285 + dOffset), 10_000f),
 
-                    // W-memory (bits)
                     status_start = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 0),
                     status_off = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 1),
                     production_running = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 2),
@@ -174,7 +297,6 @@ namespace CMS.Server.Services
 
         private async Task PersistSnapshotsAsync(List<PlcSnapshot> snapshots, CancellationToken ct)
         {
-            // Create a short-lived scope per poll tick so DbContext/connections are disposed promptly
             using var scope = _scopeFactory.CreateScope();
             var baseService = scope.ServiceProvider.GetRequiredService<BaseService>();
 
@@ -193,7 +315,7 @@ namespace CMS.Server.Services
             }
         }
 
-        // ── Public read interface ──────────────────────────────────────────────
+        // ── Master PLC read ────────────────────────────────────────────────────
 
         public Dictionary<string, object> ReadAllPlcs()
         {
@@ -209,7 +331,6 @@ namespace CMS.Server.Services
 
                 plc.Connect();
 
-                // Triple-read with majority vote for signal consistency
                 if (!TryReadSnapshot(plc, out var d1, out var w1))
                 {
                     _logger.LogWarning("[PlcService] Read attempt 1 failed");
@@ -251,54 +372,7 @@ namespace CMS.Server.Services
             }
         }
 
-        public async Task<IReadOnlyList<(int id, string name, string ip)>> GetCachedMachinesAsync()
-        {
-            if ((DateTime.UtcNow - _machinesCachedAt).TotalMinutes < MachineCacheMinutes)
-                return _cachedMachines;
-
-            await _machineCacheLock.WaitAsync();
-            try
-            {
-                // Double-check after acquiring lock
-                if ((DateTime.UtcNow - _machinesCachedAt).TotalMinutes < MachineCacheMinutes)
-                    return _cachedMachines;
-
-                using var scope = _scopeFactory.CreateScope();
-                var baseService = scope.ServiceProvider.GetRequiredService<BaseService>();
-                var ids = await baseService.GetMachineIdsAsync();
-
-                _cachedMachines = ids;
-                _machinesCachedAt = DateTime.UtcNow;
-                return _cachedMachines;
-            }
-            finally
-            {
-                _machineCacheLock.Release();
-            }
-        }
-
-        // ── Reads all sub-PLC signals in parallel ─────────────────────────────────────
-        public async Task<Dictionary<string, object?>> ReadAllSubPlcSignalsAsync()
-        {
-            var machines = await GetCachedMachinesAsync();
-            var result = new ConcurrentDictionary<string, object?>();
-
-            await Parallel.ForEachAsync(machines, new ParallelOptions { MaxDegreeOfParallelism = 8 }, async (machine, _) =>
-            {
-                try
-                {
-                    var data = await Task.Run(() => ReadSubPlcSignals(machine.id));
-                    if (data != null) data["machine_name"] = machine.name;
-                    result[machine.id.ToString()] = data;
-                }
-                catch
-                {
-                    result[machine.id.ToString()] = null;
-                }
-            });
-
-            return new Dictionary<string, object?>(result);
-        }
+        // ── Sub-PLC read (one machine) ─────────────────────────────────────────
 
         public Dictionary<string, object?> ReadSubPlcSignals(int machineId)
         {
@@ -312,7 +386,6 @@ namespace CMS.Server.Services
                 if (!_plcConnections.TryGetValue(cacheKey, out plc) || plc == null)
                 {
                     byte remoteNode = (byte)(219 + machineId);
-                    // Timeout of 3s: fail fast on unreachable PLCs instead of waiting for OS TCP timeout
                     plc = new PlcOmron(ip, 9600, false, remoteNode, 136);
                     _plcConnections[cacheKey] = plc;
                 }
@@ -346,28 +419,26 @@ namespace CMS.Server.Services
 
                 if (dOk)
                 {
-                    int Didx(int wordAddr) => (wordAddr - dStart) * 2;
+                    int Didx(int word) => (word - dStart) * 2;
 
-                    // Production
-                    result["D48"] = ReadIntAt(dBuf, Didx(48));        // Shot
-                    result["D50"] = ReadIntAt(dBuf, Didx(50));        // Shot Accum
-                    result["D90"] = ReadFloatAt(dBuf, Didx(90));      // Cycle Time (float)
+                    result["D48"] = ReadIntAt(dBuf, Didx(48));
+                    result["D50"] = ReadIntAt(dBuf, Didx(50));
+                    result["D90"] = ReadFloatAt(dBuf, Didx(90));
 
-                    // Strings
-                    result["D200"] = ReadStringAt(dBuf, Didx(200), maxBytes: 200); // Type
-                    result["D300"] = ReadStringAt(dBuf, Didx(300), maxBytes: 200); // Packer
-                    result["D400"] = ReadStringAt(dBuf, Didx(400), maxBytes: 200); // Stop Category
-                    result["D500"] = ReadStringAt(dBuf, Didx(500), maxBytes: 200); // Remark
+                    result["D200"] = ReadStringAt(dBuf, Didx(200));
+                    result["D300"] = ReadStringAt(dBuf, Didx(300));
+                    result["D400"] = ReadStringAt(dBuf, Didx(400));
+                    result["D500"] = ReadStringAt(dBuf, Didx(500));
 
                     // Reject (pcs)
                     result["D700"] = ReadFloatAt(dBuf, Didx(700));
-                    result["D705"] = ReadFloatAt(dBuf, Didx(705));
-                    result["D710"] = ReadFloatAt(dBuf, Didx(710));
-                    result["D715"] = ReadFloatAt(dBuf, Didx(715));
-                    result["D720"] = ReadFloatAt(dBuf, Didx(720));
-                    result["D725"] = ReadFloatAt(dBuf, Didx(725));
-                    result["D730"] = ReadFloatAt(dBuf, Didx(730));
-                    result["D735"] = ReadFloatAt(dBuf, Didx(735));
+                    result["D705"] = ReadFloatAt(dBuf,  Didx(705));
+                    result["D710"] = ReadFloatAt(dBuf,  Didx(710));
+                    result["D715"] = ReadFloatAt(dBuf,  Didx(715));
+                    result["D720"] = ReadFloatAt(dBuf,  Didx(720));
+                    result["D725"] = ReadFloatAt(dBuf,  Didx(725));
+                    result["D730"] = ReadFloatAt(dBuf,  Didx(730));
+                    result["D735"] = ReadFloatAt(dBuf,  Didx(735));
 
                     // Reject (kg)
                     result["D740"] = ReadFloatAt(dBuf, Didx(740));
@@ -518,6 +589,7 @@ namespace CMS.Server.Services
                 ["maintenance"] = 10,
                 ["technician"] = 12,
                 ["production"] = 14,
+                ["qc"] = 16,
             };
 
             PlcOmron? plc = null;
@@ -621,12 +693,13 @@ namespace CMS.Server.Services
 
         private bool AreSignalsConsistent(bool[] w1, bool[] w2, byte[] d1, byte[] d2)
         {
-            for (int i = 0; i < MachineCount; i++)
+            int machineCount = _cachedMachines.Count;
+
+            for (int i = 0; i < machineCount; i++)
             {
                 int wOffset = i * 3;
                 int dOffset = i * 500;
 
-                // Stable W bits
                 if (ReadBit(w1, wOffset, 0) != ReadBit(w2, wOffset, 0)) return false; // status_start
                 if (ReadBit(w1, wOffset, 1) != ReadBit(w2, wOffset, 1)) return false; // status_off
                 if (ReadBit(w1, wOffset, 5) != ReadBit(w2, wOffset, 5)) return false; // remark_signal
@@ -638,9 +711,9 @@ namespace CMS.Server.Services
                 if (ReadBit(w1, wOffset + 1, 4) != ReadBit(w2, wOffset + 1, 4)) return false; // util_material
                 if (ReadBit(w1, wOffset + 1, 5) != ReadBit(w2, wOffset + 1, 5)) return false; // util_dry_cycle
 
-                // Stop-category string
                 if (ReadString(d1, 300 + dOffset) != ReadString(d2, 300 + dOffset)) return false;
             }
+
             return true;
         }
 
@@ -705,15 +778,11 @@ namespace CMS.Server.Services
         private static string ReadStringAt(byte[] buf, int byteIndex, int maxBytes = 200)
         {
             if (byteIndex >= buf.Length) return string.Empty;
-
             int available = Math.Min(maxBytes, buf.Length - byteIndex);
-
             int length = 0;
             while (length < available && buf[byteIndex + length] != 0)
                 length++;
-
             if (length == 0) return string.Empty;
-
             return Encoding.ASCII.GetString(buf, byteIndex, length).Trim();
         }
 
@@ -753,13 +822,8 @@ namespace CMS.Server.Services
         }
     }
 
-    // ── Typed snapshot record (replaces anonymous object) ─────────────────────
+    // ── Typed snapshot record ──────────────────────────────────────────────────
 
-    /// <summary>
-    /// Strongly typed PLC data snapshot for a single machine.
-    /// Passed directly to BaseService.insertMachineMaster() so dynamic dispatch
-    /// still works via the existing service signature.
-    /// </summary>
     public sealed record PlcSnapshot
     {
         public int id_machine { get; init; }

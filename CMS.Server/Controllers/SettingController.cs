@@ -46,7 +46,7 @@ public class SettingController(SettingService settingService) : ControllerBase
     // ── PLC Signals ────────────────────────────────────────────────────────────
 
     [HttpGet("plc-signals")]
-    public async Task<IActionResult> GetPlcSignals([FromQuery] int? machineId)
+    public IActionResult GetPlcSignals([FromQuery] int? machineId)
     {
         if (machineId.HasValue)
         {
@@ -57,6 +57,6 @@ public class SettingController(SettingService settingService) : ControllerBase
             catch (Exception ex) { return StatusCode(503, new { error = ex.Message }); }
         }
 
-        return Ok(await settingService.ReadAllPlcSignals());
+        return Ok(settingService.GetAllPlcSignals());
     }
 }

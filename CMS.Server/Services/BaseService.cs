@@ -57,8 +57,8 @@ public class BaseService
 
         var where = string.IsNullOrWhiteSpace(whereClause) ? "" : $" WHERE {whereClause}";
 
-        var parts = ids.Select(id =>
-            $"SELECT {id} AS id_machine, machine_name, id_type, mould, COALESCE(start, GETDATE()) AS start, COALESCE(finish, GETDATE()) as finish, COALESCE(UPPER(category), 'N/A') as category, problem,  COALESCE(mould_category, 0) AS mould_category, shot, act_ct, shift, production_date, status_start FROM machine_log_{id}{where}");
+        var parts = ids.Select(m =>
+            $"SELECT {m.id} AS id_machine, machine_name, id_type, mould, COALESCE(start, GETDATE()) AS start, COALESCE(finish, GETDATE()) as finish, COALESCE(UPPER(category), 'N/A') as category, problem,  COALESCE(mould_category, 0) AS mould_category, shot, act_ct, shift, production_date, status_start FROM machine_log_{m.id}{where}");
 
         return string.Join("\n                    UNION ALL\n                    ", parts);
     }

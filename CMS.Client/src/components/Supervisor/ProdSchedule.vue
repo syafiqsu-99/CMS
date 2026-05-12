@@ -484,7 +484,7 @@
 
       const rows = rawRows.map(sanitiseCsvRow)
 
-      const response = await fetch('/api/MachineLog/ImportReport', {
+      const response = await fetch('/api/supervisor/import-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reportList: rows })
