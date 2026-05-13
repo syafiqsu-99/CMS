@@ -159,13 +159,21 @@
     const start = dateString(startDate.value);
     const end = dateString(endDate.value);
 
-    // Use the new API routes
     const [oeeRes, rejectRes, outputRes, downtimeRes] = await Promise.all([
       fetch(`/api/oee?start_date=${start}&end_date=${end}`),
       fetch(`/api/oee/reject?start_date=${start}&end_date=${end}`),
       fetch(`/api/oee/output?start_date=${start}&end_date=${end}`),
       fetch(`/api/oee/downtime?start_date=${start}&end_date=${end}`),
     ]);
+
+    if (!oeeRes.ok) {
+      const text = await oeeRes.text();
+      console.error('[OEE] /api/oee failed:', oeeRes.status, text);
+      return;
+    }
+    if (!rejectRes.ok) { console.error('[OEE] /api/oee/reject failed:', rejectRes.status); return; }
+    if (!outputRes.ok) { console.error('[OEE] /api/oee/output failed:', outputRes.status); return; }
+    if (!downtimeRes.ok) { console.error('[OEE] /api/oee/downtime failed:', downtimeRes.status); return; }
 
     machineData.value = (await oeeRes.json()).map(normaliseRow);
     rejectData.value = await rejectRes.json();

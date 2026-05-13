@@ -1,5 +1,6 @@
 ﻿using CMS.Server.Models;
 using Microsoft.Data.SqlClient;
+using System.Collections.Generic;
 using System.Text.Json;
 
 namespace CMS.Server.Services;
@@ -457,7 +458,7 @@ public class SupervisorService(PlcService plcService, string connectionString) :
                     gross_weight       = @gross_weight,
                     part_weight        = @part_weight,
                     sap_ct             = @sap_ct,
-                    shot               = @shot_accum,
+                    shot               = @shot,
                     qty_order          = @qty_order,
                     wip_opening        = @wip_opening,
                     wip_closing        = @wip_closing,
@@ -503,7 +504,7 @@ public class SupervisorService(PlcService plcService, string connectionString) :
                     @packer, @jo_no,
                     @new_id_type, @new_mould, @material, @type,
                     @qty_perct, @gross_weight, @part_weight, @sap_ct,
-                    @shot_accum, @qty_order, @wip_opening, @wip_closing,
+                    @shot, @qty_order, @wip_opening, @wip_closing,
                     @finish_good, @qty_accum,
                     @reject_startup, @reject_prod,
                     @act_ct, @production_running,
@@ -514,115 +515,123 @@ public class SupervisorService(PlcService plcService, string connectionString) :
 
         using var conn = await CreateConnectionAsync();
 
-        var grouped = reportList
-            .GroupBy(r => (
-                IdMachine: Convert.ToInt32(r["id_machine"].GetDouble()),
-                Date: DateOnly.TryParse(r["production_date"].GetString(), out var date) ? date : DateOnly.MinValue,
-                Shift: Convert.ToInt32(r["shift"].GetDouble())
-            ))
-            .ToList();
+        await using (var disableCmd = new SqlCommand("DISABLE TRIGGER updateReport ON report;", conn))
+            await disableCmd.ExecuteNonQueryAsync();
 
-        foreach (var group in grouped)
+        try
         {
-            int idMachine = group.Key.IdMachine;
-            DateOnly rowDate = group.Key.Date;
-            int rowShift = group.Key.Shift;
+            var grouped = reportList
+                .GroupBy(r => (
+                    IdMachine: Convert.ToInt32(r["id_machine"].GetDouble()),
+                    Date: DateOnly.TryParse(r["production_date"].GetString(), out var date) ? date : DateOnly.MinValue,
+                    Shift: Convert.ToInt32(r["shift"].GetDouble())
+                ))
+                .ToList();
 
-            List<Dictionary<string, JsonElement>> csvRows = group.ToList();
-
-            var dbRows = new List<(int IdType, int Mould)>();
-
-            await using (var checkCmd = new SqlCommand(checkSql, conn))
+            foreach (var group in grouped)
             {
-                checkCmd.Parameters.AddWithValue("@id_machine", idMachine);
-                checkCmd.Parameters.AddWithValue("@production_date", rowDate);
-                checkCmd.Parameters.AddWithValue("@shift", rowShift);
+                int idMachine = group.Key.IdMachine;
+                DateOnly rowDate = group.Key.Date;
+                int rowShift = group.Key.Shift;
 
-                await using var reader = await checkCmd.ExecuteReaderAsync();
-                while (await reader.ReadAsync())
-                    dbRows.Add((Convert.ToInt32(reader["id_type"]), Convert.ToInt32(reader["mould"])));
-            }
+                List<Dictionary<string, JsonElement>> csvRows = group.ToList();
 
-            foreach (var csvRow in csvRows)
-            {
-                int csvIdType = Convert.ToInt32(csvRow["id_type"].GetDouble());
-                int csvMould = Convert.ToInt32(csvRow["mould"].GetDouble());
+                var dbRows = new List<(int IdType, int Mould)>();
 
-                var matchedDb = dbRows.FirstOrDefault(db => db.IdType == csvIdType && db.Mould == csvMould);
-                bool hasMatch = matchedDb != default;
-
-                string material = Convert.ToString(csvRow["material"].GetString()) ?? string.Empty;
-                string type = Convert.ToString(csvRow["type"].GetString()) ?? string.Empty;
-                int qtyPerct = Convert.ToInt32(csvRow["qty_perct"].GetDouble());
-                float grossWeight = Convert.ToSingle(csvRow["gross_weight"].GetDouble());
-                float partWeight = Convert.ToSingle(csvRow["part_weight"].GetDouble());
-                float sapCt = Convert.ToSingle(csvRow["sap_ct"].GetDouble());
-
-                await using var sapCmd = new SqlCommand(sapSql, conn);
-                sapCmd.Parameters.AddWithValue("@id_type", csvIdType);
-                sapCmd.Parameters.AddWithValue("@mould", csvMould);
-
-                await using var sapReader = await sapCmd.ExecuteReaderAsync();
-                if (await sapReader.ReadAsync())
+                await using (var checkCmd = new SqlCommand(checkSql, conn))
                 {
-                    material = Convert.ToString(sapReader["material"]) ?? string.Empty;
-                    type = Convert.ToString(sapReader["type"]) ?? string.Empty;
-                    qtyPerct = Convert.ToInt32(sapReader["qty_perct"]);
-                    grossWeight = Convert.ToSingle(sapReader["gross_weight"]);
-                    partWeight = Convert.ToSingle(sapReader["part_weight"]);
-                    sapCt = Convert.ToSingle(sapReader["sap_ct"]);
+                    checkCmd.Parameters.AddWithValue("@id_machine", idMachine);
+                    checkCmd.Parameters.AddWithValue("@production_date", rowDate);
+                    checkCmd.Parameters.AddWithValue("@shift", rowShift);
+
+                    await using var reader = await checkCmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                        dbRows.Add((Convert.ToInt32(reader["id_type"]), Convert.ToInt32(reader["mould"])));
                 }
 
-                int origIdType = hasMatch ? matchedDb.IdType : (dbRows.Count > 0 ? dbRows[0].IdType : csvIdType);
-                int origMould = hasMatch ? matchedDb.Mould : (dbRows.Count > 0 ? dbRows[0].Mould : csvMould);
+                foreach (var csvRow in csvRows)
+                {
+                    int csvIdType = Convert.ToInt32(csvRow["id_type"].GetDouble());
+                    int csvMould = Convert.ToInt32(csvRow["mould"].GetDouble());
 
-                bool shouldInsert = !hasMatch && dbRows.Count == 0;
+                    var matchedDb = dbRows.FirstOrDefault(db => db.IdType == csvIdType && db.Mould == csvMould);
+                    bool hasMatch = matchedDb != default;
 
-                if (!hasMatch && dbRows.Count > 0)
-                    dbRows.RemoveAt(0);
+                    string material = csvRow.TryGetValue("material", out var mEl) ? mEl.GetString() ?? string.Empty : string.Empty;
+                    string type = csvRow.TryGetValue("type", out var tEl) ? tEl.GetString() ?? string.Empty : string.Empty;
+                    int qtyPerct = csvRow.TryGetValue("qty_perct", out var qpEl) ? Convert.ToInt32(qpEl.GetDouble()) : 0;
+                    float grossWeight = csvRow.TryGetValue("gross_weight", out var gwEl) ? Convert.ToSingle(gwEl.GetDouble()) : 0f;
+                    float partWeight = csvRow.TryGetValue("part_weight", out var pwEl) ? Convert.ToSingle(pwEl.GetDouble()) : 0f;
+                    float sapCt = csvRow.TryGetValue("sap_ct", out var scEl) ? Convert.ToSingle(scEl.GetDouble()) : 0f;
 
-                string sql = shouldInsert ? insertSql : updateSql;
+                    await using var sapCmd = new SqlCommand(sapSql, conn);
+                    sapCmd.Parameters.AddWithValue("@id_type", csvIdType);
+                    sapCmd.Parameters.AddWithValue("@mould", csvMould);
 
-                await using var cmd = new SqlCommand(sql, conn);
+                    await using var sapReader = await sapCmd.ExecuteReaderAsync();
+                    if (await sapReader.ReadAsync())
+                    {
+                        material = Convert.ToString(sapReader["material"]) ?? string.Empty;
+                        type = Convert.ToString(sapReader["type"]) ?? string.Empty;
+                        qtyPerct = Convert.ToInt32(sapReader["qty_perct"]);
+                        grossWeight = Convert.ToSingle(sapReader["gross_weight"]);
+                        partWeight = Convert.ToSingle(sapReader["part_weight"]);
+                        sapCt = Convert.ToSingle(sapReader["sap_ct"]);
+                    }
 
-                cmd.Parameters.AddWithValue("@id_machine", idMachine);
-                cmd.Parameters.AddWithValue("@production_date", rowDate);
-                cmd.Parameters.AddWithValue("@shift", rowShift);
-                cmd.Parameters.AddWithValue("@orig_id_type", origIdType);
-                cmd.Parameters.AddWithValue("@orig_mould", origMould);
-                cmd.Parameters.AddWithValue("@new_id_type", csvIdType);
-                cmd.Parameters.AddWithValue("@new_mould", csvMould);
-                cmd.Parameters.AddWithValue("@material", material);
-                cmd.Parameters.AddWithValue("@type", type);
-                cmd.Parameters.AddWithValue("@qty_perct", qtyPerct);
-                cmd.Parameters.AddWithValue("@gross_weight", grossWeight);
-                cmd.Parameters.AddWithValue("@part_weight", partWeight);
-                cmd.Parameters.AddWithValue("@sap_ct", sapCt);
-                cmd.Parameters.AddWithValue("@packer", Convert.ToString(csvRow["packer"].GetString()));
-                cmd.Parameters.AddWithValue("@jo_no", Convert.ToString(csvRow["jo_no"].GetString()));
-                cmd.Parameters.AddWithValue("@shot_accum", Convert.ToInt32(csvRow["shot"].GetDouble()));
-                cmd.Parameters.AddWithValue("@qty_order", Convert.ToInt32(csvRow["qty_order"].GetDouble()));
-                cmd.Parameters.AddWithValue("@wip_opening", Convert.ToInt32(csvRow["wip_opening"].GetDouble()));
-                cmd.Parameters.AddWithValue("@wip_closing", Convert.ToInt32(csvRow["wip_closing"].GetDouble()));
-                cmd.Parameters.AddWithValue("@finish_good", Convert.ToInt32(csvRow["finish_good"].GetDouble()));
-                cmd.Parameters.AddWithValue("@qty_accum", Convert.ToInt32(csvRow["qty_accum"].GetDouble()));
-                cmd.Parameters.AddWithValue("@reject_startup", Convert.ToSingle(csvRow["reject_startup"].GetDouble()));
-                cmd.Parameters.AddWithValue("@reject_prod", Convert.ToSingle(csvRow["reject_prod"].GetDouble()));
-                cmd.Parameters.AddWithValue("@act_ct", Convert.ToSingle(csvRow["act_ct"].GetDouble()));
-                cmd.Parameters.AddWithValue("@production_running", Convert.ToSingle(csvRow["production_running"].GetDouble()));
-                cmd.Parameters.AddWithValue("@change_full_set", Convert.ToSingle(csvRow["change_full_set"].GetDouble()));
-                cmd.Parameters.AddWithValue("@change_half_set", Convert.ToSingle(csvRow["change_half_set"].GetDouble()));
-                cmd.Parameters.AddWithValue("@change_parts", Convert.ToSingle(csvRow["change_parts"].GetDouble()));
-                cmd.Parameters.AddWithValue("@maintenance_dt", Convert.ToSingle(csvRow["maintenance_dt"].GetDouble()));
-                cmd.Parameters.AddWithValue("@technician_dt", Convert.ToSingle(csvRow["technician_dt"].GetDouble()));
-                cmd.Parameters.AddWithValue("@production_dt", Convert.ToSingle(csvRow["production_dt"].GetDouble()));
-                cmd.Parameters.AddWithValue("@remark", Convert.ToString(csvRow["remark"].GetString()));
-                cmd.Parameters.AddWithValue("@reject_purging", Convert.ToSingle(csvRow["reject_purging"].GetDouble()));
-                cmd.Parameters.AddWithValue("@reject_preform", Convert.ToSingle(csvRow["reject_preform"].GetDouble()));
-                cmd.Parameters.AddWithValue("@reject_total_pcs", Convert.ToInt32(csvRow["reject_total_pcs"].GetDouble()));
+                    int origIdType = hasMatch ? matchedDb.IdType : (dbRows.Count > 0 ? dbRows[0].IdType : csvIdType);
+                    int origMould = hasMatch ? matchedDb.Mould : (dbRows.Count > 0 ? dbRows[0].Mould : csvMould);
 
-                await cmd.ExecuteNonQueryAsync();
+                    string packer = csvRow.TryGetValue("packer", out var pEl) ? pEl.GetString() ?? string.Empty : string.Empty;
+                    string joNo = csvRow.TryGetValue("jo_no", out var jEl) ? jEl.GetString() ?? "0" : "0";
+
+                    var sql = hasMatch ? updateSql : insertSql;
+
+                    await using var cmd = new SqlCommand(sql, conn);
+                    cmd.Parameters.AddWithValue("@id_machine", idMachine);
+                    cmd.Parameters.AddWithValue("@production_date", rowDate);
+                    cmd.Parameters.AddWithValue("@shift", rowShift);
+                    cmd.Parameters.AddWithValue("@packer", packer);
+                    cmd.Parameters.AddWithValue("@jo_no", joNo);
+                    cmd.Parameters.AddWithValue("@new_id_type", csvIdType);
+                    cmd.Parameters.AddWithValue("@new_mould", csvMould);
+                    cmd.Parameters.AddWithValue("@orig_id_type", origIdType);
+                    cmd.Parameters.AddWithValue("@orig_mould", origMould);
+                    cmd.Parameters.AddWithValue("@material", material);
+                    cmd.Parameters.AddWithValue("@type", type);
+                    cmd.Parameters.AddWithValue("@qty_perct", qtyPerct);
+                    cmd.Parameters.AddWithValue("@gross_weight", grossWeight);
+                    cmd.Parameters.AddWithValue("@part_weight", partWeight);
+                    cmd.Parameters.AddWithValue("@sap_ct", sapCt);
+                    cmd.Parameters.AddWithValue("@shot", csvRow.TryGetValue("shot", out var saEl) ? Convert.ToInt32(saEl.GetDouble()) : 0);
+                    cmd.Parameters.AddWithValue("@qty_order", csvRow.TryGetValue("qty_order", out var qoEl) ? Convert.ToInt32(qoEl.GetDouble()) : 0);
+                    cmd.Parameters.AddWithValue("@wip_opening", csvRow.TryGetValue("wip_opening", out var woEl) ? Convert.ToInt32(woEl.GetDouble()) : 0);
+                    cmd.Parameters.AddWithValue("@wip_closing", csvRow.TryGetValue("wip_closing", out var wcEl) ? Convert.ToInt32(wcEl.GetDouble()) : 0);
+                    cmd.Parameters.AddWithValue("@finish_good", csvRow.TryGetValue("finish_good", out var fgEl) ? Convert.ToInt32(fgEl.GetDouble()) : 0);
+                    cmd.Parameters.AddWithValue("@qty_accum", csvRow.TryGetValue("qty_accum", out var qaEl) ? Convert.ToInt32(qaEl.GetDouble()) : 0);
+                    cmd.Parameters.AddWithValue("@reject_startup", csvRow.TryGetValue("reject_startup", out var rsEl) ? Convert.ToSingle(rsEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@reject_prod", csvRow.TryGetValue("reject_prod", out var rpEl) ? Convert.ToSingle(rpEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@act_ct", csvRow.TryGetValue("act_ct", out var acEl) ? Convert.ToSingle(acEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@production_running", csvRow.TryGetValue("production_running", out var prEl) ? Convert.ToSingle(prEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@change_full_set", csvRow.TryGetValue("change_full_set", out var cfsEl) ? Convert.ToSingle(cfsEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@change_half_set", csvRow.TryGetValue("change_half_set", out var chsEl) ? Convert.ToSingle(chsEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@change_parts", csvRow.TryGetValue("change_parts", out var cpEl) ? Convert.ToSingle(cpEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@maintenance_dt", csvRow.TryGetValue("maintenance_dt", out var mdEl) ? Convert.ToSingle(mdEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@technician_dt", csvRow.TryGetValue("technician_dt", out var tdEl) ? Convert.ToSingle(tdEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@production_dt", csvRow.TryGetValue("production_dt", out var pdEl) ? Convert.ToSingle(pdEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@remark", csvRow.TryGetValue("remark", out var rmEl) ? rmEl.GetString() ?? string.Empty : string.Empty);
+                    cmd.Parameters.AddWithValue("@reject_purging", csvRow.TryGetValue("reject_purging", out var rpuEl) ? Convert.ToSingle(rpuEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@reject_preform", csvRow.TryGetValue("reject_preform", out var rpfEl) ? Convert.ToSingle(rpfEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@reject_total_pcs", csvRow.TryGetValue("reject_total_pcs", out var rtpEl) ? Convert.ToInt32(rtpEl.GetDouble()) : 0);
+
+                    await cmd.ExecuteNonQueryAsync();
+                }
             }
+        }
+        finally
+        {
+            await using var enableCmd = new SqlCommand("ENABLE TRIGGER updateReport ON report;", conn);
+            await enableCmd.ExecuteNonQueryAsync();
         }
 
         var reloadDate = DateOnly.TryParse(reportList.First()["production_date"].GetString(), out var date) ? date : DateOnly.MinValue;

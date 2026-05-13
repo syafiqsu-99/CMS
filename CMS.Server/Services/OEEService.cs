@@ -216,31 +216,30 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
             SELECT TOP 10
                 sap.id_type,
                 sap.type,
-                SUM(DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE()))) / 3600.0 AS hours
+                ROUND(SUM(DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE()))) / 3600.0, 2) AS hours
             FROM CombinedLogs ml
-            LEFT JOIN sap
-                ON sap.id_type = ml.id_type
-               AND sap.mould = ml.mould
+            INNER JOIN sap
+                ON  sap.id_type = ml.id_type
+                AND sap.mould   = ml.mould
             WHERE ml.id_type <> 123456
-              AND ml.category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE', 'SCHEDULED MAINTENANCE')
+              AND ml.category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE')
             GROUP BY sap.id_type, sap.type
             ORDER BY hours DESC;";
 
         var result = new List<object>();
-
         await using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@start_date", start_date);
         cmd.Parameters.AddWithValue("@end_date", end_date);
+        await using var reader = await cmd.ExecuteReaderAsync();
 
-        using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
             result.Add(new
             {
-                id_type = Convert.ToInt32(reader["id_type"]),
-                type = Convert.ToString(reader["type"]),
-                hours = Convert.ToDouble(reader["hours"])
+                id_type = reader["id_type"] == DBNull.Value ? 0 : Convert.ToInt32(reader["id_type"]),
+                type = reader["type"] == DBNull.Value ? string.Empty : Convert.ToString(reader["type"]),
+                hours = reader["hours"] == DBNull.Value ? 0.0 : Convert.ToDouble(reader["hours"]),
             });
         }
 

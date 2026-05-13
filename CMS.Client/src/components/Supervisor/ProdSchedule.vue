@@ -487,7 +487,7 @@
       const response = await fetch('/api/supervisor/import-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reportList: rows })
+        body: JSON.stringify(rows)
       });
 
       if (!response.ok) {
@@ -510,8 +510,6 @@
     } finally {
       importing.value = false;
       }
-      const parsedDate = new Date(date);
-      return parsedDate.toLocaleDateString('en-CA');
     }
 
   function showSnackbar(message, color = 'success') {
