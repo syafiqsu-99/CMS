@@ -1,0 +1,24 @@
+SELECT
+	machine_name,
+    id_machine,
+    production_date,
+    shift,
+    COUNT(*)                                                          AS row_count,
+    SUM(COALESCE(production_running, 0)
+      + COALESCE(change_full_set,    0)
+      + COALESCE(change_half_set,    0)
+      + COALESCE(change_parts,       0)
+      + COALESCE(maintenance_dt,     0)
+      + COALESCE(technician_dt,      0)
+      + COALESCE(production_dt,      0))                             AS total_hours
+FROM report
+WHERE production_date between '2026-04-01' and '2026-04-30'
+GROUP BY machine_name, id_machine, production_date, shift
+HAVING SUM(COALESCE(production_running, 0)
+         + COALESCE(change_full_set,    0)
+         + COALESCE(change_half_set,    0)
+         + COALESCE(change_parts,       0)
+         + COALESCE(maintenance_dt,     0)
+         + COALESCE(technician_dt,      0)
+         + COALESCE(production_dt,      0)) > 12.1
+ORDER BY id_machine, production_date, shift;

@@ -1,12 +1,12 @@
-DECLARE @id_machine INT = 16;
-DECLARE @start_date DATE = '2026-01-01';
-DECLARE @end_date DATE = '2026-01-31';
+DECLARE @id_machine INT = 1;
+DECLARE @start_date DATE = '2026-04-01';
+DECLARE @end_date DATE = '2026-04-30';
 
 ;WITH BaseData AS (
     SELECT
         r.*,
         CASE 
-            WHEN r.shift = 1 THEN DATEADD(HOUR, 6, CAST(r.production_date AS DATETIME))
+            WHEN r.shift = 1 THEN DATEADD(HOUR, 6,  CAST(r.production_date AS DATETIME))
             WHEN r.shift = 2 THEN DATEADD(HOUR, 18, CAST(r.production_date AS DATETIME))
         END AS shift_start
     FROM report r
@@ -24,23 +24,23 @@ Activities AS (
         v.status_start
     FROM BaseData b
     CROSS APPLY (VALUES
-        (1, b.production_running, 'PRODUCTION RUNNING', NULL, NULL, 1),
-        (2, b.change_full_set,    'MOULD CHANGE', 'FULL SET', 1, 0),
-        (3, b.change_half_set,    'MOULD CHANGE', 'HALF SET', 2, 0),
-        (4, b.change_parts,       'MOULD CHANGE', 'BLOW MOULD', 3, 0),
-        (5, b.maintenance_dt,     'SCHEDULED MAINTENANCE', NULL, NULL, 0),
-        (6, b.technician_dt,      'QUALITY ISSUE', b.remark, NULL, 0),
-        (7, b.production_dt,      'NO SCHEDULE', NULL, NULL, 0)
+        (1, b.production_running, 'PRODUCTION RUNNING',    NULL,        NULL, 1),
+        (2, b.change_full_set,    'MOULD CHANGE',          'FULL SET',     1, 0),
+        (3, b.change_half_set,    'MOULD CHANGE',          'HALF SET',     2, 0),
+        (4, b.change_parts,       'MOULD CHANGE',          'BLOW MOULD',   3, 0),
+        (5, b.maintenance_dt,     'SCHEDULED MAINTENANCE', NULL,        NULL, 0),
+        (6, b.technician_dt,      'QUALITY ISSUE',         b.remark,    NULL, 0),
+        (7, b.production_dt,      'NO SCHEDULE',           NULL,        NULL, 0)
     ) v(activity_order, duration, category, problem, mould_category, status_start)
     WHERE v.duration > 0
 ),
 Sequenced AS (
     SELECT *,
-        SUM(duration) OVER (
+        SUM(CAST(duration * 3600000 AS BIGINT)) OVER (
             PARTITION BY id_machine, production_date, shift
             ORDER BY activity_order
             ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-        ) AS prev_hours
+        ) AS prev_ms
     FROM Activities
 ),
 FlagAssignment AS (
@@ -53,7 +53,7 @@ FlagAssignment AS (
         ) AS assign_row
     FROM Sequenced
 )
-INSERT INTO machine_log_16 (
+INSERT INTO machine_log_1 (
     machine_name,
     id_type,
     mould,
@@ -72,22 +72,18 @@ SELECT
     machine_name,
     id_type,
     mould,
-    DATEADD(HOUR, ISNULL(prev_hours,0), shift_start) AS start,
-    DATEADD(HOUR, ISNULL(prev_hours,0) + duration, shift_start) AS finish,
-
+    DATEADD(MILLISECOND, ISNULL(prev_ms, 0), shift_start) AS start,
+    DATEADD(MILLISECOND, ISNULL(prev_ms, 0) + CAST(duration * 3600000 AS BIGINT), shift_start) AS finish,
     CASE WHEN assign_row = 1 THEN shot ELSE 0 END AS shot,
-
     category,
     problem,
     mould_category,
     shift,
     production_date,
-
     CASE 
         WHEN assign_row = 1 AND status_start = 1 THEN act_ct 
         ELSE NULL 
     END AS act_ct,
-
     status_start
 FROM FlagAssignment
 ORDER BY production_date, shift, activity_order;

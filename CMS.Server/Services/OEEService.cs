@@ -32,6 +32,7 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                 machine_name = reader["machine_name"].ToString(),
                 run_time = Convert.ToSingle(reader["run_time"]),
                 down_time = Convert.ToSingle(reader["down_time"]),
+                available_hours = Convert.ToSingle(reader["available_hours"]),
                 unallocated = Convert.ToSingle(reader["unallocated"]),
                 material_used = Convert.ToSingle(reader["material_used"]),
                 reject_weight = Convert.ToSingle(reader["reject_weight"]),
@@ -52,6 +53,16 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
             WITH CombinedLogs AS (
                 {logCte}
             ),
+            ShiftIsOffday AS (
+                SELECT CASE
+                    WHEN EXISTS (
+                        SELECT 1 FROM calendar
+                        WHERE production_date = @today
+                          AND shift           = @currentShift
+                          AND day_type        = 'OFFDAY'
+                    ) THEN 1 ELSE 0
+                END AS is_offday
+            ),
             MachineAgg AS (
                 SELECT id_machine, machine_name, id_type, mould,
                     SUM(shot) AS shot,
@@ -59,6 +70,9 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                              THEN DATEDIFF(SECOND,start,COALESCE(finish,GETDATE()))/3600.0 ELSE 0 END) AS run_time,
                     SUM(CASE WHEN category<>'PRODUCTION RUNNING'
                              THEN DATEDIFF(SECOND,start,COALESCE(finish,GETDATE()))/3600.0 ELSE 0 END) AS down_time,
+                    SUM(CASE WHEN category IS NULL
+                             THEN DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) / 3600.0
+                             ELSE 0 END) AS unallocated,
                     AVG(NULLIF(act_ct,0)) AS act_ct
                 FROM CombinedLogs
                 WHERE production_date=@today AND shift=@currentShift
@@ -82,14 +96,23 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                     AND r.production_date=@today AND r.shift=@currentShift
             ),
             MachineSummary AS (
-                SELECT id_machine, machine_name,
-                    SUM(run_time) AS run_time, SUM(down_time) AS down_time,
-                    0 AS unallocated,
-                    SUM(material_used) AS material_used, SUM(reject_weight) AS reject_weight,
-                    SUM(total_sap_time) AS total_sap_time, SUM(total_actual_time) AS total_actual_time
-                FROM WithReject GROUP BY id_machine, machine_name
+                SELECT
+                    w.id_machine,
+                    w.machine_name,
+                    SUM(w.run_time)          AS run_time,
+                    SUM(w.down_time)         AS down_time,
+                    SUM(w.unallocated)       AS unallocated,
+                    SUM(w.material_used)     AS material_used,
+                    SUM(w.reject_weight)     AS reject_weight,
+                    SUM(w.total_sap_time)    AS total_sap_time,
+                    SUM(w.total_actual_time) AS total_actual_time,
+                    CASE WHEN (SELECT is_offday FROM ShiftIsOffday) = 1 THEN 0.0
+                         ELSE SUM(w.run_time) + SUM(w.down_time)
+                    END AS available_hours
+                FROM WithReject w
+                GROUP BY w.id_machine, w.machine_name
             )
-            SELECT id_machine, machine_name, run_time, down_time, unallocated, material_used, reject_weight,
+            SELECT id_machine, machine_name, run_time, down_time, available_hours, unallocated, material_used, reject_weight,
                 CASE WHEN (run_time+down_time)=0 THEN 0 ELSE (run_time*1.0/(run_time+down_time))*100 END AS availability,
                 CASE WHEN total_actual_time=0    THEN 0 ELSE (total_sap_time*1.0/total_actual_time)*100 END AS performance,
                 CASE WHEN material_used=0         THEN 0 ELSE ((material_used-reject_weight)*1.0/material_used)*100 END AS quality,
@@ -112,11 +135,18 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
             FROM AllDates d CROSS JOIN (SELECT 1 AS shift UNION ALL SELECT 2) s
         ),
         EffectiveCalendar AS (
-            SELECT sd.production_date, sd.shift,
-                CASE WHEN EXISTS(SELECT 1 FROM calendar cx WHERE cx.production_date=sd.production_date AND cx.shift=sd.shift)
-                     THEN COALESCE((SELECT SUM(c.planned_hours) FROM calendar c WHERE c.production_date=sd.production_date AND c.shift=sd.shift),0)
-                     ELSE 12
-                END AS planned_hours
+            SELECT
+                sd.production_date,
+                sd.shift,
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1 FROM calendar cx
+                        WHERE cx.production_date = sd.production_date
+                          AND cx.shift           = sd.shift
+                          AND cx.day_type        = 'OFFDAY'
+                    ) THEN 1
+                    ELSE 0
+                END AS is_offday
             FROM ShiftDates sd
         ),
         ReportAgg AS (
@@ -129,21 +159,28 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
                 COALESCE(SUM(r.material_used),0) AS material_used,
                 COALESCE(SUM(r.reject_prod+r.reject_startup),0) AS reject_weight
             FROM report r
-            INNER JOIN EffectiveCalendar ec ON ec.production_date=r.production_date AND ec.shift=r.shift AND ec.planned_hours>0
+            INNER JOIN EffectiveCalendar ec ON ec.production_date=r.production_date AND ec.shift=r.shift AND ec.is_offday = 0
             WHERE r.production_date BETWEEN @start_date AND @end_date
             GROUP BY r.id_machine, r.machine_name, r.production_date, r.shift
+        ),
+        MachineAvailable AS (
+            SELECT
+                id_machine,
+                SUM(run_time + down_time) AS available_hours
+            FROM ReportAgg
+            GROUP BY id_machine
         ),
         MachineSummary AS (
             SELECT ra.id_machine, ra.machine_name,
                 SUM(ra.run_time) AS run_time, SUM(ra.down_time) AS down_time,
                 SUM(ra.unallocated) AS unallocated, SUM(ra.material_used) AS material_used,
-                SUM(ra.reject_weight) AS reject_weight, SUM(ra.total_sap_time) AS total_sap_time,
-                SUM(ra.total_actual_time) AS total_actual_time, SUM(ec2.planned_hours) AS available_hours
+                SUM(ra.reject_weight) AS reject_weight, SUM(ra.total_sap_time) AS total_sap_time, SUM(ra.total_actual_time) AS total_actual_time,
+                COALESCE(MAX(ma.available_hours), 0) AS available_hours
             FROM ReportAgg ra
-            INNER JOIN EffectiveCalendar ec2 ON ec2.production_date=ra.production_date AND ec2.shift=ra.shift
+            LEFT JOIN MachineAvailable ma ON ma.id_machine = ra.id_machine
             GROUP BY ra.id_machine, ra.machine_name
         )
-        SELECT id_machine, machine_name, run_time, down_time, unallocated, material_used, reject_weight, available_hours,
+        SELECT id_machine, machine_name, run_time, down_time, available_hours, unallocated, material_used, reject_weight,
             CASE WHEN NULLIF(available_hours,0) IS NULL THEN 0 ELSE (run_time*1.0/available_hours)*100 END AS availability,
             CASE WHEN total_actual_time=0 THEN 0 ELSE (total_sap_time*1.0/total_actual_time)*100 END AS performance,
             CASE WHEN material_used=0 THEN 0 WHEN ((material_used-reject_weight)*1.0/material_used)<0 THEN 0
@@ -151,7 +188,8 @@ public class OEEService(PlcService plcService, string connectionString) : BaseSe
             CASE WHEN NULLIF(available_hours,0) IS NULL OR total_actual_time=0 OR material_used=0 THEN 0
                  ELSE (run_time*1.0/available_hours)*(total_sap_time*1.0/total_actual_time)*((material_used-reject_weight)*1.0/material_used)*100
             END AS oee
-        FROM MachineSummary ORDER BY id_machine;");
+        FROM MachineSummary ORDER BY id_machine;"
+    );
 
     // ── Pareto helpers (Reject / Output / Downtime) ────────────────────────────
 

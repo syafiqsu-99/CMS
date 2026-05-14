@@ -1,6 +1,5 @@
 ﻿using CMS.Server.Models;
 using Microsoft.Data.SqlClient;
-using System.Collections.Generic;
 using System.Text.Json;
 
 namespace CMS.Server.Services;
@@ -497,7 +496,7 @@ public class SupervisorService(PlcService plcService, string connectionString) :
                     reject_startup, reject_prod,
                     act_ct, production_running,
                     change_full_set, change_half_set, change_parts,
-                    maintenance_dt, technician_dt, unallocated,
+                    maintenance_dt, technician_dt, production_dt, unallocated,
                     remark, reject_purging, reject_preform, reject_total_pcs
                 ) VALUES (
                     @id_machine, @production_date, @shift,
@@ -509,7 +508,7 @@ public class SupervisorService(PlcService plcService, string connectionString) :
                     @reject_startup, @reject_prod,
                     @act_ct, @production_running,
                     @change_full_set, @change_half_set, @change_parts,
-                    @maintenance_dt, @technician_dt, 0,
+                    @maintenance_dt, @technician_dt, @production_dt, 0,
                     @remark, @reject_purging, @reject_preform, @reject_total_pcs
                 );";
 
