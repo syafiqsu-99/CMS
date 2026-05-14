@@ -1,6 +1,5 @@
 <template>
   <v-card>
-    <!-- Loading overlay -->
     <v-overlay :model-value="isFetching"
                contained
                class="align-center justify-center"
@@ -11,10 +10,9 @@
       </div>
     </v-overlay>
 
-    <!-- Title bar -->
     <v-card-title class="bg-primary text-white d-flex justify-space-between align-center">
       <div>
-        <span class="text-h5">Machine Analytics — {{ selectedMachine?.machine_name }}</span>
+        <span class="text-h5">Machine Details — {{ selectedMachine?.machine_name }}</span>
         <div class="text-caption mt-1">{{ startDate }} to {{ endDate }}</div>
       </div>
       <v-btn icon variant="text" @click="closeDialog">
@@ -62,7 +60,8 @@
                 <v-data-table-virtual :headers="productHeaders"
                                       :items="productData"
                                       density="compact"
-                                      style="max-height: 500px;">
+                                      height="350px"
+                                      fixed-header>
                   <template v-slot:item.shift_output="{ item }">
                     <span class="font-weight-bold text-success">{{ item.shift_output.toLocaleString() }}</span>
                   </template>
@@ -80,21 +79,17 @@
       <v-row class="mb-4">
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
-          <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Daily Production Output</h4>
-              <div style="height: 300px;"><canvas ref="outputChart" /></div>
-            </v-card>
-          </transition>
+          <v-card v-else elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Daily Production Output</h4>
+            <div style="height: 300px;"><canvas ref="outputChart" /></div>
+          </v-card>
         </v-col>
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
-          <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Downtime Analysis by Category</h4>
-              <div style="height: 300px;"><canvas ref="downtimeChart" /></div>
-            </v-card>
-          </transition>
+          <v-card v-else elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Downtime Analysis by Category</h4>
+            <div style="height: 300px;"><canvas ref="downtimeChart" /></div>
+          </v-card>
         </v-col>
       </v-row>
 
@@ -109,7 +104,8 @@
                 <v-data-table-virtual :headers="downtimeHeaders"
                                       :items="downtimeEvents"
                                       density="compact"
-                                      style="max-height: 500px;">
+                                      height="350px"
+                                      fixed-header>
                   <template v-slot:item.duration="{ item }">
                     <span class="font-weight-bold">{{ item.duration }} hrs</span>
                   </template>
@@ -127,21 +123,17 @@
       <v-row class="mb-4">
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
-          <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Reject Types Distribution</h4>
-              <div style="height: 300px;"><canvas ref="rejectChart" /></div>
-            </v-card>
-          </transition>
+          <v-card v-else elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Reject Types Distribution</h4>
+            <div style="height: 300px;"><canvas ref="rejectChart" /></div>
+          </v-card>
         </v-col>
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
-          <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Daily Reject Trend</h4>
-              <div style="height: 300px;"><canvas ref="rejectTrendChart" /></div>
-            </v-card>
-          </transition>
+          <v-card v-else elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Daily Reject Trend</h4>
+            <div style="height: 300px;"><canvas ref="rejectTrendChart" /></div>
+          </v-card>
         </v-col>
       </v-row>
 
@@ -156,7 +148,8 @@
                 <v-data-table-virtual :headers="rejectSummaryHeaders"
                                       :items="rejectSummaryData"
                                       density="compact"
-                                      style="max-height: 500px;">
+                                      height="350px"
+                                      fixed-header>
                   <template v-slot:item.total_weight="{ item }">
                     <span class="font-weight-bold text-error">{{ item.total_weight }} kg</span>
                   </template>
@@ -171,21 +164,17 @@
       <v-row class="mb-4">
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
-          <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Actual vs Standard Cycle Time</h4>
-              <div style="height: 300px;"><canvas ref="cycleTimeChart" /></div>
-            </v-card>
-          </transition>
+          <v-card v-else elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Actual vs Standard Cycle Time</h4>
+            <div style="height: 300px;"><canvas ref="cycleTimeChart" /></div>
+          </v-card>
         </v-col>
         <v-col cols="12" md="6">
           <v-skeleton-loader v-if="isFetching" type="image" height="340" />
-          <transition v-else name="fade">
-            <v-card elevation="2" class="pa-3">
-              <h4 class="mb-3 text-center">Shift Performance Comparison</h4>
-              <div style="height: 300px;"><canvas ref="shiftChart" /></div>
-            </v-card>
-          </transition>
+          <v-card v-else elevation="2" class="pa-3">
+            <h4 class="mb-3 text-center">Shift Performance Comparison</h4>
+            <div style="height: 300px;"><canvas ref="shiftChart" /></div>
+          </v-card>
         </v-col>
       </v-row>
 
@@ -200,7 +189,8 @@
                 <v-data-table-virtual :headers="utilityHeaders"
                                       :items="utilityData"
                                       density="compact"
-                                      style="max-height: 500px;">
+                                      height="350px"
+                                      fixed-header>
                   <template v-slot:item.status="{ item }">
                     <v-chip :color="item.status === 'Running' ? 'success' : 'error'" size="small">{{ item.status }}</v-chip>
                   </template>
@@ -237,8 +227,6 @@
     Tooltip, Legend,
   );
 
-  // ── Props / Emits ─────────────────────────────────────────────────────────────
-
   const props = defineProps({
     selectedMachine: { type: Object, default: null },
     detailDialog: { type: Boolean, default: false },
@@ -247,8 +235,6 @@
   });
   const emit = defineEmits(['update:detailDialog']);
   const closeDialog = () => emit('update:detailDialog', false);
-
-  // ── State ─────────────────────────────────────────────────────────────────────
 
   const isFetching = ref(false);
   const productData = ref([]);
@@ -260,7 +246,6 @@
   const shiftPerfData = ref([]);
   const utilityData = ref([]);
 
-  // Canvas refs
   const outputChart = ref(null);
   const downtimeChart = ref(null);
   const rejectChart = ref(null);
@@ -270,15 +255,11 @@
 
   let charts = {};
 
-  // ── KPI ───────────────────────────────────────────────────────────────────────
-
   const kpiData = computed(() => ({
     totalOutput: productData.value.reduce((s, r) => s + (r.shift_output || 0), 0),
     totalRejects: rejectRawData.value.reduce((s, r) => s + (r.total_weight || 0), 0).toFixed(1),
     totalDowntime: downtimeCatData.value.reduce((s, r) => s + (r.hours || 0), 0).toFixed(1),
   }));
-
-  // ── Reject summary ────────────────────────────────────────────────────────────
 
   const REJECT_TYPES = [
     { key: 'reject_panelling', label: 'Panelling' },
@@ -304,8 +285,6 @@
       .filter(r => Number(r.total_weight) > 0)
       .sort((a, b) => b.total_weight - a.total_weight);
   });
-
-  // ── Table headers ─────────────────────────────────────────────────────────────
 
   const productHeaders = [
     { title: 'Product Type', key: 'type' },
@@ -339,15 +318,9 @@
     { title: 'Shift', key: 'shift' },
   ];
 
-  // ── Data fetch ────────────────────────────────────────────────────────────────
-
   function baseParams() {
-    return new URLSearchParams({
-      start_date: props.startDate,
-      end_date: props.endDate,
-    });
+    return new URLSearchParams({ start_date: props.startDate, end_date: props.endDate });
   }
-
   const id = () => props.selectedMachine?.id_machine;
 
   async function fetchAll() {
@@ -357,38 +330,29 @@
 
     try {
       const p = baseParams();
-      const base = `/api/oee/machine/${id()}`;
+      const res = await fetch(`/api/oee/machine/${id()}/detail?${p}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      // All detail endpoints now live under /api/oee/machine/{id}/
-      const [prod, daily, dtCat, dtEvt, rej, ct, shift, util] = await Promise.all([
-        fetch(`${base}/product-output?${p}`).then(r => r.json()),
-        fetch(`${base}/daily-output?${p}`).then(r => r.json()),
-        fetch(`${base}/downtime-category?${p}`).then(r => r.json()),
-        fetch(`${base}/downtime-events?${p}`).then(r => r.json()),
-        fetch(`${base}/reject?${p}`).then(r => r.json()),
-        fetch(`${base}/cycle-time?${p}`).then(r => r.json()),
-        fetch(`${base}/shift-performance?${p}`).then(r => r.json()),
-        fetch(`${base}/utilities?${p}`).then(r => r.json()),
-      ]);
+      const data = await res.json();
 
-      productData.value = Array.isArray(prod) ? prod : [];
-      dailyOutputData.value = Array.isArray(daily) ? daily : [];
-      downtimeCatData.value = Array.isArray(dtCat) ? dtCat : [];
-      downtimeEvents.value = Array.isArray(dtEvt) ? dtEvt : [];
-      rejectRawData.value = Array.isArray(rej) ? rej : [];
-      cycleTimeData.value = Array.isArray(ct) ? ct : [];
-      shiftPerfData.value = Array.isArray(shift) ? shift : [];
-      utilityData.value = Array.isArray(util) ? util : [];
+      productData.value = Array.isArray(data.product_output) ? data.product_output : [];
+      dailyOutputData.value = Array.isArray(data.daily_output) ? data.daily_output : [];
+      downtimeCatData.value = Array.isArray(data.downtime_category) ? data.downtime_category : [];
+      downtimeEvents.value = Array.isArray(data.downtime_events) ? data.downtime_events : [];
+      rejectRawData.value = Array.isArray(data.reject) ? data.reject : [];
+      cycleTimeData.value = Array.isArray(data.cycle_time) ? data.cycle_time : [];
+      shiftPerfData.value = Array.isArray(data.shift_performance) ? data.shift_performance : [];
+      utilityData.value = Array.isArray(data.utilities) ? data.utilities : [];
     } catch (err) {
-      console.error('[MachineOEE] fetchAll:', err);
+      console.error('[MachineOEE] fetchAll error:', err);
     } finally {
       isFetching.value = false;
+      // Two ticks: first lets Vue flip v-if/v-else, second ensures canvas is painted
+      await nextTick();
       await nextTick();
       buildCharts();
     }
   }
-
-  // ── Charts ────────────────────────────────────────────────────────────────────
 
   const COLORS = [
     '#F44336', '#E91E63', '#9C27B0', '#673AB7', '#3F51B5',
@@ -454,9 +418,7 @@
     const ctx = rejectTrendChart.value?.getContext('2d');
     if (!ctx || !rejectRawData.value.length) return;
     const byDate = {};
-    rejectRawData.value.forEach(r => {
-      byDate[r.production_date] = (byDate[r.production_date] || 0) + Number(r.total_weight);
-    });
+    rejectRawData.value.forEach(r => { byDate[r.production_date] = (byDate[r.production_date] || 0) + Number(r.total_weight); });
     const dates = Object.keys(byDate).sort();
     const values = dates.map(d => Number(byDate[d].toFixed(2)));
     charts.rejectTrend = new Chart(ctx, {
@@ -505,8 +467,6 @@
     });
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────────
-
   const getEfficiencyColor = v => v >= 90 ? 'success' : v >= 75 ? 'warning' : 'error';
 
   const CATEGORY_COLORS = {
@@ -514,8 +474,6 @@
     'SCHEDULED MAINTENANCE': 'info', 'QUALITY ISSUE': 'warning',
   };
   const getCategoryColor = cat => CATEGORY_COLORS[cat] || 'grey';
-
-  // ── Watcher ───────────────────────────────────────────────────────────────────
 
   watch(
     [() => props.detailDialog, () => props.selectedMachine],
