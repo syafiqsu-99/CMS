@@ -12,7 +12,7 @@ namespace CMS.Server.Services
         // ── Connection cache ───────────────────────────────────────────────────
         private static readonly ConcurrentDictionary<string, PlcOmron> _plcConnections = new();
 
-        // ── Guard: prevents a slow master PLC cycle from overlapping next tick ─
+        // ── Guard ─
         private readonly SemaphoreSlim _pollLock = new(1, 1);
 
         // ── DI ────────────────────────────────────────────────────────────────
@@ -26,14 +26,13 @@ namespace CMS.Server.Services
         private const string WriteKey = MasterIp + "_write";
         private const int PollDelayMs = 200;
 
-        // ── Machine list cache (shared by both loops) ──────────────────────────
+        // ── Machine list cache ──────────────────────────
         private IReadOnlyList<(int id, string name, string ip)> _cachedMachines = [];
         private DateTime _machinesCachedAt = DateTime.MinValue;
         private readonly SemaphoreSlim _machineCacheLock = new(1, 1);
         private const int MachineCacheMinutes = 5;
 
-        // ── Sub-PLC signal cache — written by sweep loop, read by controller ──
-        // null entry = machine registered but not yet read (shows "Reading" on frontend)
+        // ── Sub-PLC signal cache ──
         private readonly ConcurrentDictionary<int, Dictionary<string, object?>?> _subPlcCache = new();
         private readonly ConcurrentDictionary<int, bool> _subPlcOnline = new();
         private const int SubPlcSweepDelayMs = 5000;
@@ -62,8 +61,6 @@ namespace CMS.Server.Services
         }
 
         // ── Entry point ────────────────────────────────────────────────────────
-        // Sub-PLC sweep always runs (dev + production).
-        // Master PLC loop only runs in production (matches Program.cs registration guard).
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
@@ -83,7 +80,7 @@ namespace CMS.Server.Services
             _logger.LogWarning("[PlcService] All loops exited.");
         }
 
-        // ── Master PLC loop (production only) ─────────────────────────────────
+        // ── Master PLC loop ─────────────────────────────────
 
         private async Task RunMasterPlcLoopAsync(CancellationToken stoppingToken)
         {
@@ -139,10 +136,7 @@ namespace CMS.Server.Services
             _logger.LogWarning("[PlcService] Master poll loop ended. Total iterations: {Count}", _iterationCount);
         }
 
-        // ── Sub-PLC sweep loop (dev + production) ─────────────────────────────
-        // Cycles through all machines one-by-one. A slow/failed read for one
-        // machine does not block the others — the loop simply moves on and
-        // preserves the last known-good data for that machine.
+        // ── Sub-PLC sweep loop ─────────────────────────────
 
         private async Task RunSubPlcSweepLoopAsync(CancellationToken stoppingToken)
         {
@@ -171,7 +165,6 @@ namespace CMS.Server.Services
                         {
                             _logger.LogWarning("[SubPlc M{Id}] Sweep read failed: {Msg}", machine.id, ex.Message);
                             _subPlcOnline[machine.id] = false;
-                            // Cache entry is intentionally NOT cleared — stale data is better than blank.
                         }
                     }
                 }
@@ -196,7 +189,6 @@ namespace CMS.Server.Services
         {
             var result = new Dictionary<string, object?>();
 
-            // Machines that have been read at least once
             foreach (var (id, data) in _subPlcCache)
             {
                 result[id.ToString()] = new Dictionary<string, object?>
@@ -206,7 +198,6 @@ namespace CMS.Server.Services
                 };
             }
 
-            // Machines registered but not yet reached by the sweep (still "Reading")
             foreach (var machine in _cachedMachines)
             {
                 if (!result.ContainsKey(machine.id.ToString()))
