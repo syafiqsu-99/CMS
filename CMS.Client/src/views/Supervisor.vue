@@ -84,5 +84,6 @@
 
   onMounted(() => {
     store.loadMachineMaster();
+    store.loadSAP();
   });
 </script>

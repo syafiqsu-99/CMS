@@ -53,7 +53,7 @@ export const useMachineStore = defineStore('machine', {
       if (this._fetchingSAP) return this.SAPData;
       this._fetchingSAP = true;
       try {
-        const res = await fetch('/api/setting/sap');
+        const res = await fetch('/api/supervisor/sap');
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         this.SAPData = await res.json();
         return this.SAPData;
