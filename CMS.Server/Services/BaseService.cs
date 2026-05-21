@@ -10,7 +10,7 @@ public class BaseService
     protected readonly string _connectionString;
     protected readonly PlcService _plcService;
 
-    private readonly ConcurrentDictionary<int, (dynamic plcData, DateOnly productionDate, int shift, bool measure_qc)> _lastMachineMaster = new();
+    private readonly ConcurrentDictionary<int, (dynamic plcData, DateOnly productionDate, int shift, int measure_qc)> _lastMachineMaster = new();
 
     public BaseService(string connectionString, PlcService plcService)
     {
@@ -60,7 +60,7 @@ public class BaseService
         var parts = ids.Select(m =>
             $"SELECT {m.id} AS id_machine, machine_name, id_type, mould, COALESCE(start, GETDATE()) AS start, COALESCE(finish, GETDATE()) as finish, COALESCE(UPPER(category), 'N/A') as category, problem,  COALESCE(mould_category, 0) AS mould_category, shot, act_ct, shift, production_date, status_start FROM machine_log_{m.id}{where}");
 
-        return string.Join("\n                    UNION ALL\n                    ", parts);
+        return string.Join("\n UNION ALL\n ", parts);
     }
 
     #endregion
@@ -79,16 +79,14 @@ public class BaseService
 
     public static string GetColor(string? category) => category switch
     {
-        "PRODUCTION RUNNING" => "#00ff00",
-        "PRODUCT BUYOFF" => "#808080",
-        "NO OPERATOR" or "NO SCHEDULE" or "MATERIAL DRYING" or "OTHERS PROD"
-            => "#ffff00",
-        "QUALITY ISSUE" or "SAMPLE RUNNING" or "MOULD CHANGE" or "OTHERS TECH"
-            => "#ff0000",
-        "SCHEDULED MAINTENANCE" or "MACHINE BREAKDOWN" or "OTHERS MAIN"
-            => "#ffa500",
-        _ => "#808080"
+        "PRODUCTION RUNNING"                                                    => "#00ff00",
+        "PRODUCT BUYOFF"                                                        => "#808080",
+        "NO OPERATOR" or "NO SCHEDULE" or "MATERIAL DRYING" or "OTHERS PROD"    => "#ffff00",
+        "QUALITY ISSUE" or "SAMPLE RUNNING" or "MOULD CHANGE" or "OTHERS TECH"  => "#ff0000",
+        "SCHEDULED MAINTENANCE" or "MACHINE BREAKDOWN" or "OTHERS MAIN"         => "#ffa500",
+        _                                                                       => "#808080"
     };
+
     public async Task<object> LoadTimeline()
     {
         var time = DateTime.Now;
@@ -274,9 +272,9 @@ public class BaseService
 
         if (prev.plcData == null)
         {
-            await shiftChange(plcData, isRestart: true);
+            await shiftChange(plcData);
 
-            _lastMachineMaster[id_machine] = (plcData, productionDate, shift, false);
+            _lastMachineMaster[id_machine] = (plcData, productionDate, shift, 0);
             return;
         }
 
@@ -308,22 +306,17 @@ public class BaseService
         var tableName = $"machine_log_{id_machine}";
 
         var sql = $@"
-                SET NOCOUNT ON;
+            SET NOCOUNT ON;
 
-                UPDATE machine_master SET
-                    act_ct = @act_ct,
-                    status_start = @status_start,
-                    status_off = @status_off,
-                    shot = @shot_accum,
-	                visual_qc = @visual_qc
-                WHERE id_machine = @id_machine;
-                
-                UPDATE [{tableName}] 
-                SET shot = CASE WHEN @shot > 0 THEN @shot ELSE shot END,
-                    act_ct = @act_ct 
-                WHERE finish IS NULL;
+            UPDATE machine_master SET
+                act_ct       = @act_ct,
+                status_start = @status_start,
+                status_off   = @status_off,
+                shot         = @shot_accum,
+                visual_qc    = @visual_qc
+            WHERE id_machine = @id_machine;
 
-                SELECT measure_qc FROM machine_master WHERE id_machine = @id_machine";
+            SELECT measure_qc FROM machine_master WHERE id_machine = @id_machine";
 
         using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
@@ -331,13 +324,12 @@ public class BaseService
         cmd.Parameters.AddWithValue("@act_ct", plcData.act_ct);
         cmd.Parameters.AddWithValue("@status_start", plcData.status_start);
         cmd.Parameters.AddWithValue("@status_off", plcData.status_off);
-        cmd.Parameters.AddWithValue("@shot", plcData.shot);
         cmd.Parameters.AddWithValue("@shot_accum", plcData.shot_accum);
         cmd.Parameters.AddWithValue("@visual_qc", plcData.visual_qc);
         var result = await cmd.ExecuteScalarAsync();
 
-        bool measure_qc = Convert.ToBoolean(result);
-        bool measure_qc_changed = prev.plcData == null || prev.measure_qc != measure_qc;
+        int measure_qc = result != null && result != DBNull.Value ? Convert.ToInt32(result) : 0;
+        bool measure_qc_changed = prev.measure_qc != measure_qc;
 
         try
         {
@@ -362,7 +354,7 @@ public class BaseService
                 await updateMouldCategory(plcData);
 
             // Remark signal changed
-            if (remark && plcData.remark_signal && !string.IsNullOrEmpty(plcData.remark))
+            if (remark && plcData.remark_signal)
                 await updateProblem(plcData);
 
             // Reject signal triggered
@@ -370,7 +362,7 @@ public class BaseService
                 await insertUpdateReject(plcData);
 
             // Measure QC changed
-            if (measure_qc_changed && measure_qc)
+            if (measure_qc_changed && measure_qc == 1)
                 await updateMeasureQC(plcData, measure_qc);
 
             // Utilities changed
@@ -389,7 +381,7 @@ public class BaseService
 
     #region Machine Log Auto
     // On Shift Change
-    public async Task shiftChange(dynamic plcData, bool isRestart = false)
+    public async Task shiftChange(dynamic plcData)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Shift Change");
         int id_machine = plcData.id_machine;
@@ -434,143 +426,117 @@ public class BaseService
                 END
                 ELSE
                 BEGIN
-                    UPDATE reject SET total_weight = @total_weight, reject_panelling = @reject_panelling, reject_lumpy = @reject_lumpy, reject_black_dot = @reject_black_dot, reject_burst = @reject_burst, reject_startup = @reject_startup, reject_preform = @reject_preform, reject_purging = @reject_purging, reject_others = @reject_others
-                    WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND shift = @shift and production_date = @production_date
+                    UPDATE reject SET
+                        total_weight      = @total_weight,
+                        reject_panelling  = @reject_panelling,
+                        reject_lumpy      = @reject_lumpy,
+                        reject_black_dot  = @reject_black_dot,
+                        reject_burst      = @reject_burst,
+                        reject_startup    = @reject_startup,
+                        reject_preform    = @reject_preform,
+                        reject_purging    = @reject_purging,
+                        reject_others     = @reject_others
+                    WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND shift = @shift AND production_date = @production_date
                 END
 
                 -- Update Machine Log Table
-                {(isRestart ? $@"
-                -- On restart:
                 IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
                 BEGIN
-                    UPDATE [{tableName}] SET finish = @time, shot = 0, act_ct = 0 WHERE finish IS NULL;
+                    DECLARE @prev_shot_sum INT;
+                    SELECT @prev_shot_sum = ISNULL(SUM(shot), 0)
+                    FROM [{tableName}]
+                    WHERE production_date = @production_date
+                      AND shift           = @shift
+                      AND id_type         = @id_type
+                      AND mould           = @mould
+                      AND finish          IS NOT NULL;
+
+                    DECLARE @final_shot INT = @shot_accum - @prev_shot_sum;
+                    IF @final_shot < 0 SET @final_shot = 0;
+
+                    UPDATE [{tableName}]
+                    SET
+                        finish  = @time,
+                        shot    = @final_shot,
+                        act_ct  = CASE
+                                      WHEN @final_shot = 0 THEN 0
+                                      ELSE DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
+                                  END
+                    WHERE finish IS NULL;
                 END
-                " : $@"
-                -- Shift change:
-                IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
-                BEGIN
-                    UPDATE [{tableName}] SET finish = @time WHERE finish IS NULL;
-                END
-                ")}
 
                 INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start) 
-                VALUES (@machine_name, @id_type, @mould, @time, @shot, NULLIF(@category, ''), NULLIF(@problem, ''), 
-                CASE
-                    WHEN NULLIF(@category, '') = 'MOULD CHANGE'
-                    THEN @mould_category
-                    ELSE 0
-                END,
-                @shift, @production_date, @status_start);
+                VALUES (
+                    @machine_name, @id_type, @mould, @time, 0, NULLIF(@category, ''), NULLIF(@problem, ''), 
+                    CASE
+                        WHEN NULLIF(@category, '') = 'MOULD CHANGE'
+                        THEN @mould_category
+                        ELSE 0
+                    END,
+                    @shift, @production_date, @status_start
+                );
 
                 -- Update Utilities Table
                 DECLARE @UpdatedRows TABLE (id_machine INT, machine_name NVARCHAR(255), utility_name NVARCHAR(255), category NVARCHAR(255));
 
-                -- Process BARREL
                 IF EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'BARREL' AND finish IS NULL)
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    SELECT id_machine, machine_name, utility_name, category
-                    FROM utilities
-                    WHERE id_machine = @id_machine AND utility_name = 'BARREL' AND finish IS NULL;
-    
-                    UPDATE utilities 
-                    SET finish = @time 
-                    WHERE id_machine = @id_machine AND utility_name = 'BARREL' AND finish IS NULL;
+                    INSERT INTO @UpdatedRows SELECT id_machine, machine_name, utility_name, category FROM utilities WHERE id_machine = @id_machine AND utility_name = 'BARREL' AND finish IS NULL;
+                    UPDATE utilities SET finish = @time WHERE id_machine = @id_machine AND utility_name = 'BARREL' AND finish IS NULL;
                 END
                 ELSE IF NOT EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'BARREL')
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    VALUES (@id_machine, @machine_name, 'BARREL', @util_barrel);
+                    INSERT INTO @UpdatedRows VALUES (@id_machine, @machine_name, 'BARREL', @util_barrel);
                 END
 
-                -- Process HYDRAULIC MOTOR
                 IF EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'HYDRAULIC MOTOR' AND finish IS NULL)
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    SELECT id_machine, machine_name, utility_name, category
-                    FROM utilities
-                    WHERE id_machine = @id_machine AND utility_name = 'HYDRAULIC MOTOR' AND finish IS NULL;
-    
-                    UPDATE utilities 
-                    SET finish = @time 
-                    WHERE id_machine = @id_machine AND utility_name = 'HYDRAULIC MOTOR' AND finish IS NULL;
+                    INSERT INTO @UpdatedRows SELECT id_machine, machine_name, utility_name, category FROM utilities WHERE id_machine = @id_machine AND utility_name = 'HYDRAULIC MOTOR' AND finish IS NULL;
+                    UPDATE utilities SET finish = @time WHERE id_machine = @id_machine AND utility_name = 'HYDRAULIC MOTOR' AND finish IS NULL;
                 END
                 ELSE IF NOT EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'HYDRAULIC MOTOR')
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    VALUES (@id_machine, @machine_name, 'HYDRAULIC MOTOR', @util_hyd_motor);
+                    INSERT INTO @UpdatedRows VALUES (@id_machine, @machine_name, 'HYDRAULIC MOTOR', @util_hyd_motor);
                 END
 
-                -- Process DEHUMIDIFIER
                 IF EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'DEHUMIDIFIER' AND finish IS NULL)
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    SELECT id_machine, machine_name, utility_name, category
-                    FROM utilities
-                    WHERE id_machine = @id_machine AND utility_name = 'DEHUMIDIFIER' AND finish IS NULL;
-    
-                    UPDATE utilities 
-                    SET finish = @time 
-                    WHERE id_machine = @id_machine AND utility_name = 'DEHUMIDIFIER' AND finish IS NULL;
+                    INSERT INTO @UpdatedRows SELECT id_machine, machine_name, utility_name, category FROM utilities WHERE id_machine = @id_machine AND utility_name = 'DEHUMIDIFIER' AND finish IS NULL;
+                    UPDATE utilities SET finish = @time WHERE id_machine = @id_machine AND utility_name = 'DEHUMIDIFIER' AND finish IS NULL;
                 END
                 ELSE IF NOT EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'DEHUMIDIFIER')
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    VALUES (@id_machine, @machine_name, 'DEHUMIDIFIER', @util_dehumidifier);
+                    INSERT INTO @UpdatedRows VALUES (@id_machine, @machine_name, 'DEHUMIDIFIER', @util_dehumidifier);
                 END
 
-                -- Process CHILLER
                 IF EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'CHILLER' AND finish IS NULL)
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    SELECT id_machine, machine_name, utility_name, category
-                    FROM utilities
-                    WHERE id_machine = @id_machine AND utility_name = 'CHILLER' AND finish IS NULL;
-    
-                    UPDATE utilities 
-                    SET finish = @time 
-                    WHERE id_machine = @id_machine AND utility_name = 'CHILLER' AND finish IS NULL;
+                    INSERT INTO @UpdatedRows SELECT id_machine, machine_name, utility_name, category FROM utilities WHERE id_machine = @id_machine AND utility_name = 'CHILLER' AND finish IS NULL;
+                    UPDATE utilities SET finish = @time WHERE id_machine = @id_machine AND utility_name = 'CHILLER' AND finish IS NULL;
                 END
                 ELSE IF NOT EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'CHILLER')
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    VALUES (@id_machine, @machine_name, 'CHILLER', @util_chiller);
+                    INSERT INTO @UpdatedRows VALUES (@id_machine, @machine_name, 'CHILLER', @util_chiller);
                 END
 
-                -- Process MATERIAL
                 IF EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'MATERIAL' AND finish IS NULL)
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    SELECT id_machine, machine_name, utility_name, category
-                    FROM utilities
-                    WHERE id_machine = @id_machine AND utility_name = 'MATERIAL' AND finish IS NULL;
-    
-                    UPDATE utilities 
-                    SET finish = @time 
-                    WHERE id_machine = @id_machine AND utility_name = 'MATERIAL' AND finish IS NULL;
+                    INSERT INTO @UpdatedRows SELECT id_machine, machine_name, utility_name, category FROM utilities WHERE id_machine = @id_machine AND utility_name = 'MATERIAL' AND finish IS NULL;
+                    UPDATE utilities SET finish = @time WHERE id_machine = @id_machine AND utility_name = 'MATERIAL' AND finish IS NULL;
                 END
                 ELSE IF NOT EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'MATERIAL')
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    VALUES (@id_machine, @machine_name, 'MATERIAL', @util_material);
+                    INSERT INTO @UpdatedRows VALUES (@id_machine, @machine_name, 'MATERIAL', @util_material);
                 END
 
-                -- Process DRY CYCLE
                 IF EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'DRY CYCLE' AND finish IS NULL)
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    SELECT id_machine, machine_name, utility_name, category
-                    FROM utilities
-                    WHERE id_machine = @id_machine AND utility_name = 'DRY CYCLE' AND finish IS NULL;
-    
-                    UPDATE utilities 
-                    SET finish = @time 
-                    WHERE id_machine = @id_machine AND utility_name = 'DRY CYCLE' AND finish IS NULL;
+                    INSERT INTO @UpdatedRows SELECT id_machine, machine_name, utility_name, category FROM utilities WHERE id_machine = @id_machine AND utility_name = 'DRY CYCLE' AND finish IS NULL;
+                    UPDATE utilities SET finish = @time WHERE id_machine = @id_machine AND utility_name = 'DRY CYCLE' AND finish IS NULL;
                 END
                 ELSE IF NOT EXISTS (SELECT 1 FROM utilities WHERE id_machine = @id_machine AND utility_name = 'DRY CYCLE')
                 BEGIN
-                    INSERT INTO @UpdatedRows (id_machine, machine_name, utility_name, category)
-                    VALUES (@id_machine, @machine_name, 'DRY CYCLE', @util_dry_cycle);
+                    INSERT INTO @UpdatedRows VALUES (@id_machine, @machine_name, 'DRY CYCLE', @util_dry_cycle);
                 END
 
                 -- Insert utilities
@@ -658,9 +624,23 @@ public class BaseService
                         ON mm.machine_name = pt.machine_name
                        AND mm.shift = pt.work_shift;
 
-                -- Update Machine Master Table
-                UPDATE machine_master 
-                    SET material = s.material, id_type = @id_type, mould = @mould, type = s.type, jo_no = 0, qty_order = 0, wip_opening = 0, wip_closing = 0, finish_good = 0, qty_accum = 0, qty_perct = s.qty_perct, sap_ct = s.sap_ct, part_weight = s.part_weight, gross_weight = s.gross_weight, shift = @shift
+                -- Update Machine Master for new shift
+                UPDATE machine_master
+                    SET material    = s.material,
+                        id_type     = @id_type,
+                        mould       = @mould,
+                        type        = s.type,
+                        jo_no       = 0,
+                        qty_order   = 0,
+                        wip_opening = 0,
+                        wip_closing = 0,
+                        finish_good = 0,
+                        qty_accum   = 0,
+                        qty_perct   = s.qty_perct,
+                        sap_ct      = s.sap_ct,
+                        part_weight = s.part_weight,
+                        gross_weight= s.gross_weight,
+                        shift       = @shift
                     FROM machine_master m
                     JOIN sap s ON s.id_type = @id_type AND s.mould = @mould
                     WHERE m.id_machine = @id_machine;";
@@ -673,8 +653,7 @@ public class BaseService
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
         cmd.Parameters.AddWithValue("@id_type", master.id_type);
         cmd.Parameters.AddWithValue("@mould", master.mould);
-        cmd.Parameters.AddWithValue("@shot", master.shot);
-        cmd.Parameters.AddWithValue("@act_ct", master.act_ct);
+        cmd.Parameters.AddWithValue("@shot_accum", master.shot_accum);
         cmd.Parameters.AddWithValue("@status_start", master.status_start);
         cmd.Parameters.AddWithValue("@shift", shift);
         cmd.Parameters.AddWithValue("@production_date", productionDate);
@@ -711,13 +690,12 @@ public class BaseService
 
         var master = await GetMachineMaster(id_machine, time, plcData);
 
-        var (productionDate, shift) = GetProductionDate(time);
         var tableName = $"machine_log_{id_machine}";
 
         var sql = $@"
-                UPDATE [{tableName}]
-                    SET category = @category
-                    WHERE (category IS NULL AND status_start = 1) OR finish is null;";
+            UPDATE [{tableName}]
+            SET category = @category
+            WHERE (category IS NULL AND status_start = 1) OR finish IS NULL;";
 
         using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
@@ -739,30 +717,41 @@ public class BaseService
         var tableName = $"machine_log_{id_machine}";
 
         var sql = $@"
-                UPDATE [{tableName}] SET finish = @time WHERE finish IS NULL
+                IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
+                BEGIN
+                    DECLARE @prev_shot_sum INT;
+                    SELECT @prev_shot_sum = ISNULL(SUM(shot), 0)
+                    FROM [{tableName}]
+                    WHERE production_date = @production_date
+                      AND shift           = @shift
+                      AND id_type         = @id_type
+                      AND mould           = @mould
+                      AND finish          IS NOT NULL;
 
-                INSERT INTO [{tableName}]
-                (machine_name, id_type, mould, start, shot, mould_category, shift, production_date, status_start)
-                VALUES 
-                (
-                    @machine_name, 
-                    @id_type, 
-                    @mould, 
-                    @time, 
-                    0,
-                    0,
-                    @shift, 
-                    @production_date, 
-                    @status_start
-                );";
+                    DECLARE @final_shot INT = @shot_accum - @prev_shot_sum;
+                    IF @final_shot < 0 SET @final_shot = 0;
+
+                    UPDATE [{tableName}]
+                    SET
+                        finish  = @time,
+                        shot    = @final_shot,
+                        act_ct  = CASE
+                                      WHEN @final_shot = 0 THEN 0
+                                      ELSE DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
+                                  END
+                    WHERE finish IS NULL AND id_machine = @id_machine;
+                END
+
+                INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, mould_category, shift, production_date, status_start)
+                VALUES (@machine_name, @id_type, @mould, @time, 0, 0, @shift, @production_date, @status_start);";
 
         using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
         cmd.Parameters.AddWithValue("@id_type", master.id_type);
         cmd.Parameters.AddWithValue("@mould", master.mould);
+        cmd.Parameters.AddWithValue("@shot_accum", master.shot_accum);
         cmd.Parameters.AddWithValue("@time", master.time);
-        cmd.Parameters.AddWithValue("@mould_category", master.mould_category_no);
         cmd.Parameters.AddWithValue("@shift", shift);
         cmd.Parameters.AddWithValue("@production_date", productionDate);
         cmd.Parameters.AddWithValue("@status_start", master.status_start);
@@ -859,7 +848,7 @@ public class BaseService
     }
 
     // Update Measure QC
-    public async Task updateMeasureQC(dynamic plcData, bool measure_qc)
+    public async Task updateMeasureQC(dynamic plcData, int measure_qc)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update Measure QC");
 
@@ -867,15 +856,6 @@ public class BaseService
         DateTime time = plcData.time;
 
         var master = await GetMachineMaster(id_machine, time, plcData);
-
-        var sql = $@"
-                UPDATE machine_master SET measure_qc = @measure_qc WHERE id_machine = @id_machine";
-
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@measure_qc", measure_qc);
-        cmd.Parameters.AddWithValue("@id_machine", id_machine);
-        await cmd.ExecuteNonQueryAsync();
 
         _plcService.UpdateMeasureQC(master);
     }

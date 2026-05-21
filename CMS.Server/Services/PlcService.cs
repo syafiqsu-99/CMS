@@ -708,7 +708,7 @@ namespace CMS.Server.Services
             return true;
         }
 
-        // ── Private helpers: memory parsing ────────────────────────────────────
+        // ── PLC Read ────────────────────────────────────
 
         private static int ReadIntFromD(byte[] buf, int wordIndex)
         {
@@ -780,7 +780,7 @@ namespace CMS.Server.Services
         private static Dictionary<string, object> BuildResult(byte[] dBuffer, bool[] wBits)
             => new() { ["Data"] = new Dictionary<string, object> { ["D_RAW"] = dBuffer, ["W_RAW"] = wBits } };
 
-        // ── Private helpers: PLC write ─────────────────────────────────────────
+        // ── PLC Write ─────────────────────────────────────────
 
         private static bool WriteIntOmron(PlcOmron plc, ushort address, int value)
         {
