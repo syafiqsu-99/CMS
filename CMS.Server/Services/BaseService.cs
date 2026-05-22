@@ -1,5 +1,6 @@
 ﻿using CMS.Server.Models;
 using Microsoft.Data.SqlClient;
+using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System.Collections.Concurrent;
 using static CMS.Server.Services.MachineLogService;
 
@@ -228,7 +229,8 @@ public class BaseService
             master.sap_ct = Convert.ToSingle(reader["sap_ct"]);
             master.part_weight = Convert.ToSingle(reader["part_weight"]);
             master.gross_weight = Convert.ToSingle(reader["gross_weight"]);
-            master.measure_qc = Convert.ToBoolean(reader["measure_qc"]);
+            master.measure_qc = Convert.ToInt32(reader["measure_qc"]);
+            master.visual_qc = plcData.visual_qc ?? 0;
             master.time = time;
             master.shot = plcData.shot ?? 0;
             master.shot_accum = plcData.shot_accum ?? 0;
@@ -247,7 +249,6 @@ public class BaseService
             master.status_start = plcData.status_start ?? false;
             master.status_off = plcData.status_off ?? false;
             master.production_running = plcData.production_running ?? false;
-            master.visual_qc = plcData.visual_qc ?? false;
             master.remark_signal = plcData.remark_signal ?? false;
             master.reject_signal = plcData.reject_signal ?? false;
             master.util_barrel = plcData.util_barrel ?? false;
@@ -288,6 +289,7 @@ public class BaseService
         bool no_category = !string.IsNullOrEmpty(prev.plcData.stop_category) && string.IsNullOrEmpty(plcData.stop_category) && !plcData.status_start;
         bool remark = prev.plcData.remark_signal != plcData.remark_signal;
         bool reject_signal = prev.plcData.reject_signal != plcData.reject_signal;
+        bool qc_signal = prev.plcData.qc_signal != plcData.qc_signal;
 
         var util_changed = new List<(string utility_name, bool status)>();
         if (prev.plcData.util_barrel != plcData.util_barrel)
@@ -329,7 +331,7 @@ public class BaseService
         var result = await cmd.ExecuteScalarAsync();
 
         int measure_qc = result != null && result != DBNull.Value ? Convert.ToInt32(result) : 0;
-        bool measure_qc_changed = prev.measure_qc != measure_qc;
+        bool measure_qc_changed = prev.measure_qc != measure_qc && measure_qc != 0;
 
         try
         {
@@ -362,8 +364,13 @@ public class BaseService
                 await insertUpdateReject(plcData);
 
             // Measure QC changed
-            if (measure_qc_changed && measure_qc == 1)
+            if (measure_qc_changed)
                 await updateMeasureQC(plcData, measure_qc);
+
+            if (qc_signal)
+            {
+                await updateQCmaster(plcData);
+            }
 
             // Utilities changed
             foreach (var util in util_changed)
@@ -858,6 +865,29 @@ public class BaseService
         var master = await GetMachineMaster(id_machine, time, plcData);
 
         _plcService.UpdateMeasureQC(master);
+    }
+
+    public async Task updateQCmaster(dynamic plcData)
+    {
+        Console.WriteLine($"[Machine {plcData.id_machine}] Update QC Visual and Measure");
+
+        int id_machine = plcData.id_machine;
+        DateTime time = plcData.time;
+
+        var master = await GetMachineMaster(id_machine, time, plcData);
+
+        var sql = @"
+                UPDATE machine_master
+                SET visual_qc  = @visual_qc,
+                    measure_qc = @measure_qc
+                WHERE id_machine = @id_machine";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@visual_qc", master.visual_qc);
+        cmd.Parameters.AddWithValue("@measure_qc", plcData.measure_qc);
+        cmd.Parameters.AddWithValue("@id_machine", master.id_machine);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     // Update Utilities

@@ -121,8 +121,8 @@ public class MachinesService(PlcService plcService, string connectionString) : B
                 finish = Convert.ToDateTime(reader["finish"]),
                 category = Convert.ToString(reader["category"]),
                 problem = Convert.ToString(reader["problem"]),
-                visual_qc = Convert.ToBoolean(reader["visual_qc"]),
-                measure_qc = Convert.ToBoolean(reader["measure_qc"]),
+                visual_qc = Convert.ToInt32(reader["visual_qc"]),
+                measure_qc = Convert.ToInt32(reader["measure_qc"]),
                 mould_category = Convert.ToInt32(reader["mould_category"]),
                 color = CategoryColorHelper.GetColorByCategory(Convert.ToString(reader["category"])),
             });

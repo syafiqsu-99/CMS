@@ -26,8 +26,8 @@
         public int shot_accum { get; set; }
         public int shot { get; set; }
         public int shift { get; set; }
-        public bool visual_qc { get; set; }
-        public bool measure_qc { get; set; }
+        public int visual_qc { get; set; }
+        public int measure_qc { get; set; }
         public float reject_panelling { get; set; }
         public float reject_lumpy { get; set; }
         public float reject_black_dot { get; set; }

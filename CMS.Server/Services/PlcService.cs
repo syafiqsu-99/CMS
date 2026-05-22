@@ -245,29 +245,31 @@ namespace CMS.Server.Services
 
                 list.Add(new PlcSnapshot
                 {
-                    id_machine = i + 1,
+                    id_machine = i,
                     time = timestamp,
 
-                    shot = Math.Min(ReadIntFromD(dRaw, 30 + dOffset), 10_000),
-                    shot_accum = Math.Min(ReadIntFromD(dRaw, 32 + dOffset), 10_000),
-                    act_ct = Math.Min(ReadFloatFromD(dRaw, 60 + dOffset), 1_000f),
-                    mould_category_no = Math.Min(ReadIntFromD(dRaw, 90 + dOffset), 10),
+                    visual_qc = ReadIntFromD(dRaw, 10 + dOffset),
+                    measure_qc = ReadIntFromD(dRaw, 12 + dOffset),
+                    shot = ReadIntFromD(dRaw, 30 + dOffset),
+                    shot_accum = ReadIntFromD(dRaw, 32 + dOffset),
+                    act_ct = ReadFloatFromD(dRaw, 60 + dOffset),
+                    mould_category_no = ReadIntFromD(dRaw, 90 + dOffset),
                     stop_category = ReadStringFromD(dRaw, 300 + dOffset),
                     remark = ReadStringFromD(dRaw, 400 + dOffset),
 
-                    reject_panelling = Math.Min(ReadFloatFromD(dRaw, 250 + dOffset), 10_000f),
-                    reject_lumpy = Math.Min(ReadFloatFromD(dRaw, 255 + dOffset), 10_000f),
-                    reject_black_dot = Math.Min(ReadFloatFromD(dRaw, 260 + dOffset), 10_000f),
-                    reject_burst = Math.Min(ReadFloatFromD(dRaw, 265 + dOffset), 10_000f),
-                    reject_startup = Math.Min(ReadFloatFromD(dRaw, 270 + dOffset), 10_000f),
-                    reject_preform = Math.Min(ReadFloatFromD(dRaw, 275 + dOffset), 10_000f),
-                    reject_purging = Math.Min(ReadFloatFromD(dRaw, 280 + dOffset), 10_000f),
-                    reject_others = Math.Min(ReadFloatFromD(dRaw, 285 + dOffset), 10_000f),
+                    reject_panelling = ReadFloatFromD(dRaw, 250 + dOffset),
+                    reject_lumpy = ReadFloatFromD(dRaw, 255 + dOffset),
+                    reject_black_dot = ReadFloatFromD(dRaw, 260 + dOffset),
+                    reject_burst = ReadFloatFromD(dRaw, 265 + dOffset),
+                    reject_startup = ReadFloatFromD(dRaw, 270 + dOffset),
+                    reject_preform = ReadFloatFromD(dRaw, 275 + dOffset),
+                    reject_purging = ReadFloatFromD(dRaw, 280 + dOffset),
+                    reject_others = ReadFloatFromD(dRaw, 285 + dOffset),
 
                     status_start = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 0),
                     status_off = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 1),
                     production_running = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 2),
-                    visual_qc = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 3),
+                    qc_signal = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 3),
                     done = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 4),
                     remark_signal = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 5),
                     reject_signal = ReadBitFromW(wRaw, (ushort)(0 + wOffset), 6),
@@ -412,34 +414,40 @@ namespace CMS.Server.Services
                 {
                     int Didx(int word) => (word - dStart) * 2;
 
-                    result["D48"] = ReadIntAt(dBuf, Didx(48));
-                    result["D50"] = ReadIntAt(dBuf, Didx(50));
-                    result["D90"] = ReadFloatAt(dBuf, Didx(90));
+                    result["D10"] = ReadIntFromD(dBuf, Didx(10));
+                    result["D12"] = ReadIntFromD(dBuf, Didx(12));
+                    result["D35"] = ReadFloatFromD(dBuf, Didx(35));
+                    result["D48"] = ReadIntFromD(dBuf, Didx(48));
+                    result["D50"] = ReadIntFromD(dBuf, Didx(50));
+                    result["D90"] = ReadFloatFromD(dBuf, Didx(90));
+                    result["D120"] = ReadIntFromD(dBuf, Didx(120));
+                    result["D180"] = ReadIntFromD(dBuf, Didx(180));
+                    result["D190"] = ReadIntFromD(dBuf, Didx(190));
 
-                    result["D200"] = ReadStringAt(dBuf, Didx(200));
-                    result["D300"] = ReadStringAt(dBuf, Didx(300));
-                    result["D400"] = ReadStringAt(dBuf, Didx(400));
-                    result["D500"] = ReadStringAt(dBuf, Didx(500));
+                    result["D200"] = ReadStringFromD(dBuf, Didx(200));
+                    result["D300"] = ReadStringFromD(dBuf, Didx(300));
+                    result["D400"] = ReadStringFromD(dBuf, Didx(400));
+                    result["D500"] = ReadStringFromD(dBuf, Didx(500));
 
                     // Reject (pcs)
-                    result["D700"] = ReadFloatAt(dBuf, Didx(700));
-                    result["D705"] = ReadFloatAt(dBuf,  Didx(705));
-                    result["D710"] = ReadFloatAt(dBuf,  Didx(710));
-                    result["D715"] = ReadFloatAt(dBuf,  Didx(715));
-                    result["D720"] = ReadFloatAt(dBuf,  Didx(720));
-                    result["D725"] = ReadFloatAt(dBuf,  Didx(725));
-                    result["D730"] = ReadFloatAt(dBuf,  Didx(730));
-                    result["D735"] = ReadFloatAt(dBuf,  Didx(735));
+                    result["D700"] = ReadFloatFromD(dBuf, Didx(700));
+                    result["D705"] = ReadFloatFromD(dBuf,  Didx(705));
+                    result["D710"] = ReadFloatFromD(dBuf,  Didx(710));
+                    result["D715"] = ReadFloatFromD(dBuf,  Didx(715));
+                    result["D720"] = ReadFloatFromD(dBuf,  Didx(720));
+                    result["D725"] = ReadFloatFromD(dBuf,  Didx(725));
+                    result["D730"] = ReadFloatFromD(dBuf,  Didx(730));
+                    result["D735"] = ReadFloatFromD(dBuf,  Didx(735));
 
                     // Reject (kg)
-                    result["D740"] = ReadFloatAt(dBuf, Didx(740));
-                    result["D745"] = ReadFloatAt(dBuf, Didx(745));
-                    result["D750"] = ReadFloatAt(dBuf, Didx(750));
-                    result["D755"] = ReadFloatAt(dBuf, Didx(755));
-                    result["D760"] = ReadFloatAt(dBuf, Didx(760));
-                    result["D765"] = ReadFloatAt(dBuf, Didx(765));
-                    result["D770"] = ReadFloatAt(dBuf, Didx(770));
-                    result["D775"] = ReadFloatAt(dBuf, Didx(775));
+                    result["D740"] = ReadFloatFromD(dBuf, Didx(740));
+                    result["D745"] = ReadFloatFromD(dBuf, Didx(745));
+                    result["D750"] = ReadFloatFromD(dBuf, Didx(750));
+                    result["D755"] = ReadFloatFromD(dBuf, Didx(755));
+                    result["D760"] = ReadFloatFromD(dBuf, Didx(760));
+                    result["D765"] = ReadFloatFromD(dBuf, Didx(765));
+                    result["D770"] = ReadFloatFromD(dBuf, Didx(770));
+                    result["D775"] = ReadFloatFromD(dBuf, Didx(775));
                 }
 
                 // W Memory bits: words 20–65
@@ -460,7 +468,8 @@ namespace CMS.Server.Services
                     result["W20.00"] = Wbit(20, 0);   // Status Start
                     result["W20.01"] = Wbit(20, 1);   // Status Off
                     result["W20.02"] = Wbit(20, 2);   // Prod Running
-                    result["W20.03"] = Wbit(20, 3);   // Visual QC
+                    result["W20.03"] = Wbit(20, 3);   // QC Signal
+                    result["W20.04"] = Wbit(20, 4);   // Done Signal
                     result["W20.05"] = Wbit(20, 5);   // Remark Signal
                     result["W20.06"] = Wbit(20, 6);   // Reject Signal
 
@@ -502,8 +511,8 @@ namespace CMS.Server.Services
                 plc = GetWritePlc();
                 plc.Connect();
 
-                int baseOffset = (master.id_machine - 1) * 500;
-                int ipNode = 220 + (master.id_machine - 1);
+                int baseOffset = master.id_machine * 500;
+                int ipNode = 220 + master.id_machine;
                 WriteIntOmron(plc, 10, ipNode);
 
                 ushort addrPartWeight = (ushort)(525 + baseOffset);
@@ -536,8 +545,8 @@ namespace CMS.Server.Services
 
                 foreach (var staff in staffList)
                 {
-                    int baseOffset = (staff.id_machine - 1) * 500;
-                    int ipNode = 220 + (staff.id_machine - 1);
+                    int baseOffset = staff.id_machine * 500;
+                    int ipNode = 220 + staff.id_machine;
                     WriteIntOmron(plc, 10, ipNode);
                     ushort addrPacker = (ushort)(700 + baseOffset);
                     WriteStringOmron(plc, 200, staff.packer);
@@ -559,12 +568,11 @@ namespace CMS.Server.Services
                 plc = GetWritePlc();
                 plc.Connect();
 
-                int baseOffset = (master.id_machine - 1) * 3;
-                int ipNode = 220 + (master.id_machine - 1);
+                int baseOffset = master.id_machine * 3;
+                int ipNode = 220 + master.id_machine;
                 WriteIntOmron(plc, 20, ipNode);
                 ushort addrMeasureQC = (ushort)(7 + baseOffset);
-                WriteBoolOmron(plc, 3, 0, master.measure_qc);
-                WriteBoolOmron(plc, addrMeasureQC, 0, master.measure_qc);
+                WriteIntOmron(plc, addrMeasureQC, master.measure_qc);
                 WriteBoolOmron(plc, 3, 1, true);
             }
             catch (Exception ex)
@@ -691,18 +699,23 @@ namespace CMS.Server.Services
                 int wOffset = i * 3;
                 int dOffset = i * 500;
 
-                if (ReadBit(w1, wOffset, 0) != ReadBit(w2, wOffset, 0)) return false; // status_start
-                if (ReadBit(w1, wOffset, 1) != ReadBit(w2, wOffset, 1)) return false; // status_off
-                if (ReadBit(w1, wOffset, 5) != ReadBit(w2, wOffset, 5)) return false; // remark_signal
-                if (ReadBit(w1, wOffset, 6) != ReadBit(w2, wOffset, 6)) return false; // reject_signal
-                if (ReadBit(w1, wOffset + 1, 0) != ReadBit(w2, wOffset + 1, 0)) return false; // util_barrel
-                if (ReadBit(w1, wOffset + 1, 1) != ReadBit(w2, wOffset + 1, 1)) return false; // util_hyd_motor
-                if (ReadBit(w1, wOffset + 1, 2) != ReadBit(w2, wOffset + 1, 2)) return false; // util_dehumidifier
-                if (ReadBit(w1, wOffset + 1, 3) != ReadBit(w2, wOffset + 1, 3)) return false; // util_chiller
-                if (ReadBit(w1, wOffset + 1, 4) != ReadBit(w2, wOffset + 1, 4)) return false; // util_material
-                if (ReadBit(w1, wOffset + 1, 5) != ReadBit(w2, wOffset + 1, 5)) return false; // util_dry_cycle
+                if (ReadBitFromW(w1, (ushort)wOffset, 0) != ReadBitFromW(w2, (ushort)wOffset, 0)) return false; // status_start
+                if (ReadBitFromW(w1, (ushort)wOffset, 1) != ReadBitFromW(w2, (ushort)wOffset, 1)) return false; // status_off
+                if (ReadBitFromW(w1, (ushort)wOffset, 2) != ReadBitFromW(w2, (ushort)wOffset, 2)) return false; // production_running
+                if (ReadBitFromW(w1, (ushort)wOffset, 3) != ReadBitFromW(w2, (ushort)wOffset, 3)) return false; // qc_signal
+                if (ReadBitFromW(w1, (ushort)wOffset, 4) != ReadBitFromW(w2, (ushort)wOffset, 4)) return false; // done_signal
+                if (ReadBitFromW(w1, (ushort)wOffset, 5) != ReadBitFromW(w2, (ushort)wOffset, 5)) return false; // remark_signal
+                if (ReadBitFromW(w1, (ushort)wOffset, 6) != ReadBitFromW(w2, (ushort)wOffset, 6)) return false; // reject_signal
+                if (ReadBitFromW(w1, (ushort)(wOffset + 1), 0) != ReadBitFromW(w2, (ushort)(wOffset + 1), 0)) return false; // util_barrel
+                if (ReadBitFromW(w1, (ushort)(wOffset + 1), 1) != ReadBitFromW(w2, (ushort)(wOffset + 1), 1)) return false; // util_hyd_motor
+                if (ReadBitFromW(w1, (ushort)(wOffset + 1), 2) != ReadBitFromW(w2, (ushort)(wOffset + 1), 2)) return false; // util_dehumidifier
+                if (ReadBitFromW(w1, (ushort)(wOffset + 1), 3) != ReadBitFromW(w2, (ushort)(wOffset + 1), 3)) return false; // util_chiller
+                if (ReadBitFromW(w1, (ushort)(wOffset + 1), 4) != ReadBitFromW(w2, (ushort)(wOffset + 1), 4)) return false; // util_material
+                if (ReadBitFromW(w1, (ushort)(wOffset + 1), 5) != ReadBitFromW(w2, (ushort)(wOffset + 1), 5)) return false; // util_dry_cycle
 
-                if (ReadString(d1, 300 + dOffset) != ReadString(d2, 300 + dOffset)) return false;
+                if (ReadStringFromD(d1, 400 + dOffset) != ReadStringFromD(d2, 400 + dOffset)) return false; // remark
+                if (ReadStringFromD(d1, 300 + dOffset) != ReadStringFromD(d2, 300 + dOffset)) return false; // stop_category
+                if (ReadStringFromD(d1, 400 + dOffset) != ReadStringFromD(d2, 400 + dOffset)) return false; // remark
             }
 
             return true;
@@ -737,44 +750,6 @@ namespace CMS.Server.Services
         {
             int index = wordIndex * 16 + bit;
             return index >= 0 && index < buf.Length && buf[index];
-        }
-
-        private static bool ReadBit(bool[] buf, int wordIndex, int bit)
-        {
-            int index = wordIndex * 16 + bit;
-            return index >= 0 && index < buf.Length && buf[index];
-        }
-
-        private static string ReadString(byte[] buf, int wordIndex)
-        {
-            int byteIndex = wordIndex * 2;
-            if (byteIndex >= buf.Length || buf[byteIndex] == 0) return string.Empty;
-            return Encoding.ASCII.GetString(buf, byteIndex, 100).Trim('\0', ' ');
-        }
-
-        private static float ReadFloatAt(byte[] buf, int byteIndex)
-        {
-            if (byteIndex + 4 > buf.Length) return 0f;
-            byte[] r = { buf[byteIndex + 1], buf[byteIndex], buf[byteIndex + 3], buf[byteIndex + 2] };
-            return BitConverter.ToSingle(r, 0);
-        }
-
-        private static int ReadIntAt(byte[] buf, int byteIndex)
-        {
-            if (byteIndex + 4 > buf.Length) return 0;
-            byte[] r = { buf[byteIndex + 1], buf[byteIndex], buf[byteIndex + 3], buf[byteIndex + 2] };
-            return BitConverter.ToInt32(r, 0);
-        }
-
-        private static string ReadStringAt(byte[] buf, int byteIndex, int maxBytes = 200)
-        {
-            if (byteIndex >= buf.Length) return string.Empty;
-            int available = Math.Min(maxBytes, buf.Length - byteIndex);
-            int length = 0;
-            while (length < available && buf[byteIndex + length] != 0)
-                length++;
-            if (length == 0) return string.Empty;
-            return Encoding.ASCII.GetString(buf, byteIndex, length).Trim();
         }
 
         private static Dictionary<string, object> BuildResult(byte[] dBuffer, bool[] wBits)
@@ -836,8 +811,10 @@ namespace CMS.Server.Services
         public bool status_start { get; init; }
         public bool status_off { get; init; }
         public bool production_running { get; init; }
-        public bool visual_qc { get; init; }
+        public int visual_qc { get; init; }
+        public int measure_qc { get; init; }
         public bool done { get; init; }
+        public bool qc_signal { get; init; }
         public bool remark_signal { get; init; }
         public bool reject_signal { get; init; }
         public bool util_barrel { get; init; }
