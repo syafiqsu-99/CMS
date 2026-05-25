@@ -18,7 +18,6 @@ public class MachinesService(PlcService plcService, string connectionString) : B
                 {logUnion}
             ),
             latest_logs AS (
-                -- This assigns a row number to each log per machine, sorted by newest first
                 SELECT *, ROW_NUMBER() OVER(PARTITION BY id_machine ORDER BY start DESC) as rn
                 FROM all_logs
             )
@@ -62,7 +61,6 @@ public class MachinesService(PlcService plcService, string connectionString) : B
                     ELSE CAST(COALESCE(r.total_weight, 0) / NULLIF(mm.part_weight, 0) AS INT)
                 END AS reject_pcs,
                 
-                -- Used COALESCE to fallback to current time if the machine has NO logs yet
                 COALESCE(ll.start, CAST(GETDATE() AS DATETIME)) AS start, 
                 COALESCE(ll.finish, CAST(GETDATE() AS DATETIME)) AS finish,
                 CASE 
@@ -75,15 +73,14 @@ public class MachinesService(PlcService plcService, string connectionString) : B
                 COALESCE(ll.problem, '') AS problem,
                 COALESCE(ll.mould_category, 0) AS mould_category
             FROM machine_master mm
-            -- LEFT JOIN ensures the machine still shows up even if it has 0 logs
-            -- rn = 1 ensures we ONLY get the Top 1 latest log
             LEFT JOIN latest_logs ll ON mm.id_machine = ll.id_machine AND ll.rn = 1
             LEFT JOIN reject r 
                 ON r.id_machine = mm.id_machine 
                 AND r.id_type = mm.id_type 
                 AND r.mould = mm.mould
                 AND r.production_date = @production_date
-                AND r.shift = @shift";
+                AND r.shift = @shift
+            ORDER BY id_machine";
 
         var result = new List<object>();
 
@@ -124,7 +121,7 @@ public class MachinesService(PlcService plcService, string connectionString) : B
                 visual_qc = Convert.ToInt32(reader["visual_qc"]),
                 measure_qc = Convert.ToInt32(reader["measure_qc"]),
                 mould_category = Convert.ToInt32(reader["mould_category"]),
-                color = CategoryColorHelper.GetColorByCategory(Convert.ToString(reader["category"])),
+                color = BaseService.GetColor(Convert.ToString(reader["category"])),
             });
         }
 

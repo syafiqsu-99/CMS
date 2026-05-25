@@ -42,7 +42,7 @@ public class BaseService
         {
             int id = reader.GetInt32(0);
             string name = reader.GetString(1);
-            string ip = $"172.17.86.{219 + id}";
+            string ip = $"172.17.86.{220 + id}";
             machines.Add((id, name, ip));
         }
 
@@ -109,7 +109,7 @@ public class BaseService
                         CAST(DATEDIFF(MINUTE, tl.start, tl.finish) / 60.0 AS FLOAT) AS duration,
                         tl.category,
                         tl.mould_category,
-                        (mm.shot * mm.qty_perct) AS output,
+                        COALESCE((mm.shot * mm.qty_perct), 0) AS output,
                         CAST(COALESCE(
                             CASE
                             WHEN DATEPART(HOUR, GETDATE()) BETWEEN 6 AND 17 THEN
@@ -170,7 +170,7 @@ public class BaseService
                 efficiency = Convert.ToSingle(reader["efficiency"]),
                 shift = Convert.ToInt32(reader["shift"]),
                 production_date = DateOnly.FromDateTime(Convert.ToDateTime(reader["production_date"])),
-                color = CategoryColorHelper.GetColorByCategory(Convert.ToString(reader["category"])),
+                color = GetColor(Convert.ToString(reader["category"])),
             });
         }
 
@@ -275,9 +275,18 @@ public class BaseService
 
         if (prev.plcData == null)
         {
-            await shiftChange(plcData, conn, (SqlTransaction)tx);
+            try
+            {
+                await shiftChange(plcData, conn, (SqlTransaction)tx);
+                await tx.CommitAsync();
 
-            _lastMachineMaster[id_machine] = (plcData, productionDate, shift, 0);
+                _lastMachineMaster[id_machine] = (plcData, productionDate, shift, 0);
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
             return;
         }
 
@@ -408,7 +417,6 @@ public class BaseService
         var tableName = $"machine_log_{master.id_machine}";
 
         var sql = $@"
-                -- Update Calendar
                 IF NOT EXISTS (
                     SELECT 1 FROM calendar
                     WHERE production_date = @production_date AND shift = @shift

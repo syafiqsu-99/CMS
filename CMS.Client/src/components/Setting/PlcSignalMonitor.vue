@@ -217,7 +217,7 @@
       const row = {
         id: m.id,
         name: m.name,
-        ip: `${MACHINE_IP_PREFIX}${219 + m.id}`,
+        ip: `${MACHINE_IP_PREFIX}${220 + m.id}`,
         statusLabel: resolveStatusLabel(entry),
         statusColor: resolveStatusColor(entry),
         isReading,

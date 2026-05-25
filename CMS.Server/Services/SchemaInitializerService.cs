@@ -130,12 +130,13 @@ namespace CMS.Server.Services
                     start DATETIME NOT NULL,
                     finish DATETIME NULL,
                     shot INT DEFAULT 0,
-                    act_ct FLOAT DEFAULT 0,
                     category NVARCHAR(100) NULL,
                     problem NVARCHAR(255) NULL,
                     mould_category INT,
                     shift INT,
-                    production_date DATE
+                    production_date DATE,
+                    act_ct FLOAT DEFAULT 0,
+                    status_start BIT
                 )";
             }
 
