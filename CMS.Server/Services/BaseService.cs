@@ -1,6 +1,5 @@
 ﻿using CMS.Server.Models;
 using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore.Metadata.Internal;
 using System.Collections.Concurrent;
 using static CMS.Server.Services.MachineLogService;
 
@@ -271,25 +270,31 @@ public class BaseService
         var prev = _lastMachineMaster.GetValueOrDefault(id_machine);
         var (productionDate, shift) = GetProductionDate(time);
 
+        await using var conn = await CreateConnectionAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+
         if (prev.plcData == null)
         {
-            await shiftChange(plcData);
+            await shiftChange(plcData, conn, (SqlTransaction)tx);
 
             _lastMachineMaster[id_machine] = (plcData, productionDate, shift, 0);
             return;
         }
 
         bool shift_change = prev.productionDate != productionDate || prev.shift != shift;
-        bool prod_run = prev.plcData.production_running != plcData.production_running && plcData.production_running;
-        bool status_start = prev.plcData.status_start != plcData.status_start;
         bool done = prev.plcData.done != plcData.done && plcData.done;
-        bool status_off = prev.plcData.status_off != plcData.status_off;
         bool category = prev.plcData.stop_category != plcData.stop_category;
         bool mould_category_no = prev.plcData.mould_category_no != plcData.mould_category_no;
+        bool mould_change_started = prev.plcData.stop_category != plcData.stop_category && plcData.stop_category == "MOULD CHANGE";
         bool no_category = !string.IsNullOrEmpty(prev.plcData.stop_category) && string.IsNullOrEmpty(plcData.stop_category) && !plcData.status_start;
         bool remark = prev.plcData.remark_signal != plcData.remark_signal;
         bool reject_signal = prev.plcData.reject_signal != plcData.reject_signal;
         bool qc_signal = prev.plcData.qc_signal != plcData.qc_signal;
+        bool machine_started = !prev.plcData.status_start && plcData.status_start;
+        bool machine_stopped = prev.plcData.status_start && !plcData.status_start;
+        bool machine_on = !prev.plcData.status_off && plcData.status_off;
+        bool machine_off = prev.plcData.status_off && !plcData.status_off;
+        bool production_running = (( prev.plcData.status_start != plcData.status_start ) || ( prev.plcData.production_running != plcData.production_running )) && plcData.status_start && plcData.production_running;
 
         var util_changed = new List<(string utility_name, bool status)>();
         if (prev.plcData.util_barrel != plcData.util_barrel)
@@ -305,90 +310,91 @@ public class BaseService
         if (prev.plcData.util_dry_cycle != plcData.util_dry_cycle)
             util_changed.Add(("DRY CYCLE", plcData.util_dry_cycle));
 
-        var tableName = $"machine_log_{id_machine}";
-
-        var sql = $@"
-            SET NOCOUNT ON;
-
-            UPDATE machine_master SET
-                act_ct       = @act_ct,
-                status_start = @status_start,
-                status_off   = @status_off,
-                shot         = @shot_accum,
-                visual_qc    = @visual_qc
-            WHERE id_machine = @id_machine;
-
-            SELECT measure_qc FROM machine_master WHERE id_machine = @id_machine";
-
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@id_machine", id_machine);
-        cmd.Parameters.AddWithValue("@act_ct", plcData.act_ct);
-        cmd.Parameters.AddWithValue("@status_start", plcData.status_start);
-        cmd.Parameters.AddWithValue("@status_off", plcData.status_off);
-        cmd.Parameters.AddWithValue("@shot_accum", plcData.shot_accum);
-        cmd.Parameters.AddWithValue("@visual_qc", plcData.visual_qc);
-        var result = await cmd.ExecuteScalarAsync();
-
-        int measure_qc = result != null && result != DBNull.Value ? Convert.ToInt32(result) : 0;
-        bool measure_qc_changed = prev.measure_qc != measure_qc && measure_qc != 0;
-
         try
         {
+            var sql = @"
+                UPDATE machine_master
+                SET
+                    act_ct=@act_ct,
+                    status_start=@status_start,
+                    status_off=@status_off,
+                    shot=@shot_accum,
+                    visual_qc=@visual_qc
+                WHERE id_machine=@id_machine;
+
+                SELECT measure_qc
+                FROM machine_master
+                WHERE id_machine=@id_machine";
+
+            await using var cmd = new SqlCommand(sql, conn);
+            cmd.Transaction = (SqlTransaction)tx;
+            cmd.Parameters.AddWithValue("@id_machine", id_machine);
+            cmd.Parameters.AddWithValue("@act_ct", plcData.act_ct);
+            cmd.Parameters.AddWithValue("@status_start", plcData.status_start);
+            cmd.Parameters.AddWithValue("@status_off", plcData.status_off);
+            cmd.Parameters.AddWithValue("@shot_accum", plcData.shot_accum);
+            cmd.Parameters.AddWithValue("@visual_qc", plcData.visual_qc);
+            var result = await cmd.ExecuteScalarAsync();
+
+            int measure_qc = result != DBNull.Value ? Convert.ToInt32(result) : 0;
+            bool measure_qc_changed = prev.measure_qc != measure_qc && measure_qc != 0;
+
             // Machine running
-            if (prod_run)
-                await insertMachineRun(plcData);
+            if (production_running)
+                await insertMachineRun(plcData, conn, (SqlTransaction)tx);
 
             // Machine stopped
-            if (done || status_start)
-                await insertMachineStop(plcData);
+            if (done || machine_started || machine_stopped)
+                await insertMachineStop(plcData, conn, (SqlTransaction)tx);
 
             // Shift changed
             if (shift_change)
-                await shiftChange(plcData);
+                await shiftChange(plcData, conn, (SqlTransaction)tx);
 
             // Stop category changed
             if (category && !string.IsNullOrEmpty(plcData.stop_category))
-                await updateCategory(plcData);
+                await updateCategory(plcData, conn, (SqlTransaction)tx);
 
             // Mould number changed
-            if (mould_category_no && plcData.mould_category_no != 0)
-                await updateMouldCategory(plcData);
+            if (plcData.mould_category_no != 0  && (mould_category_no || mould_change_started))
+                await updateMouldCategory(plcData, conn, (SqlTransaction)tx);
 
             // Remark signal changed
             if (remark && plcData.remark_signal)
-                await updateProblem(plcData);
+                await updateProblem(plcData, conn, (SqlTransaction)tx);
 
             // Reject signal triggered
             if (reject_signal && plcData.reject_signal)
-                await insertUpdateReject(plcData);
+                await insertUpdateReject(plcData, conn, (SqlTransaction)tx);
 
             // Measure QC changed
             if (measure_qc_changed)
-                await updateMeasureQC(plcData, measure_qc);
+                await updateMeasureQC(plcData, conn, (SqlTransaction)tx);
 
             if (qc_signal)
             {
-                await updateQCmaster(plcData);
+                await updateQCmaster(plcData, conn, (SqlTransaction)tx);
             }
 
             // Utilities changed
             foreach (var util in util_changed)
-                await updateUtilities(plcData, util.utility_name, util.status);
+                await updateUtilities(plcData, util.utility_name, util.status, conn, (SqlTransaction)tx);
 
+            await tx.CommitAsync();
+
+            _lastMachineMaster[id_machine] = (plcData, productionDate, shift, measure_qc);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[Machine {plcData.id_machine}] ERROR: {ex.Message}");
+            await tx.RollbackAsync();
+            throw;
         }
-
-        _lastMachineMaster[id_machine] = (plcData, productionDate, shift, measure_qc);
     }
     #endregion
 
     #region Machine Log Auto
     // On Shift Change
-    public async Task shiftChange(dynamic plcData)
+    public async Task shiftChange(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Shift Change");
         int id_machine = plcData.id_machine;
@@ -652,8 +658,7 @@ public class BaseService
                     JOIN sap s ON s.id_type = @id_type AND s.mould = @mould
                     WHERE m.id_machine = @id_machine;";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
 
         cmd.Parameters.Clear();
         cmd.Parameters.AddWithValue("@id_machine", master.id_machine);
@@ -689,7 +694,7 @@ public class BaseService
         _plcService.UpdatePLCS(master);
     }
 
-    public async Task insertMachineRun(dynamic plcData)
+    public async Task insertMachineRun(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Insert Machine Run");
         int id_machine = plcData.id_machine;
@@ -701,18 +706,16 @@ public class BaseService
 
         var sql = $@"
             UPDATE [{tableName}]
-            SET category = @category
-            WHERE (category IS NULL AND status_start = 1) OR finish IS NULL;";
+            SET category='PRODUCTION RUNNING'
+            WHERE finish IS NULL AND category IS NULL;";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@category", master.stop_category);
+        await using var cmd = new SqlCommand(sql, conn, tx);
 
         await cmd.ExecuteNonQueryAsync();
     }
 
     // Insert new and Update finish Machine Log Stop
-    public async Task insertMachineStop(dynamic plcData)
+    public async Task insertMachineStop(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Insert Machine Stop");
         int id_machine = plcData.id_machine;
@@ -746,14 +749,13 @@ public class BaseService
                                       WHEN @final_shot = 0 THEN 0
                                       ELSE DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
                                   END
-                    WHERE finish IS NULL AND id_machine = @id_machine;
+                    WHERE finish IS NULL;
                 END
 
                 INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, mould_category, shift, production_date, status_start)
                 VALUES (@machine_name, @id_type, @mould, @time, 0, 0, @shift, @production_date, @status_start);";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
         cmd.Parameters.AddWithValue("@id_type", master.id_type);
         cmd.Parameters.AddWithValue("@mould", master.mould);
@@ -767,7 +769,7 @@ public class BaseService
     }
 
     // Update Category
-    public async Task updateCategory(dynamic plcData)
+    public async Task updateCategory(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update Category");
         int id_machine = plcData.id_machine;
@@ -782,14 +784,13 @@ public class BaseService
                 SET category = @category
                 WHERE finish IS NULL OR category IS NULL;";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@category", master.stop_category);
         await cmd.ExecuteNonQueryAsync();
     }
 
     // Update Problem
-    public async Task updateProblem(dynamic plcData)
+    public async Task updateProblem(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update Problem");
 
@@ -816,15 +817,14 @@ public class BaseService
                         END
                 WHERE finish IS NULL";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@problem", master.remark);
         cmd.Parameters.AddWithValue("@mould_category", master.mould_category_no);
         await cmd.ExecuteNonQueryAsync();
     }
 
     // Update Mould Category
-    public async Task updateMouldCategory(dynamic plcData)
+    public async Task updateMouldCategory(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update Mould Category");
 
@@ -847,15 +847,14 @@ public class BaseService
                     END
                 WHERE category = 'MOULD CHANGE' AND mould_category = 0";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@problem", master.remark);
         cmd.Parameters.AddWithValue("@mould_category", master.mould_category_no);
         await cmd.ExecuteNonQueryAsync();
     }
 
     // Update Measure QC
-    public async Task updateMeasureQC(dynamic plcData, int measure_qc)
+    public async Task updateMeasureQC(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update Measure QC");
 
@@ -867,7 +866,7 @@ public class BaseService
         _plcService.UpdateMeasureQC(master);
     }
 
-    public async Task updateQCmaster(dynamic plcData)
+    public async Task updateQCmaster(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update QC Visual and Measure");
 
@@ -882,8 +881,7 @@ public class BaseService
                     measure_qc = @measure_qc
                 WHERE id_machine = @id_machine";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@visual_qc", master.visual_qc);
         cmd.Parameters.AddWithValue("@measure_qc", plcData.measure_qc);
         cmd.Parameters.AddWithValue("@id_machine", master.id_machine);
@@ -891,7 +889,7 @@ public class BaseService
     }
 
     // Update Utilities
-    public async Task updateUtilities(dynamic plcData, string utility_name, bool status)
+    public async Task updateUtilities(dynamic plcData, string utility_name, bool status, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update Utilities");
 
@@ -910,8 +908,7 @@ public class BaseService
                 INSERT INTO utilities (id_machine, machine_name, utility_name, start, category, shift, production_date) 
                 VALUES (@id_machine, @machine_name, @utility_name, @time, @category, @shift, @production_date);";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@id_machine", id_machine);
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
         cmd.Parameters.AddWithValue("@time", time);
@@ -924,7 +921,7 @@ public class BaseService
     #endregion
 
     #region Reject
-    public async Task insertUpdateReject(dynamic plcData)
+    public async Task insertUpdateReject(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         int id_machine = plcData.id_machine;
         DateTime time = plcData.time;
@@ -957,8 +954,7 @@ public class BaseService
                         AND shift = @shift AND production_date = @production_date
                 END";
 
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
+        await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@id_machine", master.id_machine);
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
         cmd.Parameters.AddWithValue("@id_type", master.id_type);

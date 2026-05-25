@@ -1,4 +1,5 @@
-﻿using Microsoft.Data.SqlClient;
+﻿// CMS.Server/Services/SchemaInitializerService.cs
+using Microsoft.Data.SqlClient;
 
 namespace CMS.Server.Services
 {
@@ -33,26 +34,23 @@ namespace CMS.Server.Services
             }
 
             var createdTables = new List<string>();
-            var tableNames = new List<string>();
-
-            for (int i = 1; i <= 26; i++)
-                tableNames.Add($"machine_log_{i}");
-
-            tableNames.AddRange([
-                "reject", "report", "sap", "staff_list", "utilities", "attendance", "machine_master", "calendar", "plc_passwords"
-            ]);
 
             using var conn = await CreateConnection();
 
-            foreach (var table in tableNames)
+            // Always ensure static tables first (machine_master must exist before querying it)
+            var staticTables = new[]
+            {
+                "machine_master", "reject", "report", "sap", "staff_list",
+                "utilities", "attendance", "calendar", "plc_passwords"
+            };
+
+            foreach (var table in staticTables)
             {
                 bool exists = await TableExistsAsync(conn, table);
-                if (exists)
-                    continue;
+                if (exists) continue;
 
                 var ddl = GetCreateTableDDL(table);
-                if (string.IsNullOrWhiteSpace(ddl))
-                    continue;
+                if (string.IsNullOrWhiteSpace(ddl)) continue;
 
                 using var cmd = new SqlCommand(ddl, conn);
                 await cmd.ExecuteNonQueryAsync();
@@ -62,11 +60,46 @@ namespace CMS.Server.Services
                     await SeedPlcPasswordsAsync(conn);
             }
 
+            int minId = 0;
+            int maxId = 0;
+
+            using (var rangeCmd = new SqlCommand(
+                "SELECT MIN(id_machine), MAX(id_machine) FROM machine_master", conn))
+            using (var reader = await rangeCmd.ExecuteReaderAsync())
+            {
+                if (await reader.ReadAsync() && !reader.IsDBNull(0) && !reader.IsDBNull(1))
+                {
+                    minId = reader.GetInt32(0);
+                    maxId = reader.GetInt32(1);
+                }
+            }
+
+            if (maxId >= minId)
+            {
+                for (int i = minId; i <= maxId; i++)
+                {
+                    var tableName = $"machine_log_{i}";
+                    bool exists = await TableExistsAsync(conn, tableName);
+                    if (exists) continue;
+
+                    var ddl = GetCreateTableDDL(tableName);
+                    if (string.IsNullOrWhiteSpace(ddl)) continue;
+
+                    using var cmd = new SqlCommand(ddl, conn);
+                    await cmd.ExecuteNonQueryAsync();
+                    createdTables.Add(tableName);
+                }
+            }
+
             return new { createdTables };
         }
 
         private static async Task SeedPlcPasswordsAsync(SqlConnection conn)
         {
+            using var countCmd = new SqlCommand("SELECT COUNT(*) FROM plc_passwords", conn);
+            int count = (int)(await countCmd.ExecuteScalarAsync() ?? 0);
+            if (count > 0) return;
+
             const string sql = @"
                 INSERT INTO plc_passwords (department, password)
                 VALUES ('production', 0), ('technician', 0), ('maintenance', 0), ('qc', 0)";
@@ -109,37 +142,37 @@ namespace CMS.Server.Services
             if (table == "machine_master")
                 return @"
                 CREATE TABLE machine_master(
-                        id_machine INT IDENTITY(1,1) PRIMARY KEY,
-                        shift INT,
-                        machine_name NVARCHAR(100),
-                        packer NVARCHAR(255),
-                        material NVARCHAR(100),
-                        id_type INT,
-                        mould INT,
-                        type NVARCHAR(255),
-                        jo_no NVARCHAR(255),
-                        qty_perct INT,
-                        gross_weight FLOAT,
-                        part_weight FLOAT,
-                        shot INT,
-                        qty_order INT,
-                        wip_opening INT,
-                        wip_closing INT,
-                        shift_output AS ([shot]*[qty_perct]) PERSISTED,
-                        finish_good INT,
-                        inward AS (COALESCE((NULLIF([part_weight],(0))*NULLIF([finish_good],(0)))/(1000),(0))) PERSISTED,
-                        qty_accum INT,
-                        qty_balance AS ([qty_order]-[qty_accum]) PERSISTED,
-                        material_used AS (COALESCE((NULLIF([part_weight],(0))*NULLIF([shot]*[qty_perct],(0)))/(1000),(0))) PERSISTED,
-                        part_scrap FLOAT,
-                        runner AS (COALESCE((NULLIF([gross_weight]-[part_weight],(0))*NULLIF([shot]*[qty_perct],(0)))/(1000),(0))) PERSISTED,
-                        act_ct FLOAT,
-                        sap_ct FLOAT,
-                        status_start BIT,
-                        status_off BIT,
-                        visual_qc BIT,
-                        measure_qc BIT
-                    )";
+                    id_machine INT IDENTITY(1,1) PRIMARY KEY,
+                    shift INT,
+                    machine_name NVARCHAR(100),
+                    packer NVARCHAR(255),
+                    material NVARCHAR(100),
+                    id_type INT,
+                    mould INT,
+                    type NVARCHAR(255),
+                    jo_no NVARCHAR(255),
+                    qty_perct INT,
+                    gross_weight FLOAT,
+                    part_weight FLOAT,
+                    shot INT,
+                    qty_order INT,
+                    wip_opening INT,
+                    wip_closing INT,
+                    shift_output AS ([shot]*[qty_perct]) PERSISTED,
+                    finish_good INT,
+                    inward AS (COALESCE((NULLIF([part_weight],(0))*NULLIF([finish_good],(0)))/(1000),(0))) PERSISTED,
+                    qty_accum INT,
+                    qty_balance AS ([qty_order]-[qty_accum]) PERSISTED,
+                    material_used AS (COALESCE((NULLIF([part_weight],(0))*NULLIF([shot]*[qty_perct],(0)))/(1000),(0))) PERSISTED,
+                    part_scrap FLOAT,
+                    runner AS (COALESCE((NULLIF([gross_weight]-[part_weight],(0))*NULLIF([shot]*[qty_perct],(0)))/(1000),(0))) PERSISTED,
+                    act_ct FLOAT,
+                    sap_ct FLOAT,
+                    status_start BIT,
+                    status_off BIT,
+                    visual_qc INT,
+                    measure_qc INT
+                )";
 
             if (table == "reject")
                 return @"
@@ -273,15 +306,15 @@ namespace CMS.Server.Services
 
             if (table == "calendar")
                 return @"
-                CREATE TABLE calendar (
+                CREATE TABLE calendar(
                     production_date DATE NOT NULL,
                     shift INT NOT NULL,
                     day_type NVARCHAR(20) NOT NULL,
                     planned_hours FLOAT NOT NULL DEFAULT 12,
-                    start DAETIME NOT NULL,
-                    finish DAETIME NULL,
+                    start DATETIME NOT NULL,
+                    finish DATETIME NULL,
                     PRIMARY KEY (production_date, shift)
-                );";
+                )";
 
             if (table == "plc_passwords")
                 return @"
