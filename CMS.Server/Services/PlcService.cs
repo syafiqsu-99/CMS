@@ -20,7 +20,7 @@ namespace CMS.Server.Services
         private const string MasterIp = "172.17.86.80";
         private const string ReadKey = MasterIp + "_read";
         private const string WriteKey = MasterIp + "_write";
-        private const int PollDelayMs = 200;
+        private const int PollDelayMs = 100;
 
         private IReadOnlyList<(int id, string name, string ip)> _cachedMachines = [];
         private DateTime _machinesCachedAt = DateTime.MinValue;
@@ -362,6 +362,8 @@ namespace CMS.Server.Services
                     return [];
                 }
 
+                MergeEdgeBits(w1, w2, machineCount);
+
                 if (AreSignalsConsistent(w1, w2, d1, d2, machineCount))
                     return BuildResult(d2, w2);
 
@@ -372,6 +374,9 @@ namespace CMS.Server.Services
                     _logger.LogWarning("[PlcService] Read attempt 3 failed — using read 2");
                     return BuildResult(d2, w2);
                 }
+
+                MergeEdgeBits(w1, w3, machineCount);
+                MergeEdgeBits(w2, w3, machineCount);
 
                 if (AreSignalsConsistent(w2, w3, d2, d3, machineCount)) return BuildResult(d3, w3);
                 if (AreSignalsConsistent(w1, w3, d1, d3, machineCount)) return BuildResult(d3, w3);
@@ -669,7 +674,7 @@ namespace CMS.Server.Services
 
         public void UpdatePLCS(dynamic master)
         {
-            Console.WriteLine($"[Machine {master.id_machine}] Mould Change");
+            Console.WriteLine($"[Machine {master.id_machine}] PLC Mould Change");
             PlcOmron? plc = null;
             try
             {
@@ -885,20 +890,15 @@ namespace CMS.Server.Services
                 bool Wb1(int wo, int b) { int idx = Widx(wo, b); return idx < w1.Length && w1[idx]; }
                 bool Wb2(int wo, int b) { int idx = Widx(wo, b); return idx < w2.Length && w2[idx]; }
 
-                if (Wb1(0, 0) != Wb2(0, 0)) return false;
-                if (Wb1(0, 1) != Wb2(0, 1)) return false;
-                if (Wb1(0, 2) != Wb2(0, 2)) return false;
-                if (Wb1(0, 3) != Wb2(0, 3)) return false;
-                if (Wb1(0, 4) != Wb2(0, 4)) return false;
-                if (Wb1(0, 5) != Wb2(0, 5)) return false;
-                if (Wb1(0, 6) != Wb2(0, 6)) return false;
-                if (Wb1(1, 0) != Wb2(1, 0)) return false;
-                if (Wb1(1, 1) != Wb2(1, 1)) return false;
-                if (Wb1(1, 2) != Wb2(1, 2)) return false;
-                if (Wb1(1, 3) != Wb2(1, 3)) return false;
-                if (Wb1(1, 4) != Wb2(1, 4)) return false;
-                if (Wb1(1, 5) != Wb2(1, 5)) return false;
-                if (Wb1(2, 0) != Wb2(2, 0)) return false;
+                if (Wb1(0, 0) != Wb2(0, 0)) return false; // status_start
+                if (Wb1(0, 1) != Wb2(0, 1)) return false; // status_off
+                if (Wb1(0, 2) != Wb2(0, 2)) return false; // production_running
+                if (Wb1(1, 0) != Wb2(1, 0)) return false; // util_barrel
+                if (Wb1(1, 1) != Wb2(1, 1)) return false; // util_hyd_motor
+                if (Wb1(1, 2) != Wb2(1, 2)) return false; // util_dehumidifier
+                if (Wb1(1, 3) != Wb2(1, 3)) return false; // util_chiller
+                if (Wb1(1, 4) != Wb2(1, 4)) return false; // util_material
+                if (Wb1(1, 5) != Wb2(1, 5)) return false; // util_dry_cycle
 
                 // Stop category string consistency
                 int strByteIdx = dByteBase + (800 - 500) * 2;
@@ -909,6 +909,27 @@ namespace CMS.Server.Services
             }
 
             return true;
+        }
+
+        private static void MergeEdgeBits(bool[] source, bool[] target, int machineCount)
+        {
+            const int wPerMachine = 3;
+
+            for (int m = 0; m < machineCount; m++)
+            {
+                int[] edgeBits = [
+                    (m * wPerMachine + 0) * 16 + 3, // qc_signal
+                    (m * wPerMachine + 0) * 16 + 4, // done
+                    (m * wPerMachine + 0) * 16 + 5, // remark_signal
+                    (m * wPerMachine + 0) * 16 + 6, // reject_signal
+                ];
+
+                foreach (int idx in edgeBits)
+                {
+                    if (idx < source.Length && idx < target.Length && source[idx])
+                        target[idx] = true;
+                }
+            }
         }
 
         // ── Debug helpers ──────────────────────────────────────────────────────

@@ -350,8 +350,8 @@ public class BaseService
             bool measure_qc_changed = prev.measure_qc != measure_qc && measure_qc != 0;
 
             // Machine running
-            //if (production_running)
-            //    await insertMachineRun(master, conn, (SqlTransaction)tx);
+            if (production_running)
+                await insertMachineRun(master, conn, (SqlTransaction)tx);
 
             // Machine stopped
             if (done || machine_started || machine_stopped)
@@ -393,7 +393,7 @@ public class BaseService
 
             await tx.CommitAsync();
 
-            _lastMachineMaster[id_machine] = (master, productionDate, shift, measure_qc);
+            _lastMachineMaster[id_machine] = (plcData, productionDate, shift, measure_qc);
         }
         catch
         {
@@ -709,7 +709,7 @@ public class BaseService
         var sql = $@"
             UPDATE [{tableName}]
             SET category='PRODUCTION RUNNING'
-            WHERE finish IS NULL AND category IS NULL;";
+            WHERE finish IS NULL OR (category IS NULL AND status_start = 1);";
 
         await using var cmd = new SqlCommand(sql, conn, tx);
 
@@ -829,7 +829,7 @@ public class BaseService
                             THEN @mould_category
                             ELSE 0
                     END
-                WHERE category = 'MOULD CHANGE' AND mould_category = 0";
+                WHERE (category = 'MOULD CHANGE' AND mould_category = 0) OR (category = 'MOULD CHANGE' AND finish IS NULL)";
 
         await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@problem", master.remark);
