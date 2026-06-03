@@ -381,12 +381,6 @@ public class BaseService
             if (measure_qc_changed)
                 await updateMeasureQC(master, conn, (SqlTransaction)tx);
 
-            // qc_signal triggered
-            if (qc_signal)
-            {
-                await updateQCmaster(master, conn, (SqlTransaction)tx);
-            }
-
             // Utilities changed
             foreach (var util in util_changed)
                 await updateUtilities(master, util.utility_name, util.status, conn, (SqlTransaction)tx);
@@ -843,24 +837,6 @@ public class BaseService
         Console.WriteLine($"[Machine {master.id_machine}] Update Measure QC");
 
         _plcService.UpdateMeasureQC(master);
-    }
-
-    // Update machine_master QC
-    public async Task updateQCmaster(machine_master master, SqlConnection conn, SqlTransaction tx)
-    {
-        Console.WriteLine($"[Machine {master.id_machine}] Update QC Visual and Measure");
-
-        var sql = @"
-                UPDATE machine_master
-                SET visual_qc  = @visual_qc,
-                    measure_qc = @measure_qc
-                WHERE id_machine = @id_machine";
-
-        await using var cmd = new SqlCommand(sql, conn, tx);
-        cmd.Parameters.AddWithValue("@visual_qc", master.visual_qc);
-        cmd.Parameters.AddWithValue("@measure_qc", master.measure_qc);
-        cmd.Parameters.AddWithValue("@id_machine", master.id_machine);
-        await cmd.ExecuteNonQueryAsync();
     }
 
     // Update Utilities
