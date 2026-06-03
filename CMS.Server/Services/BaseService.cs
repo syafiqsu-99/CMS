@@ -1,7 +1,6 @@
 ﻿using CMS.Server.Models;
 using Microsoft.Data.SqlClient;
 using System.Collections.Concurrent;
-using static CMS.Server.Services.MachineLogService;
 
 namespace CMS.Server.Services;
 
@@ -380,6 +379,7 @@ public class BaseService
             if (measure_qc_changed)
                 await updateMeasureQC(plcData, conn, (SqlTransaction)tx);
 
+            // qc_signal triggered
             if (qc_signal)
             {
                 await updateQCmaster(plcData, conn, (SqlTransaction)tx);
@@ -874,6 +874,7 @@ public class BaseService
         _plcService.UpdateMeasureQC(master);
     }
 
+    // Update machine_master QC
     public async Task updateQCmaster(dynamic plcData, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[Machine {plcData.id_machine}] Update QC Visual and Measure");
