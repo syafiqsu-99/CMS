@@ -1,7 +1,7 @@
 ﻿using Microsoft.Data.SqlClient;
 namespace CMS.Server.Services;
 
-public class OEEService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
+public class OEEService(MainPlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
     public async Task<IReadOnlyList<object>> CalculateOeeAsync(DateOnly startDate, DateOnly endDate)
     {

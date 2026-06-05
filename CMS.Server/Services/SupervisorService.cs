@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace CMS.Server.Services;
 
-public class SupervisorService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
+public class SupervisorService(MainPlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
     {
@@ -688,8 +688,12 @@ public class SupervisorService(PlcService plcService, string connectionString) :
 
             IF NOT EXISTS (SELECT 1 FROM report WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
             BEGIN
-                INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould) 
-                VALUES (@id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould);
+                INSERT INTO report (id_machine, machine_name, time, shift, production_date, id_type, mould, type, material, qty_perct, gross_weight, part_weight, sap_ct) 
+                SELECT 
+                    @id_machine, @machine_name, @time, @shift, @production_date, @id_type, @mould, s.type, s.material, s.qty_perct, s.gross_weight, s.part_weight, s.sap_ct
+                FROM sap s
+                WHERE s.id_type = @id_type 
+                    AND s.mould = @mould;
             END
             ELSE
             BEGIN

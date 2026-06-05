@@ -3,7 +3,8 @@ using System.Text.Json;
 
 namespace CMS.Server.Services;
 
-public class SettingService(PlcService plcService, string connectionString) : BaseService(connectionString, plcService)
+public class SettingService(MainPlcService mainPlcService, SubPlcService subPlcService, string connectionString)
+    : BaseService(connectionString, mainPlcService)
 {
     public async Task<List<object>> LoadDepartmentPasswords()
     {
@@ -48,14 +49,11 @@ public class SettingService(PlcService plcService, string connectionString) : Ba
             await cmd.ExecuteNonQueryAsync();
         }
 
-        plcService.ChangePassword(passwords);
+        mainPlcService.ChangePassword(passwords);
 
         return new { success = true, updated = passwords.Keys };
     }
 
-    public Dictionary<string, object?> ReadSubPlcSignals(int machineId)
-        => plcService.ReadSubPlcSignals(machineId);
-
-    public Dictionary<string, object?> GetAllPlcSignals()
-        => plcService.GetSubPlcSignalCache();
+    public async Task<Dictionary<string, object?>> ReadAllSubPlcSignals()
+        => await subPlcService.ReadAllAsync();
 }

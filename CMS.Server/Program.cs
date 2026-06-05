@@ -8,31 +8,32 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-builder.Services.AddSingleton<PlcService>();
+// ── Core singletons ──────────────────────────────────────────────────────
+builder.Services.AddSingleton<MainPlcService>();
+builder.Services.AddSingleton<SubPlcService>();
 
-// ── Scoped (per-request) ──────────────────────────────────────────────────────
 builder.Services.AddScoped<ExcelGenerationService>();
+
 builder.Services.AddSingleton<BaseService>(sp =>
-{
-    var plc = sp.GetRequiredService<PlcService>();
-    return new BaseService(connectionString, plc);
-});
+    new BaseService(connectionString, sp.GetRequiredService<MainPlcService>()));
 
 // ── Schema init ───────────────────────────────────────
 builder.Services.AddSingleton(new SchemaInitializerService(connectionString));
 
 // ── Page-specific data services ──────
 builder.Services.AddSingleton<OEEService>(sp =>
-    new OEEService(sp.GetRequiredService<PlcService>(), connectionString));
+    new OEEService(sp.GetRequiredService<MainPlcService>(), connectionString));
 builder.Services.AddSingleton<SupervisorService>(sp =>
-    new SupervisorService(sp.GetRequiredService<PlcService>(), connectionString));
+    new SupervisorService(sp.GetRequiredService<MainPlcService>(), connectionString));
 builder.Services.AddSingleton<DashboardService>(sp =>
-    new DashboardService(sp.GetRequiredService<PlcService>(), connectionString));
+    new DashboardService(sp.GetRequiredService<MainPlcService>(), connectionString));
 builder.Services.AddSingleton<MachinesService>(sp =>
-    new MachinesService(sp.GetRequiredService<PlcService>(), connectionString));
+    new MachinesService(sp.GetRequiredService<MainPlcService>(), connectionString));
 builder.Services.AddSingleton<SettingService>(sp =>
-    new SettingService(sp.GetRequiredService<PlcService>(), connectionString));
-builder.Services.AddHostedService(sp => sp.GetRequiredService<PlcService>());
+    new SettingService(sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<SubPlcService>(), connectionString));
+
+// ── Background service ─────────────────────────────────
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MainPlcService>());
 
 // ── App pipeline ──────────────────────────────────────────────────────────────
 var app = builder.Build();

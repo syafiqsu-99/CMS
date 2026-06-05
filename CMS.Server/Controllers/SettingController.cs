@@ -46,17 +46,16 @@ public class SettingController(SettingService settingService) : ControllerBase
     // ── PLC Signals ────────────────────────────────────────────────────────────
 
     [HttpGet("plc-signals")]
-    public IActionResult GetPlcSignals([FromQuery] int? machineId)
+    public async Task<IActionResult> GetPlcSignals()
     {
-        if (machineId.HasValue)
+        try
         {
-            if (machineId.Value < 1)
-                return BadRequest(new { error = "machineId must be a positive integer." });
-
-            try { return Ok(settingService.ReadSubPlcSignals(machineId.Value)); }
-            catch (Exception ex) { return StatusCode(503, new { error = ex.Message }); }
+            var result = await settingService.ReadAllSubPlcSignals();
+            return Ok(result);
         }
-
-        return Ok(settingService.GetAllPlcSignals());
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { error = ex.Message });
+        }
     }
 }
