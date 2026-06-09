@@ -302,7 +302,7 @@ public class BaseService
         bool qc_signal = prev.plcData.qc_signal != plcData.qc_signal;
         bool machine_started = !prev.plcData.status_start && plcData.status_start;
         bool machine_stopped = prev.plcData.status_start && !plcData.status_start;
-        bool production_running = ((prev.plcData.status_start != plcData.status_start) || (prev.plcData.production_running != plcData.production_running)) && plcData.status_start && plcData.production_running;
+        bool production_running = !prev.plcData.production_running && plcData.production_running;
         bool qc_reset = prev.plcData.qc_reset_signal != plcData.qc_reset_signal && plcData.qc_reset_signal;
 
         var util_changed = new List<(string utility_name, bool status)>();
