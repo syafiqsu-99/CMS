@@ -346,13 +346,13 @@ public class BaseService
             if (production_running)
                 await insertMachineRun(master, conn, (SqlTransaction)tx);
 
-            if (done || machine_started || machine_stopped)
+            if (done || machine_stopped)
                 await insertMachineStop(master, conn, (SqlTransaction)tx);
 
             if (shift_change)
                 await shiftChange(master, conn, (SqlTransaction)tx);
 
-            if (category && !string.IsNullOrEmpty(master.stop_category))
+            if (category && !string.IsNullOrEmpty(master.stop_category) && !production_running)
                 await updateCategory(master, conn, (SqlTransaction)tx);
 
             if (master.mould_category_no != 0 && (mould_category_no || mould_change_started))
@@ -767,23 +767,75 @@ public class BaseService
 
         var tableName = $"machine_log_{master.id_machine}";
 
-        var sql = $@"
-                UPDATE [{tableName}]
-                SET category = @category
-                WHERE finish IS NULL OR category IS NULL;";
+        var checkSql = $@"
+                SELECT COUNT(1) FROM [{tableName}]
+                WHERE finish IS NULL AND category IS NOT NULL AND category <> ''";
 
-        await using var cmd = new SqlCommand(sql, conn, tx);
-        cmd.Parameters.AddWithValue("@category", master.stop_category);
-        await cmd.ExecuteNonQueryAsync();
+        await using var checkCmd = new SqlCommand(checkSql, conn, tx);
+        int openCategorizedRows = (int)(await checkCmd.ExecuteScalarAsync() ?? 0);
+
+        if (openCategorizedRows > 0)
+        {
+            var (productionDate, shift) = GetProductionDate(master.time);
+
+            var sql = $@"
+                    IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
+                    BEGIN
+                        DECLARE @prev_shot_sum INT;
+                        SELECT @prev_shot_sum = ISNULL(SUM(shot), 0)
+                        FROM [{tableName}]
+                        WHERE production_date = @production_date
+                          AND shift           = @shift
+                          AND id_type         = @id_type
+                          AND mould           = @mould
+                          AND finish          IS NOT NULL;
+
+                        DECLARE @final_shot INT = @shot_accum - @prev_shot_sum;
+                        IF @final_shot < 0 SET @final_shot = 0;
+
+                        UPDATE [{tableName}]
+                        SET
+                            finish = @time,
+                            shot   = @final_shot,
+                            act_ct = CASE
+                                         WHEN @final_shot = 0 THEN 0
+                                         ELSE DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
+                                     END
+                        WHERE finish IS NULL;
+                    END
+
+                    INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start)
+                    VALUES (@machine_name, @id_type, @mould, @time, 0, @category, NULL, 0, @shift, @production_date, @status_start);";
+
+            await using var cmd = new SqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
+            cmd.Parameters.AddWithValue("@id_type", master.id_type);
+            cmd.Parameters.AddWithValue("@mould", master.mould);
+            cmd.Parameters.AddWithValue("@shot_accum", master.shot_accum);
+            cmd.Parameters.AddWithValue("@time", master.time);
+            cmd.Parameters.AddWithValue("@category", master.stop_category);
+            cmd.Parameters.AddWithValue("@shift", shift);
+            cmd.Parameters.AddWithValue("@production_date", productionDate);
+            cmd.Parameters.AddWithValue("@status_start", master.status_start);
+            await cmd.ExecuteNonQueryAsync();
+        }
+        else
+        {
+            var sql = $@"
+                    UPDATE [{tableName}]
+                    SET category = @category
+                    WHERE finish IS NULL OR category IS NULL;";
+
+            await using var cmd = new SqlCommand(sql, conn, tx);
+            cmd.Parameters.AddWithValue("@category", master.stop_category);
+            await cmd.ExecuteNonQueryAsync();
+        }
     }
 
     // Update Problem
     public async Task updateProblem(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Problem = {master.remark}");
-
-        if (string.IsNullOrWhiteSpace(master.remark))
-            return;
 
         var tableName = $"machine_log_{master.id_machine}";
 
@@ -795,7 +847,7 @@ public class BaseService
                         CASE
                             WHEN category = 'MOULD CHANGE' AND @mould_category <> 0
                             THEN @mould_category
-                            ELSE 0
+                            ELSE mould_category
                         END
                 WHERE finish IS NULL";
 
