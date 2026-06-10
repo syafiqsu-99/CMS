@@ -291,19 +291,18 @@ public class BaseService
             return;
         }
 
-        bool shift_change = prev.productionDate != productionDate || prev.shift != shift;
-        bool done = prev.plcData.done != plcData.done && plcData.done;
-        bool category = prev.plcData.stop_category != plcData.stop_category;
-        bool mould_category_no = prev.plcData.mould_category_no != plcData.mould_category_no;
-        bool mould_change_started = prev.plcData.stop_category != plcData.stop_category && plcData.stop_category == "MOULD CHANGE";
-        bool no_category = !string.IsNullOrEmpty(prev.plcData.stop_category) && string.IsNullOrEmpty(plcData.stop_category) && !plcData.status_start;
-        bool remark = prev.plcData.remark_signal != plcData.remark_signal;
-        bool reject_signal = prev.plcData.reject_signal != plcData.reject_signal;
-        bool qc_signal = prev.plcData.qc_signal != plcData.qc_signal;
-        bool machine_started = !prev.plcData.status_start && plcData.status_start;
-        bool machine_stopped = prev.plcData.status_start && !plcData.status_start;
-        bool production_running = !prev.plcData.production_running && plcData.production_running;
-        bool qc_reset = prev.plcData.qc_reset_signal != plcData.qc_reset_signal && plcData.qc_reset_signal;
+        bool shift_change           = prev.productionDate != productionDate || prev.shift != shift;
+        bool category               = prev.plcData.stop_category != plcData.stop_category;
+        bool mould_category_no      = prev.plcData.mould_category_no != plcData.mould_category_no;
+        bool mould_change_started   = prev.plcData.stop_category != plcData.stop_category && plcData.stop_category == "MOULD CHANGE";
+        bool remark_signal          = !prev.plcData.remark_signal && plcData.remark_signal;
+        bool reject_signal          = !prev.plcData.reject_signal && plcData.reject_signal;
+        bool qc_signal              = !prev.plcData.qc_signal && plcData.qc_signal;
+        bool done                   = !plcData.done && plcData.done;
+        bool machine_started        = !prev.plcData.status_start && plcData.status_start;
+        bool machine_stopped        = prev.plcData.status_start && !plcData.status_start;
+        bool production_running     = !prev.plcData.production_running && plcData.production_running;
+        bool qc_reset               = !prev.plcData.qc_reset_signal && plcData.qc_reset_signal;
 
         var util_changed = new List<(string utility_name, bool status)>();
         if (prev.plcData.util_barrel != plcData.util_barrel) util_changed.Add(("BARREL", plcData.util_barrel));
@@ -359,10 +358,10 @@ public class BaseService
             if (master.mould_category_no != 0 && (mould_category_no || mould_change_started))
                 await updateMouldCategory(master, conn, (SqlTransaction)tx);
 
-            if (remark && master.remark_signal)
+            if (remark_signal)
                 await updateProblem(master, conn, (SqlTransaction)tx);
 
-            if (reject_signal && master.reject_signal)
+            if (reject_signal)
                 await insertUpdateReject(master, conn, (SqlTransaction)tx);
 
             if (qc_reset)
@@ -387,7 +386,7 @@ public class BaseService
     // On Shift Change
     public async Task shiftChange(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Shift Change");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Shift Change");
 
         var (productionDate, shift) = GetProductionDate(master.time);
 
@@ -680,9 +679,10 @@ public class BaseService
         _plcService.UpdatePLCS(master);
     }
 
+    // Insert new and Update finish Machine Log Stop
     public async Task insertMachineRun(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Insert Machine Run");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Insert Machine Run");
 
         var (productionDate, shift) = GetProductionDate(master.time);
         var tableName = $"machine_log_{master.id_machine}";
@@ -711,10 +711,9 @@ public class BaseService
         await cmd.ExecuteNonQueryAsync();
     }
 
-    // Insert new and Update finish Machine Log Stop
     public async Task insertMachineStop(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Insert Machine Stop");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Insert Machine Stop");
 
         var (productionDate, shift) = GetProductionDate(master.time);
         var tableName = $"machine_log_{master.id_machine}";
@@ -764,7 +763,7 @@ public class BaseService
     // Update Category
     public async Task updateCategory(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Update Category");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Category = {master.stop_category}");
 
         var tableName = $"machine_log_{master.id_machine}";
 
@@ -781,7 +780,7 @@ public class BaseService
     // Update Problem
     public async Task updateProblem(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Update Problem");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Problem = {master.remark}");
 
         if (string.IsNullOrWhiteSpace(master.remark))
             return;
@@ -809,7 +808,7 @@ public class BaseService
     // Update Mould Category
     public async Task updateMouldCategory(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Update Mould Category");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Mould Category = {master.mould_category_no}");
 
         var tableName = $"machine_log_{master.id_machine}";
         var sql = $@"
@@ -833,7 +832,7 @@ public class BaseService
     // Update Utilities
     public async Task updateUtilities(machine_master master, string utility_name, bool status, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Update Utilities");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Utilities");
 
         var (productionDate, shift) = GetProductionDate(master.time);
 
@@ -861,7 +860,7 @@ public class BaseService
     // Reset Measure QC and Visual QC
     public async Task resetQC(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] QC Reset");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] QC Reset");
 
         const string sql = @"
             UPDATE machine_master
@@ -879,7 +878,7 @@ public class BaseService
     #region Reject
     public async Task insertUpdateReject(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
-        Console.WriteLine($"[Machine {master.id_machine}] Update Reject");
+        Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Reject");
 
         var (productionDate, shift) = GetProductionDate(master.time);
         var total_weight = master.reject_panelling + master.reject_lumpy + master.reject_black_dot + master.reject_burst + master.reject_startup + master.reject_preform + master.reject_purging + master.reject_others;
