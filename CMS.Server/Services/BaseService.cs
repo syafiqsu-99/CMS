@@ -298,7 +298,7 @@ public class BaseService
         bool remark_signal          = !prev.plcData.remark_signal && plcData.remark_signal;
         bool reject_signal          = !prev.plcData.reject_signal && plcData.reject_signal;
         bool qc_signal              = !prev.plcData.qc_signal && plcData.qc_signal;
-        bool done                   = !plcData.done && plcData.done;
+        bool done                   = !prev.plcData.done && plcData.done;
         bool machine_started        = !prev.plcData.status_start && plcData.status_start;
         bool machine_stopped        = prev.plcData.status_start && !plcData.status_start;
         bool production_running     = !prev.plcData.production_running && plcData.production_running;
