@@ -1005,7 +1005,7 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
 
     public async Task UpdateStaff(int? staffId, string staffName, string staffRole)
     {
-        const string sql = "UPDATE staff SET staff_name = @name, staff_role = @role WHERE staff_id = @id";
+        const string sql = "UPDATE staff_list SET staff_name = @name, staff_role = @role WHERE staff_id = @id";
         await using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@id", staffId);
@@ -1016,7 +1016,7 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
 
     public async Task DeleteStaff(int staffId)
     {
-        const string sql = "DELETE FROM staff WHERE staff_id = @id";
+        const string sql = "DELETE FROM staff_list WHERE staff_id = @id";
         await using var conn = await CreateConnectionAsync();
         await using var cmd = new SqlCommand(sql, conn);
         cmd.Parameters.AddWithValue("@id", staffId);

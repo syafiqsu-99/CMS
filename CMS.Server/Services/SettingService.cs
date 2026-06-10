@@ -56,4 +56,7 @@ public class SettingService(MainPlcService mainPlcService, SubPlcService subPlcS
 
     public async Task<Dictionary<string, object?>> ReadAllSubPlcSignals()
         => await subPlcService.ReadAllAsync();
+
+    public async Task<Dictionary<string, object?>> ReadSubPlcSignalById(int id)
+        => await subPlcService.ReadOneAsync(id);
 }

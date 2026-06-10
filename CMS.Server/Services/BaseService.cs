@@ -234,7 +234,7 @@ public class BaseService
             master.shot = plcData.shot ?? 0;
             master.shot_accum = plcData.shot_accum ?? 0;
             master.act_ct = plcData.act_ct ?? 0f;
-            master.mould_category_no = plcData.mould_category_no ?? "";
+            master.mould_category_no = plcData.mould_category_no ?? 0;
             master.stop_category = plcData.stop_category ?? "";
             master.remark = plcData.remark ?? "";
             master.reject_panelling = plcData.reject_panelling ?? 0;
@@ -794,8 +794,7 @@ public class BaseService
                     problem = NULLIF(@problem, ''),
                     mould_category = 
                         CASE
-                            WHEN category = 'MOULD CHANGE'
-                                 AND COALESCE(@mould_category, '') <> ''
+                            WHEN category = 'MOULD CHANGE' AND @mould_category <> 0
                             THEN @mould_category
                             ELSE 0
                         END
@@ -819,8 +818,7 @@ public class BaseService
                     problem = NULLIF(@problem, ''),
                     mould_category = 
                         CASE
-                            WHEN category = 'MOULD CHANGE'
-                                 AND COALESCE(@mould_category, '') <> ''
+                            WHEN category = 'MOULD CHANGE' AND @mould_category <> 0
                             THEN @mould_category
                             ELSE 0
                     END

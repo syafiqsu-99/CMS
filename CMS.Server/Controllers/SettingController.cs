@@ -58,4 +58,18 @@ public class SettingController(SettingService settingService) : ControllerBase
             return StatusCode(503, new { error = ex.Message });
         }
     }
+
+    [HttpGet("plc-signals/{id:int}")]
+    public async Task<IActionResult> GetPlcSignalById(int id)
+    {
+        try
+        {
+            var result = await settingService.ReadSubPlcSignalById(id);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(503, new { error = ex.Message });
+        }
+    }
 }

@@ -42,59 +42,59 @@ namespace CMS.Server.Services
 
             await Parallel.ForEachAsync(machines, new ParallelOptions { MaxDegreeOfParallelism = 4 }, async (machine, _) =>
             {
-                try
-                {
-                    var data = ReadOne(machine.id, machine.name);
-                    lock (result) result[machine.id.ToString()] = data;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning("[SubPlc M{Id}] Read failed: {Msg}", machine.id, ex.Message);
-                    lock (result) result[machine.id.ToString()] = null;
-                }
-
-                await Task.CompletedTask;
+                var data = await ReadOneAsync(machine.id, machine.name);
+                lock (result) result[machine.id.ToString()] = data;
             });
 
             return result;
         }
 
+        // ── Public: read a single sub-PLC by id (fetches machine name from cache) ──
+        public async Task<Dictionary<string, object?>> ReadOneAsync(int id)
+        {
+            var machines = await _mainPlc.GetCachedMachinesAsync();
+            var machine = machines.FirstOrDefault(m => m.id == id);
+            return await ReadOneAsync(id, machine.name ?? string.Empty);
+        }
+
         // ── Internal: read a single sub-PLC ───────────────────────────────────
 
-        private Dictionary<string, object?> ReadOne(int id, string machineName)
+        private Task<Dictionary<string, object?>> ReadOneAsync(int id, string machineName)
         {
-            var ip = $"172.17.86.{220 + id}";
-            var cacheKey = $"sub_{ip}";
-            var result = new Dictionary<string, object?> { ["machine_name"] = machineName };
-            PlcOmron? plc = null;
-
-            try
+            return Task.Run(() =>
             {
-                if (!_connections.TryGetValue(cacheKey, out plc) || plc == null)
+                var ip = $"172.17.86.{220 + id}";
+                var cacheKey = $"sub_{ip}";
+                var result = new Dictionary<string, object?> { ["machine_name"] = machineName };
+                PlcOmron? plc = null;
+
+                try
                 {
-                    byte remoteNode = (byte)(220 + id);
-                    plc = new PlcOmron(ip, 9600, false, remoteNode, 136);
-                    _connections[cacheKey] = plc;
+                    if (!_connections.TryGetValue(cacheKey, out plc) || plc == null)
+                    {
+                        byte remoteNode = (byte)(220 + id);
+                        plc = new PlcOmron(ip, 9600, false, remoteNode, 136);
+                        _connections[cacheKey] = plc;
+                    }
+
+                    plc.Connect();
+
+                    ReadDMemory(id, plc, result);
+                    ReadWMemory(id, plc, result);
+                    ReadHMemory(id, plc, result);
+
+                    result["online"] = true;
                 }
-
-                plc.Connect();
-
-                ReadDMemory(id, plc, result);
-                ReadWMemory(id, plc, result);
-                ReadHMemory(id, plc, result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "[SubPlc M{Id}] Critical error", id);
-                if (plc != null)
+                catch (Exception ex)
                 {
+                    _logger.LogWarning("[SubPlc M{Id}] Offline or read failed: {Msg}", id, ex.Message);
                     _connections.TryRemove(cacheKey, out _);
-                    try { plc.Disconnect(); } catch { }
+                    if (plc != null) try { plc.Disconnect(); } catch { }
+                    result["online"] = false;
                 }
-                throw;
-            }
 
-            return result;
+                return result;
+            });
         }
 
         // ── D memory ──────────────────────────────────────────────────────────

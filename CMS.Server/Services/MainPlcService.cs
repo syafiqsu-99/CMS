@@ -93,7 +93,7 @@ namespace CMS.Server.Services
 
                     var snapshots = BuildSnapshots(dBuffer, wBits, timestamp, machines.Count);
 
-                    DebugMasterPlc(snapshots.FirstOrDefault(s => s.id_machine == 0));
+                    //DebugMasterPlc(snapshots.FirstOrDefault(s => s.id_machine == 0));
 
                     await PersistSnapshotsAsync(snapshots, stoppingToken);
                 }
@@ -518,7 +518,9 @@ namespace CMS.Server.Services
         internal static float ReadFloat(byte[] buf, int idx)
         {
             if (idx < 0 || idx + 4 > buf.Length) return 0f;
-            return BitConverter.ToSingle(new byte[] { buf[idx + 1], buf[idx], buf[idx + 3], buf[idx + 2] }, 0);
+            float val = BitConverter.ToSingle(new byte[] { buf[idx + 1], buf[idx], buf[idx + 3], buf[idx + 2] }, 0);
+
+            return float.IsNaN(val) || float.IsInfinity(val) ? 0f : val;
         }
 
         internal static string ReadString(byte[] buf, int idx, int maxBytes = 100)

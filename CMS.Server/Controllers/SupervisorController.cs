@@ -150,10 +150,13 @@ public class SupervisorController : ControllerBase
         return Ok(new { message = "Staff updated." });
     }
 
-    [HttpDelete("staff/{id:int}")]
-    public async Task<IActionResult> DeleteStaff(int id)
+    [HttpDelete("staff")]
+    public async Task<IActionResult> DeleteStaff([FromBody] StaffDto dto)
     {
-        await _supervisorService.DeleteStaff(id);
+        if (dto.staff_id <= 0)
+            return BadRequest(new { error = "A valid staff_id is required." });
+
+        await _supervisorService.DeleteStaff(dto.staff_id);
         return Ok(new { message = "Staff deleted." });
     }
 

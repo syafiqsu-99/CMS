@@ -370,7 +370,7 @@
     
       const selectedDate = formatDate(production_date.value);
       const response = await fetch(
-        fetch(`/api/supervisor/export-report?production_date=${date}&shift=${shift}`),
+        `/api/supervisor/export-report?production_date=${selectedDate}&shift=${shift.value}`,
         { method: 'GET' }
       );
     
