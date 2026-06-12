@@ -6,6 +6,7 @@ namespace CMS.Server.Services;
 
 public class SupervisorService(MainPlcService plcService, string connectionString) : BaseService(connectionString, plcService)
 {
+    #region PRODUCTION REPORT
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
     {
         var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date AND shift = @shift");
@@ -639,6 +640,10 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
         return await LoadPrevReport(reloadDate, reloadShift);
     }
 
+    #endregion
+
+    #region CHANGE MOULD
+
     public async Task UpdateMouldChange(Dictionary<string, JsonElement> payload)
     {
         var time = DateTime.Now;
@@ -753,6 +758,10 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
             _plcService.UpdatePLCS(result);
         }
     }
+
+    #endregion
+
+    #region STAFF
 
     public async Task<object> LoadStaffSchedule()
     {
@@ -1048,6 +1057,10 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
         await file.CopyToAsync(stream);
     }
 
+    #endregion
+
+    #region CALENDAR
+
     public async Task<object> LoadShiftCalendar(int year, int month)
     {
         var sql = @"
@@ -1131,6 +1144,9 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
         }
     }
 
+    #endregion
+
+    #region SAP
     public async Task<List<object>> LoadSAP()
     {
         const string sql = "SELECT * FROM sap ORDER BY id_type, mould";
@@ -1334,4 +1350,5 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
         gross_weight = Convert.ToSingle(reader["gross_weight"]),
         sap_ct = Convert.ToSingle(reader["sap_ct"]),
     };
+    #endregion
 }

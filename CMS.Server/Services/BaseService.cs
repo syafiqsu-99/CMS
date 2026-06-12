@@ -688,21 +688,40 @@ public class BaseService
         var tableName = $"machine_log_{master.id_machine}";
 
         var sql = $@"
-                UPDATE [{tableName}]
-                SET category = 'PRODUCTION RUNNING'
-                WHERE category IS NULL AND status_start = 1
+            IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
+            BEGIN
+                DECLARE @prev_shot_sum INT;
+                SELECT @prev_shot_sum = ISNULL(SUM(shot), 0)
+                FROM [{tableName}]
+                WHERE production_date = @production_date
+                  AND shift           = @shift
+                  AND id_type         = @id_type
+                  AND mould           = @mould
+                  AND finish          IS NOT NULL;
+
+                DECLARE @final_shot INT = @shot_accum - @prev_shot_sum;
+                IF @final_shot < 0 SET @final_shot = 0;
 
                 UPDATE [{tableName}]
-                SET finish = @time
-                WHERE finish IS NULL
+                SET
+                    finish = @time,
+                    shot   = @final_shot,
+                    act_ct = CASE
+                                 WHEN category = 'PRODUCTION RUNNING' AND @final_shot > 0
+                                 THEN DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
+                                 ELSE 0
+                             END
+                WHERE finish IS NULL;
+            END
 
-                INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, mould_category, shift, production_date, status_start)
-                VALUES (@machine_name, @id_type, @mould, @time, 0, 'PRODUCTION RUNNING', 0, @shift, @production_date, @status_start);";
+            INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, mould_category, shift, production_date, status_start)
+            VALUES (@machine_name, @id_type, @mould, @time, 0, 'PRODUCTION RUNNING', 0, @shift, @production_date, @status_start);";
 
         await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
         cmd.Parameters.AddWithValue("@id_type", master.id_type);
         cmd.Parameters.AddWithValue("@mould", master.mould);
+        cmd.Parameters.AddWithValue("@shot_accum", master.shot_accum);
         cmd.Parameters.AddWithValue("@time", master.time);
         cmd.Parameters.AddWithValue("@shift", shift);
         cmd.Parameters.AddWithValue("@production_date", productionDate);
@@ -735,17 +754,18 @@ public class BaseService
 
                     UPDATE [{tableName}]
                     SET
-                        finish  = @time,
-                        shot    = @final_shot,
-                        act_ct  = CASE
-                                      WHEN @final_shot = 0 THEN 0
-                                      ELSE DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
-                                  END
+                        finish = @time,
+                        shot   = @final_shot,
+                        act_ct = CASE
+                                     WHEN category = 'PRODUCTION RUNNING' AND @final_shot > 0
+                                     THEN DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
+                                     ELSE 0
+                                 END
                     WHERE finish IS NULL;
                 END
 
-                INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, mould_category, shift, production_date, status_start)
-                VALUES (@machine_name, @id_type, @mould, @time, 0, 0, @shift, @production_date, @status_start);";
+                INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start)
+                VALUES (@machine_name, @id_type, @mould, @time, 0, NULLIF(@category, ''), NULLIF(@problem, ''), CASE WHEN NULLIF(@category, '') = 'MOULD CHANGE' THEN @mould_category ELSE 0 END, @shift, @production_date, @status_start);";
 
         await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
@@ -756,6 +776,9 @@ public class BaseService
         cmd.Parameters.AddWithValue("@shift", shift);
         cmd.Parameters.AddWithValue("@production_date", productionDate);
         cmd.Parameters.AddWithValue("@status_start", master.status_start);
+        cmd.Parameters.AddWithValue("@category", master.stop_category);
+        cmd.Parameters.AddWithValue("@problem", master.remark);
+        cmd.Parameters.AddWithValue("@mould_category", master.mould_category_no);
 
         await cmd.ExecuteNonQueryAsync();
     }
@@ -779,33 +802,34 @@ public class BaseService
             var (productionDate, shift) = GetProductionDate(master.time);
 
             var sql = $@"
-                    IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
-                    BEGIN
-                        DECLARE @prev_shot_sum INT;
-                        SELECT @prev_shot_sum = ISNULL(SUM(shot), 0)
-                        FROM [{tableName}]
-                        WHERE production_date = @production_date
-                          AND shift           = @shift
-                          AND id_type         = @id_type
-                          AND mould           = @mould
-                          AND finish          IS NOT NULL;
+                IF EXISTS (SELECT 1 FROM [{tableName}] WHERE finish IS NULL)
+                BEGIN
+                    DECLARE @prev_shot_sum INT;
+                    SELECT @prev_shot_sum = ISNULL(SUM(shot), 0)
+                    FROM [{tableName}]
+                    WHERE production_date = @production_date
+                      AND shift           = @shift
+                      AND id_type         = @id_type
+                      AND mould           = @mould
+                      AND finish          IS NOT NULL;
 
-                        DECLARE @final_shot INT = @shot_accum - @prev_shot_sum;
-                        IF @final_shot < 0 SET @final_shot = 0;
+                    DECLARE @final_shot INT = @shot_accum - @prev_shot_sum;
+                    IF @final_shot < 0 SET @final_shot = 0;
 
-                        UPDATE [{tableName}]
-                        SET
-                            finish = @time,
-                            shot   = @final_shot,
-                            act_ct = CASE
-                                         WHEN @final_shot = 0 THEN 0
-                                         ELSE DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
-                                     END
-                        WHERE finish IS NULL;
-                    END
+                    UPDATE [{tableName}]
+                    SET
+                        finish = @time,
+                        shot   = @final_shot,
+                        act_ct = CASE
+                                     WHEN category = 'PRODUCTION RUNNING' AND @final_shot > 0
+                                     THEN DATEDIFF(SECOND, start, @time) / CAST(@final_shot AS FLOAT)
+                                     ELSE 0
+                                 END
+                    WHERE finish IS NULL;
+                END
 
-                    INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start)
-                    VALUES (@machine_name, @id_type, @mould, @time, 0, @category, NULL, 0, @shift, @production_date, @status_start);";
+                INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start)
+                VALUES (@machine_name, @id_type, @mould, @time, 0, @category, NULL, 0, @shift, @production_date, @status_start);";
 
             await using var cmd = new SqlCommand(sql, conn, tx);
             cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
@@ -822,9 +846,9 @@ public class BaseService
         else
         {
             var sql = $@"
-                    UPDATE [{tableName}]
-                    SET category = @category
-                    WHERE finish IS NULL OR category IS NULL;";
+                UPDATE [{tableName}]
+                SET category = @category
+                WHERE finish IS NULL OR category IS NULL;";
 
             await using var cmd = new SqlCommand(sql, conn, tx);
             cmd.Parameters.AddWithValue("@category", master.stop_category);

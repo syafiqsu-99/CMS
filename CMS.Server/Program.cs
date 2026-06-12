@@ -33,7 +33,10 @@ builder.Services.AddSingleton<SettingService>(sp =>
     new SettingService(sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<SubPlcService>(), connectionString));
 
 // ── Background service ─────────────────────────────────
-builder.Services.AddHostedService(sp => sp.GetRequiredService<MainPlcService>());
+if (!builder.Environment.IsDevelopment())
+{
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<MainPlcService>());
+}
 
 // ── App pipeline ──────────────────────────────────────────────────────────────
 var app = builder.Build();
