@@ -2,7 +2,7 @@
 
 namespace CMS.Server.Services;
 
-public class MachinesService(MainPlcService plcService, string connectionString) : BaseService(connectionString, plcService)
+public class MachinesService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger) : BaseService(connectionString, mainPlcService, logger)
 {
 
     public async Task<object> LoadMachineMaster()

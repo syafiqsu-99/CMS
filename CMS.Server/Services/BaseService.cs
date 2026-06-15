@@ -1,7 +1,9 @@
 ﻿using CMS.Server.Models;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Data;
 
 namespace CMS.Server.Services;
 
@@ -11,11 +13,13 @@ public class BaseService
     protected readonly MainPlcService _plcService;
 
     private readonly ConcurrentDictionary<int, (dynamic plcData, DateOnly productionDate, int shift, int lastWrittenMeasureQc)> _lastMachineMaster = new();
+    private readonly ILogger<BaseService> _logger;
 
-    public BaseService(string connectionString, MainPlcService plcService)
+    public BaseService(string connectionString, MainPlcService plcService, ILogger<BaseService> logger)
     {
         _connectionString = connectionString;
         _plcService = plcService;
+        _logger = logger;
     }
 
     // ── Connection factory ────────────────────────────────────────────────────
@@ -218,6 +222,7 @@ public class BaseService
             master.id_type = Convert.ToInt32(reader["id_type"]);
             master.mould = Convert.ToInt32(reader["mould"]);
             master.type = Convert.ToString(reader["type"]);
+            master.stop_category = plcData.stop_category ?? "";
             master.jo_no = Convert.ToString(reader["jo_no"]);
             master.qty_order = Convert.ToInt32(reader["qty_order"]);
             master.wip_opening = Convert.ToInt32(reader["wip_opening"]);
@@ -235,7 +240,6 @@ public class BaseService
             master.shot_accum = plcData.shot_accum ?? 0;
             master.act_ct = plcData.act_ct ?? 0f;
             master.mould_category_no = plcData.mould_category_no ?? 0;
-            master.stop_category = plcData.stop_category ?? "";
             master.remark = plcData.remark ?? "";
             master.reject_panelling = plcData.reject_panelling ?? 0;
             master.reject_lumpy = plcData.reject_lumpy ?? 0;
@@ -321,7 +325,8 @@ public class BaseService
                     status_start = @status_start,
                     status_off   = @status_off,
                     shot         = @shot_accum,
-                    visual_qc    = @visual_qc
+                    visual_qc    = @visual_qc,
+                    category     = NULLIF(@category, '')
                 WHERE id_machine = @id_machine;
 
                 SELECT measure_qc FROM machine_master WHERE id_machine = @id_machine";
@@ -334,6 +339,7 @@ public class BaseService
             cmd.Parameters.AddWithValue("@status_off", master.status_off);
             cmd.Parameters.AddWithValue("@shot_accum", master.shot_accum);
             cmd.Parameters.AddWithValue("@visual_qc", master.visual_qc);
+            cmd.Parameters.AddWithValue("@category", master.stop_category);
 
             var result = await cmd.ExecuteScalarAsync();
             int measure_qc = result != DBNull.Value && result != null ? Convert.ToInt32(result) : 0;
@@ -344,39 +350,67 @@ public class BaseService
                 _plcService.WriteQcMeasure(id_machine, measure_qc);
 
             if (production_running)
-                await insertMachineRun(master, conn, (SqlTransaction)tx);
+            {
+                try { await insertMachineRun(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("insertMachineRun", id_machine, error_message: ex.Message); throw; }
+            }
 
             if (done || machine_stopped)
-                await insertMachineStop(master, conn, (SqlTransaction)tx);
+            {
+                try { await insertMachineStop(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("insertMachineStop", id_machine, error_message: ex.Message); throw; }
+            }
 
             if (shift_change)
-                await shiftChange(master, conn, (SqlTransaction)tx);
+            {
+                try { await shiftChange(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("shiftChange", id_machine, error_message: ex.Message); throw; }
+            }
 
             if (category && !string.IsNullOrEmpty(master.stop_category) && !production_running)
-                await updateCategory(master, conn, (SqlTransaction)tx);
+            {
+                try { await updateCategory(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("updateCategory", id_machine, error_message: ex.Message); throw; }
+            }
 
             if (master.mould_category_no != 0 && (mould_category_no || mould_change_started))
-                await updateMouldCategory(master, conn, (SqlTransaction)tx);
+            {
+                try { await updateMouldCategory(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("updateMouldCategory", id_machine, error_message: ex.Message); throw; }
+            }
 
             if (remark_signal)
-                await updateProblem(master, conn, (SqlTransaction)tx);
+            {
+                try { await updateProblem(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("updateProblem", id_machine, error_message: ex.Message); throw; }
+            }
 
             if (reject_signal)
-                await insertUpdateReject(master, conn, (SqlTransaction)tx);
+            {
+                try { await insertUpdateReject(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("insertUpdateReject", id_machine, error_message: ex.Message); throw; }
+            }
 
             if (qc_reset)
-                await resetQC(master, conn, (SqlTransaction)tx);
+            {
+                try { await resetQC(master, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("resetQC", id_machine, error_message: ex.Message); throw; }
+            }
 
             foreach (var util in util_changed)
-                await updateUtilities(master, util.utility_name, util.status, conn, (SqlTransaction)tx);
+            {
+                try { await updateUtilities(master, util.utility_name, util.status, conn, (SqlTransaction)tx); }
+                catch (Exception ex) { dbLog("updateUtilities", id_machine, $"utility={util.utility_name}", error_message: ex.Message); throw; }
+            }
 
             await tx.CommitAsync();
 
             _lastMachineMaster[id_machine] = (plcData, productionDate, shift, measure_qc);
         }
-        catch
+        catch (Exception ex)
         {
             await tx.RollbackAsync();
+            dbLog("insertMachineMaster", id_machine, error_message: $"Transaction rolled back: {ex.Message}");
             throw;
         }
     }
@@ -387,6 +421,7 @@ public class BaseService
     public async Task shiftChange(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Shift Change");
+        dbLog("shiftChange", master.id_machine);
 
         var (productionDate, shift) = GetProductionDate(master.time);
 
@@ -683,6 +718,7 @@ public class BaseService
     public async Task insertMachineRun(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Insert Machine Run");
+        dbLog("insertMachineRun", master.id_machine, $"shot={master.shot_accum} act_ct={master.act_ct}");
 
         var (productionDate, shift) = GetProductionDate(master.time);
         var tableName = $"machine_log_{master.id_machine}";
@@ -733,6 +769,7 @@ public class BaseService
     public async Task insertMachineStop(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Insert Machine Stop");
+        dbLog("insertMachineStop", master.id_machine, $"category={master.stop_category} remark={master.remark} mould_category_no={master.mould_category_no}");
 
         var (productionDate, shift) = GetProductionDate(master.time);
         var tableName = $"machine_log_{master.id_machine}";
@@ -787,6 +824,7 @@ public class BaseService
     public async Task updateCategory(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Category = {master.stop_category}");
+        dbLog("updateCategory", master.id_machine, $"category={master.stop_category} remark={master.remark} mould_category_no={master.mould_category_no}");
 
         var tableName = $"machine_log_{master.id_machine}";
 
@@ -860,6 +898,7 @@ public class BaseService
     public async Task updateProblem(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Problem = {master.remark}");
+        dbLog("updateProblem", master.id_machine, $"category={master.stop_category} remark={master.remark} mould_category_no={master.mould_category_no}");
 
         var tableName = $"machine_log_{master.id_machine}";
 
@@ -885,6 +924,7 @@ public class BaseService
     public async Task updateMouldCategory(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Mould Category = {master.mould_category_no}");
+        dbLog("updateMouldCategory", master.id_machine, $"category={master.stop_category} remark={master.remark} mould_category_no={master.mould_category_no}");
 
         var tableName = $"machine_log_{master.id_machine}";
         var sql = $@"
@@ -909,6 +949,7 @@ public class BaseService
     public async Task updateUtilities(machine_master master, string utility_name, bool status, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Utilities");
+        dbLog("updateUtilities", master.id_machine, $"utility={utility_name} utility_status={status}");
 
         var (productionDate, shift) = GetProductionDate(master.time);
 
@@ -937,6 +978,7 @@ public class BaseService
     public async Task resetQC(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] QC Reset");
+        dbLog("resetQC", master.id_machine);
 
         const string sql = @"
             UPDATE machine_master
@@ -955,6 +997,7 @@ public class BaseService
     public async Task insertUpdateReject(machine_master master, SqlConnection conn, SqlTransaction tx)
     {
         Console.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [Machine {master.id_machine}] Update Reject");
+        dbLog("insertUpdateReject", master.id_machine, $"reject_panelling={master.reject_panelling} reject_lumpy={master.reject_lumpy} reject_black_dot={master.reject_black_dot} reject_burst={master.reject_burst} reject_startup={master.reject_startup} reject_preform={master.reject_preform} reject_purging={master.reject_purging} reject_others={master.reject_others}");
 
         var (productionDate, shift) = GetProductionDate(master.time);
         var total_weight = master.reject_panelling + master.reject_lumpy + master.reject_black_dot + master.reject_burst + master.reject_startup + master.reject_preform + master.reject_purging + master.reject_others;
@@ -1000,6 +1043,33 @@ public class BaseService
         cmd.Parameters.AddWithValue("@production_date", productionDate);
 
         await cmd.ExecuteNonQueryAsync();
+    }
+    #endregion
+
+    #region db_log
+    private void dbLog(string process, int? id_machine = null, string? details = null, string? error_message = null)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                const string sql = @"
+                INSERT INTO db_log (id_machine, process, details, error_message)
+                VALUES (@id_machine, @process, @details, @error_message)";
+
+                await using var conn = await CreateConnectionAsync();
+                await using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.Add("@id_machine", SqlDbType.Int).Value = (object?)id_machine ?? DBNull.Value;
+                cmd.Parameters.Add("@process", SqlDbType.NVarChar, 64).Value = process;
+                cmd.Parameters.Add("@details", SqlDbType.NVarChar, 512).Value = (object?)details ?? DBNull.Value;
+                cmd.Parameters.Add("@error_message", SqlDbType.NVarChar, 1024).Value = (object?)error_message ?? DBNull.Value;
+                await cmd.ExecuteNonQueryAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[dbLog] Failed to write db_log entry for process '{Process}' machine {Machine}", process, id_machine);
+            }
+        });
     }
     #endregion
 }

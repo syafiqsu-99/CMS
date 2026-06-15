@@ -15,8 +15,7 @@
                       clearable
                       max-width="300"
                       @update:model-value="onSearchInput" />
-        <v-btn class="ml-2" size="small" prepend-icon="mdi-plus" color="primary" @click="promptInsert">Add</v-btn>
-        <v-btn class="ml-1" size="small" prepend-icon="mdi-upload" color="success" @click="triggerImport">Import</v-btn>
+        <v-btn class="ml-2" size="small" prepend-icon="mdi-upload" color="success" @click="triggerImport">Import</v-btn>
         <v-btn class="ml-1" size="small" prepend-icon="mdi-download" color="warning" @click="exportToCSV">Export</v-btn>
         <span class="ml-3 text-caption text-medium-emphasis">{{ totalCount.toLocaleString() }} records</span>
       </v-toolbar>
@@ -85,7 +84,6 @@
           </div>
         </template>
 
-        <!-- Intersection Observer for Lazy Loading -->
         <template #body.append>
           <tr v-if="!initialLoaded || products.length < totalCount">
             <td colspan="11" class="text-center pa-2">
@@ -101,54 +99,7 @@
     <input ref="fileInput" type="file" accept=".csv" class="d-none" @change="handleFileImport" />
   </v-row>
 
-  <v-dialog v-model="insertDialog.visible" max-width="500">
-    <v-card>
-      <v-card-title class="bg-primary text-white pa-3">Add Product</v-card-title>
-      <v-card-text class="pt-4">
-        <v-alert v-if="insertError" type="error" density="compact" class="mb-3">{{ insertError }}</v-alert>
-        <v-form ref="insertFormRef">
-          <v-row dense>
-            <v-col cols="6">
-              <v-text-field v-model.number="insertForm.id_type" label="SAP Code" type="number" variant="outlined" density="compact" :rules="[v => !!v || 'Required']" />
-            </v-col>
-            <v-col cols="6">
-              <v-text-field v-model.number="insertForm.mould" label="Mould" type="number" variant="outlined" density="compact" :rules="[v => !!v || 'Required']" />
-            </v-col>
-            <v-col cols="12">
-              <v-text-field v-model="insertForm.type" label="Type" variant="outlined" density="compact" :rules="[v => !!v?.trim() || 'Required']" />
-            </v-col>
-            <v-col cols="6">
-              <v-text-field v-model.number="insertForm.qty_perct" label="Cavities" type="number" variant="outlined" density="compact" />
-            </v-col>
-            <v-col cols="6">
-              <v-select v-model="insertForm.process" :items="processOptions" label="Process" variant="outlined" density="compact" />
-            </v-col>
-            <v-col cols="12">
-              <v-text-field v-model="insertForm.material" label="Material" variant="outlined" density="compact" />
-            </v-col>
-            <v-col cols="6">
-              <v-text-field v-model.number="insertForm.part_weight" label="Part Weight" type="number" step="0.01" variant="outlined" density="compact" suffix="g" />
-            </v-col>
-            <v-col cols="6">
-              <v-text-field v-model.number="insertForm.tolerance" label="Tolerance" type="number" step="0.01" variant="outlined" density="compact" />
-            </v-col>
-            <v-col cols="6">
-              <v-text-field v-model.number="insertForm.gross_weight" label="Gross Weight" type="number" step="0.01" variant="outlined" density="compact" suffix="g" />
-            </v-col>
-            <v-col cols="6">
-              <v-text-field v-model.number="insertForm.sap_ct" label="SAP CT" type="number" step="0.01" variant="outlined" density="compact" suffix="sec" />
-            </v-col>
-          </v-row>
-        </v-form>
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer />
-        <v-btn variant="text" @click="insertDialog.visible = false">Cancel</v-btn>
-        <v-btn color="primary" variant="elevated" :loading="loading" @click="confirmInsert">Save</v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
-
+  <!-- Delete confirm dialog -->
   <v-dialog v-model="deleteDialog.visible" max-width="380">
     <v-card>
       <v-card-title class="bg-error text-white pa-3">Confirm Delete</v-card-title>
@@ -163,12 +114,15 @@
     </v-card>
   </v-dialog>
 
+  <!-- Import preview dialog -->
   <v-dialog v-model="importDialog.visible" max-width="1000">
     <v-card>
       <v-card-title class="bg-primary text-white">Import Preview</v-card-title>
       <v-card-text class="pt-4">
+        <v-alert type="warning" density="compact" class="mb-3">
+          This will <strong>delete all existing SAP records</strong> and replace them with the {{ importDialog.data.length }} row(s) below.
+        </v-alert>
         <v-alert v-if="importDialog.errors.length" type="error" density="compact" class="mb-3">{{ importDialog.errors.length }} error(s) found</v-alert>
-        <v-alert v-else type="success" density="compact" class="mb-3">Ready to import {{ importDialog.data.length }} row(s)</v-alert>
         <div class="overflow-y-auto" style="max-height: 350px;">
           <v-data-table-virtual :headers="productHeaders.filter(h => h.key !== 'actions')" fixed-header :items="importDialog.data" style="height: 50vh;" density="compact" class="elevation-1" />
         </div>
@@ -176,7 +130,7 @@
       <v-card-actions>
         <v-spacer />
         <v-btn color="grey" variant="text" @click="importDialog.visible = false">Cancel</v-btn>
-        <v-btn color="primary" variant="elevated" :disabled="importDialog.errors.length > 0" :loading="loading" @click="confirmImport">Import</v-btn>
+        <v-btn color="primary" variant="elevated" :disabled="importDialog.errors.length > 0" :loading="loading" @click="confirmImport">Replace All & Import</v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -198,16 +152,11 @@
 
   const editItem = ref(null);
   const editKeys = ref({});
-  const insertError = ref('');
   const fileInput = ref(null);
-  const insertFormRef = ref(null);
 
   const deleteDialog = ref({ visible: false, item: null });
-  const insertDialog = ref({ visible: false });
   const importDialog = ref({ visible: false, data: [], errors: [] });
 
-  const emptyInsert = () => ({ id_type: null, mould: null, type: '', qty_perct: null, process: '', material: '', part_weight: null, tolerance: null, gross_weight: null, sap_ct: null });
-  const insertForm = ref(emptyInsert());
   const processOptions = ['ISBM', 'INJ', 'EBM', 'N/A'];
 
   const productHeaders = [
@@ -229,10 +178,7 @@
 
     loading.value = true;
     try {
-      const params = new URLSearchParams({
-        page: String(page.value),
-        pageSize: String(pageSize.value)
-      });
+      const params = new URLSearchParams({ page: String(page.value), pageSize: String(pageSize.value) });
       if (productSearch.value?.trim()) params.set('search', productSearch.value.trim());
 
       const res = await fetch(`/api/supervisor/sap/paged?${params}`);
@@ -264,18 +210,11 @@
   let searchDebounce = null;
   function onSearchInput() {
     clearTimeout(searchDebounce);
-    searchDebounce = setTimeout(() => {
-      resetAndReload();
-    }, 350);
+    searchDebounce = setTimeout(() => resetAndReload(), 350);
   }
 
   function isEditing(item) { return editItem.value === item; }
-
-  function startEdit(item) {
-    editKeys.value = { id_type: item.id_type, mould: item.mould };
-    editItem.value = item;
-  }
-
+  function startEdit(item) { editKeys.value = { id_type: item.id_type, mould: item.mould }; editItem.value = item; }
   function cancelEdit() { editItem.value = null; }
 
   async function saveEdit(item) {
@@ -295,34 +234,7 @@
     }
   }
 
-  function promptInsert() {
-    insertForm.value = emptyInsert();
-    insertError.value = '';
-    insertDialog.value.visible = true;
-  }
-
-  async function confirmInsert() {
-    insertError.value = '';
-    const payload = buildPayload(insertForm.value, {});
-    try {
-      const res = await fetch('/api/supervisor/sap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) throw new Error('Insert failed');
-      insertDialog.value.visible = false;
-      showSnackbar('Product added.', 'success');
-      emit('refresh-data');
-      await resetAndReload();
-    } catch (err) {
-      insertError.value = err.message;
-    }
-  }
-
-  function promptDelete(item) {
-    deleteDialog.value = { visible: true, item };
-  }
+  function promptDelete(item) { deleteDialog.value = { visible: true, item }; }
 
   async function confirmDelete() {
     const { id_type, mould } = deleteDialog.value.item;
@@ -384,7 +296,8 @@
       if (!res.ok) throw new Error('Import failed');
 
       importDialog.value.visible = false;
-      showSnackbar(`Imported ${payload.length} records.`, 'success');
+      showSnackbar(`Replaced all SAP records with ${payload.length} imported rows.`, 'success');
+      emit('refresh-data');
       await resetAndReload();
     } catch (err) {
       showSnackbar(err.message, 'error');

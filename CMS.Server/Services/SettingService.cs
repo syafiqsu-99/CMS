@@ -3,8 +3,7 @@ using System.Text.Json;
 
 namespace CMS.Server.Services;
 
-public class SettingService(MainPlcService mainPlcService, SubPlcService subPlcService, string connectionString)
-    : BaseService(connectionString, mainPlcService)
+public class SettingService(MainPlcService mainPlcService, SubPlcService subPlcService, string connectionString, ILogger<BaseService> logger) : BaseService(connectionString, mainPlcService, logger)
 {
     public async Task<List<object>> LoadDepartmentPasswords()
     {

@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace CMS.Server.Services;
 
-public class SupervisorService(MainPlcService plcService, string connectionString) : BaseService(connectionString, plcService)
+public class SupervisorService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger) : BaseService(connectionString, mainPlcService, logger)
 {
     #region PRODUCTION REPORT
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
@@ -1302,18 +1302,16 @@ public class SupervisorService(MainPlcService plcService, string connectionStrin
         await using var transaction = conn.BeginTransaction();
         try
         {
-            const string deleteSql = "DELETE FROM sap WHERE id_type = @id_type AND mould = @mould";
+            const string deleteSql = "DELETE FROM sap";
+            await using var delAllCmd = new SqlCommand(deleteSql, conn, transaction);
+            await delAllCmd.ExecuteNonQueryAsync();
+
             const string insertSql = @"
                 INSERT INTO sap (id_type, mould, type, qty_perct, process, material, part_weight, tolerance, gross_weight, sap_ct)
                 VALUES (@id_type, @mould, @type, @qty_perct, @process, @material, @part_weight, @tolerance, @gross_weight, @sap_ct)";
 
             foreach (var item in sapList)
             {
-                await using var del = new SqlCommand(deleteSql, conn, transaction);
-                del.Parameters.AddWithValue("@id_type", item["id_type"].GetInt32());
-                del.Parameters.AddWithValue("@mould", item["mould"].GetInt32());
-                await del.ExecuteNonQueryAsync();
-
                 await using var ins = new SqlCommand(insertSql, conn, transaction);
                 ins.Parameters.AddWithValue("@id_type", item["id_type"].GetInt32());
                 ins.Parameters.AddWithValue("@mould", item["mould"].GetInt32());

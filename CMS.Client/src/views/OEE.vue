@@ -184,10 +184,10 @@
   function normaliseRow(item) {
     return {
       ...item,
-      oee: Number(item.oee || 0).toFixed(2),
-      performance: Number(item.performance || 0).toFixed(2),
-      availability: Number(item.availability || 0).toFixed(2),
-      quality: Number(item.quality || 0).toFixed(2),
+      oee: Number(item.oee || 0).toFixed(0),
+      performance: Number(item.performance || 0).toFixed(0),
+      availability: Number(item.availability || 0).toFixed(0),
+      quality: Number(item.quality || 0).toFixed(0),
       run_time: Number(item.run_time || 0),
       down_time: Number(item.down_time || 0),
       material_used: Number(item.material_used || 0),

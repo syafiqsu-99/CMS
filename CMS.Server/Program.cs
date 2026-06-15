@@ -15,22 +15,22 @@ builder.Services.AddSingleton<SubPlcService>();
 builder.Services.AddScoped<ExcelGenerationService>();
 
 builder.Services.AddSingleton<BaseService>(sp =>
-    new BaseService(connectionString, sp.GetRequiredService<MainPlcService>()));
+    new BaseService(connectionString, sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<ILogger<BaseService>>()));
 
 // ── Schema init ───────────────────────────────────────
 builder.Services.AddSingleton(new SchemaInitializerService(connectionString));
 
 // ── Page-specific data services ──────
 builder.Services.AddSingleton<OEEService>(sp =>
-    new OEEService(sp.GetRequiredService<MainPlcService>(), connectionString));
+    new OEEService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
 builder.Services.AddSingleton<SupervisorService>(sp =>
-    new SupervisorService(sp.GetRequiredService<MainPlcService>(), connectionString));
+    new SupervisorService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
 builder.Services.AddSingleton<DashboardService>(sp =>
-    new DashboardService(sp.GetRequiredService<MainPlcService>(), connectionString));
+    new DashboardService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
 builder.Services.AddSingleton<MachinesService>(sp =>
-    new MachinesService(sp.GetRequiredService<MainPlcService>(), connectionString));
+    new MachinesService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
 builder.Services.AddSingleton<SettingService>(sp =>
-    new SettingService(sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<SubPlcService>(), connectionString));
+    new SettingService(sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<SubPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
 
 // ── Background service ─────────────────────────────────
 if (!builder.Environment.IsDevelopment())
