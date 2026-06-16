@@ -23,6 +23,10 @@
                 <v-icon start>mdi-sine-wave</v-icon>
                 PLC Signals
               </v-tab>
+              <v-tab value="dblog">
+                <v-icon start>mdi-database-eye</v-icon>
+                DB Log
+              </v-tab>
             </v-tabs>
 
             <v-window v-model="activeTab" style="flex: 1; min-height: 0; overflow: hidden;">
@@ -31,6 +35,9 @@
               </v-window-item>
               <v-window-item value="signals" style="height: 100%; overflow: hidden;">
                 <PlcSignalMonitor />
+              </v-window-item>
+              <v-window-item value="dblog" style="height: 100%; overflow: hidden;">
+                <DbLogTab />
               </v-window-item>
             </v-window>
 
@@ -45,6 +52,7 @@
   import { ref } from 'vue';
   import PasswordTab from '@/components/Setting/PasswordTab.vue';
   import PlcSignalMonitor from '@/components/Setting/PlcSignalMonitor.vue';
+  import DbLogTab from '@/components/Setting/DbLogTab.vue';
 
   const activeTab = ref('password');
 </script>

@@ -58,4 +58,52 @@ public class SettingService(MainPlcService mainPlcService, SubPlcService subPlcS
 
     public async Task<Dictionary<string, object?>> ReadSubPlcSignalById(int id)
         => await subPlcService.ReadOneAsync(id);
+
+    public async Task<object> GetLogsAsync(string? process, int? id_machine)
+    {
+        var where = new List<string>();
+        using var conn = await CreateConnectionAsync();
+        using var cmd = new SqlCommand();
+        cmd.Connection = conn;
+
+        if (!string.IsNullOrWhiteSpace(process))
+        {
+            where.Add("process LIKE @process");
+            cmd.Parameters.AddWithValue("@process", $"%{process}%");
+        }
+        if (id_machine.HasValue)
+        {
+            where.Add("id_machine = @id_machine");
+            cmd.Parameters.AddWithValue("@id_machine", id_machine.Value);
+        }
+
+        string whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+
+        cmd.CommandText = $@"
+            SELECT TOP 1000 id, id_machine, time, process, details, error_message
+            FROM db_log {whereClause}
+            ORDER BY time DESC";
+
+        var items = new List<Dictionary<string, object?>>();
+        using var reader = await cmd.ExecuteReaderAsync();
+
+        int fieldCount = reader.FieldCount;
+        string[] columns = new string[fieldCount];
+        for (int i = 0; i < fieldCount; i++)
+        {
+            columns[i] = reader.GetName(i);
+        }
+
+        while (await reader.ReadAsync())
+        {
+            var row = new Dictionary<string, object?>();
+            for (int i = 0; i < fieldCount; i++)
+            {
+                row[columns[i]] = reader.IsDBNull(i) ? null : reader.GetValue(i);
+            }
+            items.Add(row);
+        }
+
+        return items;
+    }
 }

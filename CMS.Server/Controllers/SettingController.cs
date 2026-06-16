@@ -1,5 +1,6 @@
 ﻿using CMS.Server.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using System.Text.Json;
 
 namespace CMS.Server.Controllers;
@@ -70,6 +71,22 @@ public class SettingController(SettingService settingService) : ControllerBase
         catch (Exception ex)
         {
             return StatusCode(503, new { error = ex.Message });
+        }
+    }
+
+    // ── Logs ───────────────────────────────────────────────────────────────────
+
+    [HttpGet("db-log")]
+    public async Task<IActionResult> GetLogs([FromQuery] string? process = null, [FromQuery] int? id_machine = null)
+    {
+        try
+        {
+            var result = await settingService.GetLogsAsync(process, id_machine);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to retrieve logs.", detail = ex.Message });
         }
     }
 }

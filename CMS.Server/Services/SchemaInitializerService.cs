@@ -510,7 +510,7 @@ namespace CMS.Server.Services
                 CREATE TABLE db_log (
                     id            INT IDENTITY(1,1) PRIMARY KEY,
                     id_machine    INT NULL,
-                    logged_at     DATETIME NOT NULL DEFAULT GETDATE(),
+                    time          DATETIME NOT NULL DEFAULT GETDATE(),
                     process       NVARCHAR(MAX) NOT NULL,
                     details       NVARCHAR(MAX) NULL,
                     error_message NVARCHAR(MAX) NULL

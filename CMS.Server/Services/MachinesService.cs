@@ -12,74 +12,61 @@ public class MachinesService(MainPlcService mainPlcService, string connectionStr
 
         var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date and shift = @shift");
 
-        var sql = $@"
-            WITH all_logs AS (
-                {logUnion}
-            ),
-            latest_logs AS (
-                SELECT *, ROW_NUMBER() OVER(PARTITION BY id_machine ORDER BY start DESC) as rn
-                FROM all_logs
-            )
+        var sql = @"
             SELECT
-                mm.id_machine, 
-                mm.machine_name, 
-                COALESCE(mm.packer, '') AS packer, 
-                COALESCE(mm.id_type, 123456) AS id_type, 
-                COALESCE(mm.mould, 0) AS mould,
-                COALESCE(mm.type, '') AS type,
+                mm.id_machine,
+                mm.machine_name,
+                COALESCE(mm.packer,    '')      AS packer,
+                COALESCE(mm.id_type,   123456)  AS id_type,
+                COALESCE(mm.mould,     0)        AS mould,
+                COALESCE(mm.type,      '')       AS type,
                 CAST(COALESCE(mm.status_start, 0) AS BIT) AS status_start,
-                CAST(COALESCE(mm.status_off, 1) AS BIT) AS status_off,
-                COALESCE(mm.qty_perct, 0) as qty_perct,
-                COALESCE(mm.act_ct, 0) as act_ct,
-                COALESCE(mm.sap_ct, 0) as sap_ct,
-                COALESCE(mm.shot, 0) AS shot,
-                COALESCE(mm.material, '') AS material,
-                COALESCE(mm.part_weight, 0) AS part_weight,
-                COALESCE(mm.visual_qc, 0) AS visual_qc,
-                COALESCE(mm.measure_qc, 0) AS measure_qc,
-                COALESCE(mm.shift_output, 0) AS output,
-                CASE 
-                    WHEN COALESCE(mm.id_type, 123456) = 123456 AND COALESCE(mm.mould, 0) = 0 THEN 0
+                CAST(COALESCE(mm.status_off,   1) AS BIT) AS status_off,
+                COALESCE(mm.qty_perct,    0)     AS qty_perct,
+                COALESCE(mm.act_ct,       0)     AS act_ct,
+                COALESCE(mm.sap_ct,       0)     AS sap_ct,
+                COALESCE(mm.shot,         0)     AS shot,
+                COALESCE(mm.material,    '')     AS material,
+                COALESCE(mm.part_weight,  0)     AS part_weight,
+                COALESCE(mm.visual_qc,    0)     AS visual_qc,
+                COALESCE(mm.measure_qc,   0)     AS measure_qc,
+                COALESCE(mm.shift_output, 0)     AS output,
+                CASE
+                    WHEN COALESCE(mm.id_type, 123456) = 123456
+                         AND COALESCE(mm.mould, 0) = 0 THEN 0
                     WHEN COALESCE(mm.sap_ct, 0) = 0 THEN 0
                     ELSE CAST(
-                        (DATEDIFF(SECOND, 
-                            CASE 
-                                WHEN CAST(GETDATE() AS TIME) >= '06:00:00' AND CAST(GETDATE() AS TIME) < '18:00:00' 
-                                    THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME) + CAST('06:00:00' AS DATETIME)
-                                WHEN CAST(GETDATE() AS TIME) >= '18:00:00' 
-                                    THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME) + CAST('18:00:00' AS DATETIME)
-                                ELSE CAST(CAST(DATEADD(DAY, -1, GETDATE()) AS DATE) AS DATETIME) + CAST('18:00:00' AS DATETIME)
+                        (DATEDIFF(SECOND,
+                            CASE
+                                WHEN CAST(GETDATE() AS TIME) >= '06:00:00'
+                                     AND CAST(GETDATE() AS TIME) < '18:00:00'
+                                    THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME)
+                                         + CAST('06:00:00' AS DATETIME)
+                                WHEN CAST(GETDATE() AS TIME) >= '18:00:00'
+                                    THEN CAST(CAST(GETDATE() AS DATE) AS DATETIME)
+                                         + CAST('18:00:00' AS DATETIME)
+                                ELSE CAST(CAST(DATEADD(DAY, -1, GETDATE()) AS DATE) AS DATETIME)
+                                     + CAST('18:00:00' AS DATETIME)
                             END,
                             GETDATE()
                         ) / NULLIF(mm.sap_ct, 0)) * COALESCE(mm.qty_perct, 0)
                     AS INT)
                 END AS planned_output,
                 COALESCE(r.total_weight, 0) AS reject_weight,
-                CASE 
+                CASE
                     WHEN COALESCE(mm.part_weight, 0) = 0 THEN 0
                     ELSE CAST(COALESCE(r.total_weight, 0) / NULLIF(mm.part_weight, 0) AS INT)
                 END AS reject_pcs,
-                
-                COALESCE(ll.start, CAST(GETDATE() AS DATETIME)) AS start, 
-                COALESCE(ll.finish, CAST(GETDATE() AS DATETIME)) AS finish,
-                CASE 
-                    WHEN (NULLIF(ll.category, '') IS NULL) 
-                         AND mm.status_start = 1 
-                         AND mm.status_off = 1 
-                    THEN 'PRODUCTION RUNNING'
-                    ELSE COALESCE(NULLIF(ll.category, ''), 'N/A')
-                END AS category,
-                COALESCE(ll.problem, '') AS problem,
-                COALESCE(ll.mould_category, 0) AS mould_category
+                COALESCE(NULLIF(mm.category, ''), 'N/A') AS category
+ 
             FROM machine_master mm
-            LEFT JOIN latest_logs ll ON mm.id_machine = ll.id_machine AND ll.rn = 1
-            LEFT JOIN reject r 
-                ON r.id_machine = mm.id_machine 
-                AND r.id_type = mm.id_type 
-                AND r.mould = mm.mould
+            LEFT JOIN reject r
+                ON  r.id_machine      = mm.id_machine
+                AND r.id_type         = mm.id_type
+                AND r.mould           = mm.mould
                 AND r.production_date = @production_date
-                AND r.shift = @shift
-            ORDER BY id_machine";
+                AND r.shift           = @shift
+            ORDER BY mm.id_machine";
 
         var result = new List<object>();
 
@@ -93,34 +80,35 @@ public class MachinesService(MainPlcService mainPlcService, string connectionStr
 
         while (await reader.ReadAsync())
         {
+            var output = Convert.ToInt32(reader["output"]);
+            var plannedOutput = Convert.ToInt32(reader["planned_output"]);
+            var category = Convert.ToString(reader["category"]) ?? "N/A";
+
             result.Add(new
             {
-                id_machine = Convert.ToInt32(reader["id_machine"]),
-                machine_name = Convert.ToString(reader["machine_name"]),
-                packer = Convert.ToString(reader["packer"]),
-                material = Convert.ToString(reader["material"]),
-                id_type = Convert.ToInt32(reader["id_type"]),
-                mould = Convert.ToInt32(reader["mould"]),
-                type = Convert.ToString(reader["type"]),
-                status_start = Convert.ToBoolean(reader["status_start"]),
-                status_off = Convert.ToBoolean(reader["status_off"]),
-                qty_perct = Convert.ToInt32(reader["qty_perct"]),
-                act_ct = Convert.ToSingle(reader["act_ct"]),
-                sap_ct = Convert.ToSingle(reader["sap_ct"]),
-                shot = Convert.ToInt32(reader["shot"]),
-                output = Convert.ToInt32(reader["output"]),
-                part_weight = Convert.ToSingle(reader["part_weight"]),
-                planned_output = Convert.ToInt32(reader["planned_output"]),
-                reject_weight = Convert.ToSingle(reader["reject_weight"]),
-                reject_pcs = Convert.ToSingle(reader["reject_pcs"]),
-                start = Convert.ToDateTime(reader["start"]),
-                finish = Convert.ToDateTime(reader["finish"]),
-                category = Convert.ToString(reader["category"]),
-                problem = Convert.ToString(reader["problem"]),
-                visual_qc = Convert.ToInt32(reader["visual_qc"]),
-                measure_qc = Convert.ToInt32(reader["measure_qc"]),
-                mould_category = Convert.ToInt32(reader["mould_category"]),
-                color = BaseService.GetColor(Convert.ToString(reader["category"])),
+                id_machine     = Convert.ToInt32(reader["id_machine"]),
+                machine_name   = Convert.ToString(reader["machine_name"]),
+                packer         = Convert.ToString(reader["packer"]),
+                material       = Convert.ToString(reader["material"]),
+                id_type        = Convert.ToInt32(reader["id_type"]),
+                mould          = Convert.ToInt32(reader["mould"]),
+                type           = Convert.ToString(reader["type"]),
+                status_start   = Convert.ToBoolean(reader["status_start"]),
+                status_off     = Convert.ToBoolean(reader["status_off"]),
+                qty_perct      = Convert.ToInt32(reader["qty_perct"]),
+                act_ct         = Convert.ToSingle(reader["act_ct"]),
+                sap_ct         = Convert.ToSingle(reader["sap_ct"]),
+                shot           = Convert.ToInt32(reader["shot"]),
+                output         = output,
+                part_weight    = Convert.ToSingle(reader["part_weight"]),
+                planned_output = plannedOutput,
+                reject_weight  = Convert.ToSingle(reader["reject_weight"]),
+                reject_pcs     = Convert.ToSingle(reader["reject_pcs"]),
+                visual_qc      = Convert.ToInt32(reader["visual_qc"]),
+                measure_qc     = Convert.ToInt32(reader["measure_qc"]),
+                category       = category,
+                efficiency     = plannedOutput > 0 ? Math.Round((double)output / plannedOutput * 100, 2) : 0.0,
+                color          = BaseService.GetColor(category),
             });
         }
 
