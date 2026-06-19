@@ -27,6 +27,10 @@ namespace CMS.Server.Services
         private const ushort HStart = 0;
         private const int HTotal = 38;
 
+        // OUT memory: read O100.00 (word 100, bit 0)
+        private const ushort OutWord = 100;
+        private const MemoryAreaBits OutBitArea = (MemoryAreaBits)0x89;
+
         public SubPlcService(MainPlcService mainPlc, ILogger<SubPlcService> logger)
         {
             _mainPlc = mainPlc;
@@ -79,11 +83,13 @@ namespace CMS.Server.Services
 
                     plc.Connect();
 
-                    ReadDMemory(id, plc, result);
-                    ReadWMemory(id, plc, result);
-                    ReadHMemory(id, plc, result);
+                    bool coreOk = ReadDMemory(id, plc, result)
+                               && ReadWMemory(id, plc, result)
+                               && ReadHMemory(id, plc, result);
 
-                    result["online"] = true;
+                    ReadOutMemory(id, plc, result);
+
+                    result["online"] = coreOk;
                 }
                 catch (Exception ex)
                 {
@@ -99,7 +105,7 @@ namespace CMS.Server.Services
 
         // ── D memory ──────────────────────────────────────────────────────────
 
-        private void ReadDMemory(int id, PlcOmron plc, Dictionary<string, object?> result)
+        private bool ReadDMemory(int id, PlcOmron plc, Dictionary<string, object?> result)
         {
             byte[] dBuf = new byte[DTotal * 2];
 
@@ -112,7 +118,7 @@ namespace CMS.Server.Services
                 if (chunk == null || chunk.Length < chunkSize * 2)
                 {
                     _logger.LogWarning("[SubPlc M{Id}] D short read at D{Addr}", id, chunkStart);
-                    return;
+                    return false;
                 }
 
                 Buffer.BlockCopy(chunk, 0, dBuf, offset * 2, chunk.Length);
@@ -142,18 +148,16 @@ namespace CMS.Server.Services
             result["D80"] = ReadFloat(dBuf, Bidx(80));
             // D90 – Actual cycle time average (float, seconds)
             result["D90"] = ReadFloat(dBuf, Bidx(90));
-
             // D110 – Stop category number
             result["D110"] = ReadInt(dBuf, Bidx(110));
             // D115 – Sub-stop category number
             result["D115"] = ReadInt(dBuf, Bidx(115));
             // D120 – Mould change category number
             result["D120"] = ReadInt(dBuf, Bidx(120));
-            // D180 – HMI page number (for diagnostics)
+            // D180 – HMI stop category colour
             result["D180"] = ReadInt(dBuf, Bidx(180));
-            // D190 – HMI sub-page number
+            // D190 – HMI page number
             result["D190"] = ReadInt(dBuf, Bidx(190));
-
             // D200 – Product type / model string (100 bytes)
             result["D200"] = ReadString(dBuf, Bidx(200), 100);
             // D300 – Packer name string (100 bytes)
@@ -163,48 +167,50 @@ namespace CMS.Server.Services
             // D500 – Remark / problem string (100 bytes)
             result["D500"] = ReadString(dBuf, Bidx(500), 100);
 
-            // D600–D675: Reject kg per category for current shot (float pairs)
-            result["D600"] = ReadFloat(dBuf, Bidx(600)); // Reject panelling – current shot (kg)
-            result["D605"] = ReadFloat(dBuf, Bidx(605)); // Reject lumpy – current shot (kg)
-            result["D610"] = ReadFloat(dBuf, Bidx(610)); // Reject black dot – current shot (kg)
-            result["D615"] = ReadFloat(dBuf, Bidx(615)); // Reject burst – current shot (kg)
-            result["D620"] = ReadFloat(dBuf, Bidx(620)); // Reject startup – current shot (kg)
-            result["D625"] = ReadFloat(dBuf, Bidx(625)); // Reject preform – current shot (kg)
-            result["D630"] = ReadFloat(dBuf, Bidx(630)); // Reject purging – current shot (kg)
-            result["D635"] = ReadFloat(dBuf, Bidx(635)); // Reject others – current shot (kg)
-            result["D640"] = ReadFloat(dBuf, Bidx(640)); // Reject panelling pcs – current shot
-            result["D645"] = ReadFloat(dBuf, Bidx(645)); // Reject lumpy pcs – current shot
-            result["D650"] = ReadFloat(dBuf, Bidx(650)); // Reject black dot pcs – current shot
-            result["D655"] = ReadFloat(dBuf, Bidx(655)); // Reject burst pcs – current shot
-            result["D660"] = ReadFloat(dBuf, Bidx(660)); // Reject startup pcs – current shot
-            result["D665"] = ReadFloat(dBuf, Bidx(665)); // Reject preform pcs – current shot
-            result["D670"] = ReadFloat(dBuf, Bidx(670)); // Reject purging pcs – current shot
-            result["D675"] = ReadFloat(dBuf, Bidx(675)); // Reject others pcs – current shot
+            // D600–D675: current-shot reject kg / pcs
+            result["D600"] = ReadFloat(dBuf, Bidx(600));
+            result["D605"] = ReadFloat(dBuf, Bidx(605));
+            result["D610"] = ReadFloat(dBuf, Bidx(610));
+            result["D615"] = ReadFloat(dBuf, Bidx(615));
+            result["D620"] = ReadFloat(dBuf, Bidx(620));
+            result["D625"] = ReadFloat(dBuf, Bidx(625));
+            result["D630"] = ReadFloat(dBuf, Bidx(630));
+            result["D635"] = ReadFloat(dBuf, Bidx(635));
+            result["D640"] = ReadFloat(dBuf, Bidx(640));
+            result["D645"] = ReadFloat(dBuf, Bidx(645));
+            result["D650"] = ReadFloat(dBuf, Bidx(650));
+            result["D655"] = ReadFloat(dBuf, Bidx(655));
+            result["D660"] = ReadFloat(dBuf, Bidx(660));
+            result["D665"] = ReadFloat(dBuf, Bidx(665));
+            result["D670"] = ReadFloat(dBuf, Bidx(670));
+            result["D675"] = ReadFloat(dBuf, Bidx(675));
 
-            // D700–D735: Reject kg accumulated totals (float pairs)
-            result["D700"] = ReadFloat(dBuf, Bidx(700)); // Reject panelling – total (kg)
-            result["D705"] = ReadFloat(dBuf, Bidx(705)); // Reject lumpy – total (kg)
-            result["D710"] = ReadFloat(dBuf, Bidx(710)); // Reject black dot – total (kg)
-            result["D715"] = ReadFloat(dBuf, Bidx(715)); // Reject burst – total (kg)
-            result["D720"] = ReadFloat(dBuf, Bidx(720)); // Reject startup – total (kg)
-            result["D725"] = ReadFloat(dBuf, Bidx(725)); // Reject preform – total (kg)
-            result["D730"] = ReadFloat(dBuf, Bidx(730)); // Reject purging – total (kg)
-            result["D735"] = ReadFloat(dBuf, Bidx(735)); // Reject others – total (kg)
+            // D700–D735: accumulated totals (kg)
+            result["D700"] = ReadFloat(dBuf, Bidx(700));
+            result["D705"] = ReadFloat(dBuf, Bidx(705));
+            result["D710"] = ReadFloat(dBuf, Bidx(710));
+            result["D715"] = ReadFloat(dBuf, Bidx(715));
+            result["D720"] = ReadFloat(dBuf, Bidx(720));
+            result["D725"] = ReadFloat(dBuf, Bidx(725));
+            result["D730"] = ReadFloat(dBuf, Bidx(730));
+            result["D735"] = ReadFloat(dBuf, Bidx(735));
 
-            // D740–D775: Reject pcs accumulated totals
-            result["D740"] = ReadFloat(dBuf, Bidx(740)); // Reject panelling – total (pcs)
-            result["D745"] = ReadFloat(dBuf, Bidx(745)); // Reject lumpy – total (pcs)
-            result["D750"] = ReadFloat(dBuf, Bidx(750)); // Reject black dot – total (pcs)
-            result["D755"] = ReadFloat(dBuf, Bidx(755)); // Reject burst – total (pcs)
-            result["D760"] = ReadFloat(dBuf, Bidx(760)); // Reject startup – total (pcs)
-            result["D765"] = ReadFloat(dBuf, Bidx(765)); // Reject preform – total (pcs)
-            result["D770"] = ReadFloat(dBuf, Bidx(770)); // Reject purging – total (pcs)
-            result["D775"] = ReadFloat(dBuf, Bidx(775)); // Reject others – total (pcs)
+            // D740–D775: accumulated totals (pcs)
+            result["D740"] = ReadFloat(dBuf, Bidx(740));
+            result["D745"] = ReadFloat(dBuf, Bidx(745));
+            result["D750"] = ReadFloat(dBuf, Bidx(750));
+            result["D755"] = ReadFloat(dBuf, Bidx(755));
+            result["D760"] = ReadFloat(dBuf, Bidx(760));
+            result["D765"] = ReadFloat(dBuf, Bidx(765));
+            result["D770"] = ReadFloat(dBuf, Bidx(770));
+            result["D775"] = ReadFloat(dBuf, Bidx(775));
+
+            return true;
         }
 
         // ── W memory ──────────────────────────────────────────────────────────
 
-        private void ReadWMemory(int id, PlcOmron plc, Dictionary<string, object?> result)
+        private bool ReadWMemory(int id, PlcOmron plc, Dictionary<string, object?> result)
         {
             byte[] wBuf = new byte[WTotalBits];
 
@@ -217,7 +223,7 @@ namespace CMS.Server.Services
                 if (chunk == null || chunk.Length < chunkSize)
                 {
                     _logger.LogWarning("[SubPlc M{Id}] W short read at W{Word}.0", id, chunkStartWord);
-                    return;
+                    return false;
                 }
 
                 Buffer.BlockCopy(chunk, 0, wBuf, offset, chunk.Length);
@@ -229,103 +235,90 @@ namespace CMS.Server.Services
                 return idx >= 0 && idx < wBuf.Length && wBuf[idx] != 0;
             }
 
-            // W0.00 – Machine power on
-            result["W0.00"] = Wbit(0, 0);
-            // W1.00 – Auto start signal
-            result["W1.00"] = Wbit(1, 0);
-            // W2.00 – Production running (local)
-            result["W2.00"] = Wbit(2, 0);
-            // W3.00 – Shot pulse signal
-            result["W3.00"] = Wbit(3, 0);
-            // W4.00 – Cycle complete signal
-            result["W4.00"] = Wbit(4, 0);
-            // W5.00 – Shift indicator (0=morning, 1=night)
-            result["W5.00"] = Wbit(5, 0);
-            // W5.01 – Shift reset signal
-            result["W5.01"] = Wbit(5, 1);
-            // W6.00 – Remark/problem note signal (local)
-            result["W6.00"] = Wbit(6, 0);
-            // W7.00 – Reject entry signal (local)
-            result["W7.00"] = Wbit(7, 0);
-            // W8.00 – QC visual inspection signal
-            result["W8.00"] = Wbit(8, 0);
-            // W9.00 – QC measure inspection signal
-            result["W9.00"] = Wbit(9, 0);
+            result["W0.00"] = Wbit(0, 0);   // Power supply signal
+            result["W1.00"] = Wbit(1, 0);   // Start auto signal
+            result["W2.00"] = Wbit(2, 0);   // Production running (local)
+            result["W3.00"] = Wbit(3, 0);   // Shot pulse signal
+            result["W4.00"] = Wbit(4, 0);   // CT timer signal
+            result["W5.00"] = Wbit(5, 0);   // Change shift signal
+            result["W5.01"] = Wbit(5, 1);   // Reset signal
+            result["W6.00"] = Wbit(6, 0);   // Remark signal
+            result["W7.00"] = Wbit(7, 0);   // Reject signal
+            result["W8.00"] = Wbit(8, 0);   // Stop category signal
+            result["W9.00"] = Wbit(9, 0);   // QC signal
 
-            // W20.00 – Central: machine status start
-            result["W20.00"] = Wbit(20, 0);
-            // W20.01 – Central: machine status off
-            result["W20.01"] = Wbit(20, 1);
-            // W20.02 – Central: production running
-            result["W20.02"] = Wbit(20, 2);
-            // W20.03 – Central: QC signal
-            result["W20.03"] = Wbit(20, 3);
-            // W20.04 – Central: done signal
-            result["W20.04"] = Wbit(20, 4);
-            // W20.05 – Central: remark signal
-            result["W20.05"] = Wbit(20, 5);
-            // W20.06 – Central: reject signal
-            result["W20.06"] = Wbit(20, 6);
+            result["W20.00"] = Wbit(20, 0);  // Central: status start
+            result["W20.01"] = Wbit(20, 1);  // Central: status off
+            result["W20.02"] = Wbit(20, 2);  // Central: production running
+            result["W20.03"] = Wbit(20, 3);  // Central: QC signal
+            result["W20.04"] = Wbit(20, 4);  // Central: done signal
+            result["W20.05"] = Wbit(20, 5);  // Central: remark signal
+            result["W20.06"] = Wbit(20, 6);  // Central: reject signal
 
-            // W30.00 – Mould change in progress
-            result["W30.00"] = Wbit(30, 0);
+            result["W30.00"] = Wbit(30, 0);  // HMI done
 
-            // W60.00–W60.05 – Utility status bits
-            result["W60.00"] = Wbit(60, 0); // Barrel heater on
-            result["W60.01"] = Wbit(60, 1); // Hydraulic motor on
-            result["W60.02"] = Wbit(60, 2); // Dehumidifier on
-            result["W60.03"] = Wbit(60, 3); // Chiller on
-            result["W60.04"] = Wbit(60, 4); // Material feeder on
-            result["W60.05"] = Wbit(60, 5); // Dry cycle active
+            result["W60.00"] = Wbit(60, 0);  // Barrel
+            result["W60.01"] = Wbit(60, 1);  // Hydraulic motor
+            result["W60.02"] = Wbit(60, 2);  // Dehumidifier
+            result["W60.03"] = Wbit(60, 3);  // Chiller
+            result["W60.04"] = Wbit(60, 4);  // Material
+            result["W60.05"] = Wbit(60, 5);  // Dry cycle
 
-            // W70.00–W77.00 – Utility alarm bits (one per utility)
-            result["W70.00"] = Wbit(70, 0); // Barrel alarm
-            result["W71.00"] = Wbit(71, 0); // Hydraulic motor alarm
-            result["W72.00"] = Wbit(72, 0); // Dehumidifier alarm
-            result["W73.00"] = Wbit(73, 0); // Chiller alarm
-            result["W74.00"] = Wbit(74, 0); // Material feeder alarm
-            result["W75.00"] = Wbit(75, 0); // General alarm
-            result["W76.00"] = Wbit(76, 0); // Reserved alarm 1
-            result["W77.00"] = Wbit(77, 0); // Reserved alarm 2
+            result["W70.00"] = Wbit(70, 0);  // Alarm: barrel
+            result["W71.00"] = Wbit(71, 0);  // Alarm: hyd. motor
+            result["W72.00"] = Wbit(72, 0);  // Alarm: dehumidifier
+            result["W73.00"] = Wbit(73, 0);  // Alarm: chiller
+            result["W74.00"] = Wbit(74, 0);  // Alarm: material
+            result["W75.00"] = Wbit(75, 0);  // Alarm: general
+            result["W76.00"] = Wbit(76, 0);  // Alarm: utility
+            result["W77.00"] = Wbit(77, 0);  // Reset alarm
+
+            return true;
         }
 
         // ── H memory ──────────────────────────────────────────────────────────
 
-        private void ReadHMemory(int id, PlcOmron plc, Dictionary<string, object?> result)
+        private bool ReadHMemory(int id, PlcOmron plc, Dictionary<string, object?> result)
         {
             const MemoryAreaBits HArea = (MemoryAreaBits)0xB2;
-
+ 
             byte[] hBuf = plc.Read(HStart, (ushort)HTotal, 0, HArea);
             if (hBuf == null || hBuf.Length < HTotal * 2)
             {
-                _logger.LogWarning("[SubPlc M{Id}] H short read: expected {Exp} bytes, got {Got}", id, HTotal * 2, hBuf?.Length ?? 0);
-                return;
+                _logger.LogWarning("[SubPlc M{Id}] H short read: expected {Exp} bytes, got {Got}",
+                    id, HTotal * 2, hBuf?.Length ?? 0);
+                return false;
             }
-
+ 
             int Hidx(int hWord) => hWord * 2;
-
-            // H0  – Cycle time constant (float, seconds)
-            result["H0"] = ReadFloat(hBuf, Hidx(0));
-            // H5  – IP node number of this sub-PLC
-            result["H5"] = ReadInt(hBuf, Hidx(5));
-            // H10 – SAP cycle time (float, seconds)
-            result["H10"] = ReadFloat(hBuf, Hidx(10));
-            // H15 – Machine name string (10 bytes)
-            result["H15"] = ReadString(hBuf, Hidx(15), 10);
-            // H20 – IP node number (for routing verification)
-            result["H20"] = ReadInt(hBuf, Hidx(20));
-            // H30 – Production department password
-            result["H30"] = ReadInt(hBuf, Hidx(30));
-            // H32 – Technician department password
-            result["H32"] = ReadInt(hBuf, Hidx(32));
-            // H34 – Maintenance department password
-            result["H34"] = ReadInt(hBuf, Hidx(34));
-            // H36 – QC department password
-            result["H36"] = ReadInt(hBuf, Hidx(36));
+ 
+            result["H5"]  = ReadFloat(hBuf, Hidx(5));   // CT constant (0.02s)
+            result["H10"] = ReadFloat(hBuf, Hidx(10));  // SAP cycle time
+            result["H15"] = ReadFloat(hBuf, Hidx(15));  // Zero float constant
+            result["H20"] = ReadInt(hBuf, Hidx(20));    // IP node number
+            result["H25"] = ReadInt(hBuf, Hidx(25));    // IP node (main PLC)
+            result["H30"] = ReadInt(hBuf, Hidx(30));    // Production password
+            result["H32"] = ReadInt(hBuf, Hidx(32));    // Technician password
+            result["H34"] = ReadInt(hBuf, Hidx(34));    // Maintenance password
+            result["H36"] = ReadInt(hBuf, Hidx(36));    // QC password
+ 
+            return true;
         }
 
         // ── Read helpers (reuse MainPlcService byte-swap logic) ────────────────
-
+        private void ReadOutMemory(int id, PlcOmron plc, Dictionary<string, object?> result)
+        {
+            try
+            {
+                byte[] chunk = plc.Read(OutWord, 1, 0, OutBitArea);
+                result["O100.00"] = chunk != null && chunk.Length >= 1 && chunk[0] != 0;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug("[SubPlc M{Id}] OUT read failed (non-critical): {Msg}", id, ex.Message);
+                result["O100.00"] = false;
+            }
+        }
         private static int ReadInt(byte[] buf, int idx) => MainPlcService.ReadInt(buf, idx);
         private static float ReadFloat(byte[] buf, int idx) => MainPlcService.ReadFloat(buf, idx);
         private static string ReadString(byte[] buf, int idx, int n) => MainPlcService.ReadString(buf, idx, n);

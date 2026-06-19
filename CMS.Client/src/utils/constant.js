@@ -158,53 +158,59 @@ export const DEPARTMENTS = [
   { key: 'qc', label: 'QC', holdingAddr: 36, color: 'purple', icon: 'mdi-magnify-scan' },
 ];
 
-/// ── Setting Page — PLC signal monitor definitions ─────────────────────────────
 export const SIGNAL_DEFS = [
-  // Status (W20)
-  { name: 'Status Start', dataType: 'bit', address: 'W20.00', group: 'Status' },
-  { name: 'Status Off', dataType: 'bit', address: 'W20.01', group: 'Status' },
-  { name: 'Prod Running', dataType: 'bit', address: 'W20.02', group: 'Status' },
-  { name: 'Visual QC', dataType: 'bit', address: 'W20.03', group: 'Status' },
-  { name: 'Remark Signal', dataType: 'bit', address: 'W20.05', group: 'Status' },
-  { name: 'Reject Signal', dataType: 'bit', address: 'W20.06', group: 'Status' },
-
-  // Production
-  { name: 'Shot', dataType: 'int', address: 'D48', group: 'Production' },
-  { name: 'Shot Accum', dataType: 'int', address: 'D50', group: 'Production' },
-  { name: 'Cycle Time', dataType: 'float', address: 'D90', group: 'Production', unit: 's' },
-  { name: 'Type', dataType: 'string', address: 'D200', group: 'Production' },
-  { name: 'Packer', dataType: 'string', address: 'D300', group: 'Production' },
-  { name: 'Stop Category', dataType: 'string', address: 'D400', group: 'Production' },
-  { name: 'Remark', dataType: 'string', address: 'D500', group: 'Production' },
-
-  // Utilities
-  { name: 'Barrel', dataType: 'bit', address: 'W60.00', group: 'Utilities' },
-  { name: 'Hyd. Motor', dataType: 'bit', address: 'W61.00', group: 'Utilities' },
-  { name: 'Dehumidifier', dataType: 'bit', address: 'W62.00', group: 'Utilities' },
-  { name: 'Dehum. Switch', dataType: 'bit', address: 'W63.00', group: 'Utilities' },
-  { name: 'Chiller', dataType: 'bit', address: 'W63.01', group: 'Utilities' },
-  { name: 'Material', dataType: 'bit', address: 'W64.00', group: 'Utilities' },
-  { name: 'Dry Cycle', dataType: 'bit', address: 'W65.00', group: 'Utilities' },
-
-  // Reject (pcs)
-  { name: 'Panelling (pcs)', dataType: 'float', address: 'D700', group: 'Reject (pcs)', unit: 'pcs' },
-  { name: 'Lumpy (pcs)', dataType: 'float', address: 'D705', group: 'Reject (pcs)', unit: 'pcs' },
-  { name: 'Blk.Dot (pcs)', dataType: 'float', address: 'D710', group: 'Reject (pcs)', unit: 'pcs' },
-  { name: 'Burst (pcs)', dataType: 'float', address: 'D715', group: 'Reject (pcs)', unit: 'pcs' },
-  { name: 'StartUp (pcs)', dataType: 'float', address: 'D720', group: 'Reject (pcs)', unit: 'pcs' },
-  { name: 'Preform (pcs)', dataType: 'float', address: 'D725', group: 'Reject (pcs)', unit: 'pcs' },
-  { name: 'Purging (pcs)', dataType: 'float', address: 'D730', group: 'Reject (pcs)', unit: 'pcs' },
-  { name: 'Others (pcs)', dataType: 'float', address: 'D735', group: 'Reject (pcs)', unit: 'pcs' },
-
-  // Reject (kg)
-  { name: 'Panelling (kg)', dataType: 'float', address: 'D740', group: 'Reject (kg)', unit: 'kg' },
-  { name: 'Lumpy (kg)', dataType: 'float', address: 'D745', group: 'Reject (kg)', unit: 'kg' },
-  { name: 'Blk.Dot (kg)', dataType: 'float', address: 'D750', group: 'Reject (kg)', unit: 'kg' },
-  { name: 'Burst (kg)', dataType: 'float', address: 'D755', group: 'Reject (kg)', unit: 'kg' },
-  { name: 'StartUp (kg)', dataType: 'float', address: 'D760', group: 'Reject (kg)', unit: 'kg' },
-  { name: 'Preform (kg)', dataType: 'float', address: 'D765', group: 'Reject (kg)', unit: 'kg' },
-  { name: 'Purging (kg)', dataType: 'float', address: 'D770', group: 'Reject (kg)', unit: 'kg' },
-  { name: 'Others (kg)', dataType: 'float', address: 'D775', group: 'Reject (kg)', unit: 'kg' },
+  // ── Status ─────────────────────────────────────────────────────────────────
+  { name: 'Status Start',   dataType: 'bit',    address: 'W20.00', group: 'Status' },
+  { name: 'Status Off',     dataType: 'bit',    address: 'W20.01', group: 'Status' },
+  { name: 'Prod. Running',  dataType: 'bit',    address: 'W20.02', group: 'Status' },
+  { name: 'QC Signal',      dataType: 'bit',    address: 'W20.03', group: 'Status' },
+  { name: 'Done',           dataType: 'bit',    address: 'W20.04', group: 'Status' },
+  { name: 'Remark Signal',  dataType: 'bit',    address: 'W20.05', group: 'Status' },
+  { name: 'Reject Signal',  dataType: 'bit',    address: 'W20.06', group: 'Status' },
+  { name: 'QC Visual',      dataType: 'int',    address: 'D10',    group: 'Status' },
+  { name: 'QC Measure',     dataType: 'int',    address: 'D12',    group: 'Status' },
+  { name: 'HMI Page',       dataType: 'int',    address: 'D190',   group: 'Status' },
+  { name: 'Alarm Out',      dataType: 'bit',    address: 'O100.00',group: 'Status' },
+ 
+  // ── Production ─────────────────────────────────────────────────────────────
+  { name: 'Model',          dataType: 'string', address: 'D200',   group: 'Production' },
+  { name: 'Packer',         dataType: 'string', address: 'D300',   group: 'Production' },
+  { name: 'Stop Category',  dataType: 'string', address: 'D400',   group: 'Production' },
+  { name: 'Remarks',        dataType: 'string', address: 'D500',   group: 'Production' },
+  { name: 'Mould Cat.',     dataType: 'int',    address: 'D120',   group: 'Production' },
+  { name: 'Part Weight',    dataType: 'float',  address: 'D35',    group: 'Production', unit: 'kg' },
+  { name: 'Shot Total',     dataType: 'int',    address: 'D48',    group: 'Production' },
+  { name: 'Shot Accum',     dataType: 'int',    address: 'D50',    group: 'Production' },
+  { name: 'Act. CT',        dataType: 'float',  address: 'D90',    group: 'Production', unit: 's' },
+ 
+  // ── Utilities ──────────────────────────────────────────────────────────────
+  { name: 'Barrel',         dataType: 'bit',    address: 'W60.00', group: 'Utilities' },
+  { name: 'Hyd. Motor',     dataType: 'bit',    address: 'W60.01', group: 'Utilities' },
+  { name: 'Dehumidifier',   dataType: 'bit',    address: 'W60.02', group: 'Utilities' },
+  { name: 'Chiller',        dataType: 'bit',    address: 'W60.03', group: 'Utilities' },
+  { name: 'Material',       dataType: 'bit',    address: 'W60.04', group: 'Utilities' },
+  { name: 'Dry Cycle',      dataType: 'bit',    address: 'W60.05', group: 'Utilities' },
+ 
+  // ── Constant ───────────────────────────────────────────────────────────────
+  { name: 'CT Const.',      dataType: 'float',  address: 'H5',     group: 'Constant', unit: 's' },
+  { name: 'SAP CT',         dataType: 'float',  address: 'H10',    group: 'Constant', unit: 's' },
+  { name: 'Zero Float',     dataType: 'float',  address: 'H15',    group: 'Constant' },
+  { name: 'IP Node',        dataType: 'int',    address: 'H20',    group: 'Constant' },
+  { name: 'IP Node Main',   dataType: 'int',    address: 'H25',    group: 'Constant' },
+  { name: 'Prod. Pass',     dataType: 'int',    address: 'H30',    group: 'Constant' },
+  { name: 'Tech. Pass',     dataType: 'int',    address: 'H32',    group: 'Constant' },
+  { name: 'Main. Pass',     dataType: 'int',    address: 'H34',    group: 'Constant' },
+  { name: 'QC Pass',        dataType: 'int',    address: 'H36',    group: 'Constant' },
+ 
+  // ── Reject (kg) ────────────────────────────────────────────────────────────
+  { name: 'Panelling',      dataType: 'float',  address: 'D700',   group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Lumpy',          dataType: 'float',  address: 'D705',   group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Black Dot',      dataType: 'float',  address: 'D710',   group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Burst',          dataType: 'float',  address: 'D715',   group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Start Up',       dataType: 'float',  address: 'D720',   group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Preform',        dataType: 'float',  address: 'D725',   group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Purging',        dataType: 'float',  address: 'D730',   group: 'Reject (kg)', unit: 'kg' },
+  { name: 'Others',         dataType: 'float',  address: 'D735',   group: 'Reject (kg)', unit: 'kg' },
 ];
 
 export const POLL_INTERVALS = [

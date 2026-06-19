@@ -1,43 +1,49 @@
 <template>
-  <v-container fluid class="pa-4">
-    <div class="text-subtitle-1 font-weight-bold mb-4">PLC Department Passwords</div>
+  <div class="d-flex flex-column h-100 pa-2" style="min-height: 0;">
+    <div class="text-subtitle-1 font-weight-bold mb-2 flex-shrink-0">
+      PLC Department Passwords
+    </div>
 
     <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-4" />
 
-    <v-row>
-      <v-col v-for="dept in DEPARTMENTS" :key="dept.key" cols="12" md="3">
-        <v-card variant="outlined" class="pa-4 rounded-lg">
-          <div class="d-flex align-center mb-1">
-            <v-icon :color="dept.color" class="mr-2">{{ dept.icon }}</v-icon>
-            <span class="text-subtitle-2 font-weight-bold">{{ dept.label }}</span>
+    <div class="flex-grow-1 overflow-auto" style="min-height: 0; overflow-x: hidden;">
+      <v-row class="ma-0">
+        <v-col v-for="dept in DEPARTMENTS" :key="dept.key" cols="12" md="3">
+          <v-card variant="outlined" class="pa-4 rounded-lg">
+            <div class="d-flex align-center mb-1">
+              <v-icon :color="dept.color" class="mr-2">{{ dept.icon }}</v-icon>
+              <span class="text-subtitle-2 font-weight-bold">{{ dept.label }}</span>
+              <v-spacer />
+              <v-checkbox v-model="selectedDepts"
+                          :value="dept.key"
+                          hide-details
+                          density="compact" />
+            </div>
+
+            <!-- Last updated timestamp from SQL -->
+            <div class="text-caption text-medium-emphasis mb-3">
+              Last set: {{ lastUpdated[dept.key] ?? '—' }}
+            </div>
+
             <v-spacer />
-            <v-checkbox v-model="selectedDepts"
-                        :value="dept.key"
-                        hide-details
-                        density="compact" />
-          </div>
 
-          <!-- Last updated timestamp from SQL -->
-          <div class="text-caption text-medium-emphasis mb-3">
-            Last set: {{ lastUpdated[dept.key] ?? '—' }}
-          </div>
+            <v-text-field v-model.number="passwordForm[dept.key]"
+                          label="New Password"
+                          type="number"
+                          variant="outlined"
+                          density="compact"
+                          hide-details
+                          :disabled="!selectedDepts.includes(dept.key)" />
+          </v-card>
+        </v-col>
+      </v-row>
+    </div>
 
-          <v-text-field v-model.number="passwordForm[dept.key]"
-                        label="New Password"
-                        type="number"
-                        variant="outlined"
-                        density="compact"
-                        hide-details
-                        :disabled="!selectedDepts.includes(dept.key)" />
-        </v-card>
-      </v-col>
-    </v-row>
-
-    <div class="d-flex align-center mt-4 ga-3">
+    <div class="d-flex align-center mt-3 pt-2 ga-3 flex-shrink-0 border-t">
       <v-btn variant="outlined" @click="resetPasswordForm">Reset</v-btn>
       <v-btn color="warning"
-             :disabled="selectedDepts.length === 0"
-             @click="confirmDialog = true">
+              :disabled="selectedDepts.length === 0"
+              @click="confirmDialog = true">
         Write to PLC
       </v-btn>
       <span v-if="statusMessage" :class="statusColor" class="text-body-2">
@@ -77,7 +83,7 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
-  </v-container>
+  </div>
 </template>
 
 <script setup>
