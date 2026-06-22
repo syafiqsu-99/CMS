@@ -6,12 +6,13 @@
       </v-col>
     </v-row>
 
-    <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="min-height: 0;">
-      <v-col cols="12" class="pa-1 d-flex flex-column h-100">
+    <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="height: 90vh;">
+      <v-col cols="12" class="pa-1 d-flex" style="height: 100%;">
         <v-card variant="text"
+                class="d-flex flex-column"
                 elevation="2"
-                class="d-flex flex-column h-100 overflow-hidden">
-          <v-card-text class="d-flex flex-column pa-2 h-100" style="min-height: 0;">
+                style="width: 100%; height: 100%; overflow: hidden;">
+          <v-card-text class="d-flex flex-column pa-2" style="height: 100%; overflow: hidden;">
 
             <v-tabs v-model="activeTab" color="primary" density="compact" class="flex-shrink-0">
               <v-tab value="password">
