@@ -433,123 +433,175 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
     public async Task<object> ImportReport(List<Dictionary<string, JsonElement>> reportList, DateOnly production_date, int shift)
     {
         const string checkSql = @"
-                SELECT id_type, mould
-                FROM   report
-                WHERE  id_machine      = @id_machine
-                  AND  production_date = @production_date
-                  AND  shift           = @shift;";
+            SELECT id_type, mould
+            FROM   report
+            WHERE  id_machine      = @id_machine
+              AND  production_date = @production_date
+              AND  shift           = @shift;";
 
         const string sapSql = @"
-                SELECT material, type, qty_perct, gross_weight, part_weight, sap_ct
-                FROM   sap
-                WHERE  id_type = @id_type
-                  AND  mould   = @mould;";
+            SELECT material, type, qty_perct, gross_weight, part_weight, sap_ct
+            FROM   sap
+            WHERE  id_type = @id_type
+              AND  mould   = @mould;";
 
         const string updateSql = @"
-                UPDATE report
-                SET
-                    packer             = @packer,
-                    jo_no              = CASE WHEN jo_no = '0' THEN @jo_no ELSE jo_no END,
-                    id_type            = @new_id_type,
-                    mould              = @new_mould,
-                    material           = @material,
-                    type               = @type,
-                    qty_perct          = @qty_perct,
-                    gross_weight       = @gross_weight,
-                    part_weight        = @part_weight,
-                    sap_ct             = @sap_ct,
-                    shot               = @shot,
-                    qty_order          = @qty_order,
-                    wip_opening        = @wip_opening,
-                    wip_closing        = @wip_closing,
-                    finish_good        = @finish_good,
-                    qty_accum          = @qty_accum,
-                    reject_startup     = @reject_startup,
-                    reject_prod        = @reject_prod,
-                    act_ct             = @act_ct,
-                    production_running = @production_running,
-                    change_full_set    = @change_full_set,
-                    change_half_set    = @change_half_set,
-                    change_parts       = @change_parts,
-                    maintenance_dt     = @maintenance_dt,
-                    technician_dt      = @technician_dt,
-                    production_dt      = @production_dt,
-                    unallocated        = 0,
-                    remark             = @remark,
-                    reject_purging     = @reject_purging,
-                    reject_preform     = @reject_preform,
-                    reject_total_pcs   = @reject_total_pcs
-                WHERE  id_machine      = @id_machine
-                  AND  id_type         = @orig_id_type
-                  AND  mould           = @orig_mould
-                  AND  production_date = @production_date
-                  AND  shift           = @shift
-                  AND  (jo_no = '0' OR jo_no = @jo_no);";
+            UPDATE report
+            SET
+                packer             = @packer,
+                jo_no              = CASE WHEN jo_no = '0' THEN @jo_no ELSE jo_no END,
+                id_type            = @new_id_type,
+                mould              = @new_mould,
+                material           = @material,
+                type               = @type,
+                qty_perct          = @qty_perct,
+                gross_weight       = @gross_weight,
+                part_weight        = @part_weight,
+                sap_ct             = @sap_ct,
+                shot               = @shot,
+                qty_order          = @qty_order,
+                wip_opening        = @wip_opening,
+                wip_closing        = @wip_closing,
+                finish_good        = @finish_good,
+                qty_accum          = @qty_accum,
+                reject_startup     = @reject_startup,
+                reject_prod        = @reject_prod,
+                act_ct             = @act_ct,
+                production_running = @production_running,
+                change_full_set    = @change_full_set,
+                change_half_set    = @change_half_set,
+                change_parts       = @change_parts,
+                maintenance_dt     = @maintenance_dt,
+                technician_dt      = @technician_dt,
+                production_dt      = @production_dt,
+                unallocated        = 0,
+                remark             = @remark,
+                reject_purging     = @reject_purging,
+                reject_preform     = @reject_preform,
+                reject_total_pcs   = @reject_total_pcs
+            WHERE  id_machine      = @id_machine
+              AND  id_type         = @orig_id_type
+              AND  mould           = @orig_mould
+              AND  production_date = @production_date
+              AND  shift           = @shift
+              AND  (jo_no = '0' OR jo_no = @jo_no);";
 
         const string insertSql = @"
-                INSERT INTO report (
-                    id_machine, production_date, shift,
-                    packer, jo_no,
-                    id_type, mould, material, type,
-                    qty_perct, gross_weight, part_weight, sap_ct,
-                    shot, qty_order, wip_opening, wip_closing,
-                    finish_good, qty_accum,
-                    reject_startup, reject_prod,
-                    act_ct, production_running,
-                    change_full_set, change_half_set, change_parts,
-                    maintenance_dt, technician_dt, production_dt, unallocated,
-                    remark, reject_purging, reject_preform, reject_total_pcs
-                ) VALUES (
-                    @id_machine, @production_date, @shift,
-                    @packer, @jo_no,
-                    @new_id_type, @new_mould, @material, @type,
-                    @qty_perct, @gross_weight, @part_weight, @sap_ct,
-                    @shot, @qty_order, @wip_opening, @wip_closing,
-                    @finish_good, @qty_accum,
-                    @reject_startup, @reject_prod,
-                    @act_ct, @production_running,
-                    @change_full_set, @change_half_set, @change_parts,
-                    @maintenance_dt, @technician_dt, @production_dt, 0,
-                    @remark, @reject_purging, @reject_preform, @reject_total_pcs
-                );";
+            INSERT INTO report (
+                id_machine, machine_name, production_date, shift,
+                packer, jo_no,
+                id_type, mould, material, type,
+                qty_perct, gross_weight, part_weight, sap_ct,
+                shot, qty_order, wip_opening, wip_closing,
+                finish_good, qty_accum,
+                reject_startup, reject_prod,
+                act_ct, production_running,
+                change_full_set, change_half_set, change_parts,
+                maintenance_dt, technician_dt, production_dt, unallocated,
+                remark, reject_purging, reject_preform, reject_total_pcs
+            ) VALUES (
+                @id_machine, @machine_name, @production_date, @shift,
+                @packer, @jo_no,
+                @new_id_type, @new_mould, @material, @type,
+                @qty_perct, @gross_weight, @part_weight, @sap_ct,
+                @shot, @qty_order, @wip_opening, @wip_closing,
+                @finish_good, @qty_accum,
+                @reject_startup, @reject_prod,
+                @act_ct, @production_running,
+                @change_full_set, @change_half_set, @change_parts,
+                @maintenance_dt, @technician_dt, @production_dt, 0,
+                @remark, @reject_purging, @reject_preform, @reject_total_pcs
+            );";
 
         using var conn = await CreateConnectionAsync();
+
+        var machineList = await GetMachineIdsAsync();
+        var machineNameMap = machineList.ToDictionary(m => m.id, m => m.name);
+
+        var grouped = reportList
+            .GroupBy(r => (
+                IdMachine: Convert.ToInt32(r["id_machine"].GetDouble()),
+                Date: DateOnly.TryParse(r["production_date"].GetString(), out var date) ? date : DateOnly.MinValue,
+                Shift: Convert.ToInt32(r["shift"].GetDouble())
+            ))
+            .ToList();
+
+        DateOnly rangeStart = grouped.Min(g => g.Key.Date);
+        DateOnly rangeEnd = grouped.Max(g => g.Key.Date);
+
+        // Phase 1: capture existing (id_type, mould) matches per group and determine
+        // upfront whether this import will need at least one INSERT (i.e. new rows).
+        var dbRowsByGroup = new Dictionary<(int, DateOnly, int), List<(int IdType, int Mould)>>();
+        bool willInsert = false;
+
+        foreach (var group in grouped)
+        {
+            var dbRows = new List<(int IdType, int Mould)>();
+
+            await using (var checkCmd = new SqlCommand(checkSql, conn))
+            {
+                checkCmd.Parameters.AddWithValue("@id_machine", group.Key.IdMachine);
+                checkCmd.Parameters.AddWithValue("@production_date", group.Key.Date);
+                checkCmd.Parameters.AddWithValue("@shift", group.Key.Shift);
+
+                await using var reader = await checkCmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                    dbRows.Add((Convert.ToInt32(reader["id_type"]), Convert.ToInt32(reader["mould"])));
+            }
+
+            dbRowsByGroup[group.Key] = dbRows;
+
+            foreach (var csvRow in group)
+            {
+                int csvIdType = Convert.ToInt32(csvRow["id_type"].GetDouble());
+                int csvMould = Convert.ToInt32(csvRow["mould"].GetDouble());
+
+                if (!dbRows.Any(db => db.IdType == csvIdType && db.Mould == csvMould))
+                {
+                    willInsert = true;
+                    break;
+                }
+            }
+        }
 
         await using (var disableCmd = new SqlCommand("DISABLE TRIGGER updateReport ON report;", conn))
             await disableCmd.ExecuteNonQueryAsync();
 
         try
         {
-            var grouped = reportList
-                .GroupBy(r => (
-                    IdMachine: Convert.ToInt32(r["id_machine"].GetDouble()),
-                    Date: DateOnly.TryParse(r["production_date"].GetString(), out var date) ? date : DateOnly.MinValue,
-                    Shift: Convert.ToInt32(r["shift"].GetDouble())
-                ))
-                .ToList();
+            if (willInsert)
+            {
+                // Clear machine_log_{id} for every machine within the imported date range (one batched round-trip).
+                var deleteLogsSql = string.Join("\n", machineList.Select(m =>
+                    $"DELETE FROM [machine_log_{m.id}] WHERE production_date BETWEEN @start_date AND @end_date;"));
 
+                if (!string.IsNullOrWhiteSpace(deleteLogsSql))
+                {
+                    await using var delLogsCmd = new SqlCommand(deleteLogsSql, conn);
+                    delLogsCmd.Parameters.AddWithValue("@start_date", rangeStart);
+                    delLogsCmd.Parameters.AddWithValue("@end_date", rangeEnd);
+                    await delLogsCmd.ExecuteNonQueryAsync();
+                }
+
+                // Clear report/reject for the imported date range before re-inserting.
+                await using var delReportRejectCmd = new SqlCommand(@"
+                    DELETE FROM report WHERE production_date BETWEEN @start_date AND @end_date;
+                    DELETE FROM reject WHERE production_date BETWEEN @start_date AND @end_date;", conn);
+                delReportRejectCmd.Parameters.AddWithValue("@start_date", rangeStart);
+                delReportRejectCmd.Parameters.AddWithValue("@end_date", rangeEnd);
+                await delReportRejectCmd.ExecuteNonQueryAsync();
+            }
+
+            // Phase 2: apply insert/update using the matches captured in phase 1.
             foreach (var group in grouped)
             {
                 int idMachine = group.Key.IdMachine;
                 DateOnly rowDate = group.Key.Date;
                 int rowShift = group.Key.Shift;
 
-                List<Dictionary<string, JsonElement>> csvRows = group.ToList();
+                var dbRows = dbRowsByGroup[group.Key];
 
-                var dbRows = new List<(int IdType, int Mould)>();
-
-                await using (var checkCmd = new SqlCommand(checkSql, conn))
-                {
-                    checkCmd.Parameters.AddWithValue("@id_machine", idMachine);
-                    checkCmd.Parameters.AddWithValue("@production_date", rowDate);
-                    checkCmd.Parameters.AddWithValue("@shift", rowShift);
-
-                    await using var reader = await checkCmd.ExecuteReaderAsync();
-                    while (await reader.ReadAsync())
-                        dbRows.Add((Convert.ToInt32(reader["id_type"]), Convert.ToInt32(reader["mould"])));
-                }
-
-                foreach (var csvRow in csvRows)
+                foreach (var csvRow in group)
                 {
                     int csvIdType = Convert.ToInt32(csvRow["id_type"].GetDouble());
                     int csvMould = Convert.ToInt32(csvRow["mould"].GetDouble());
@@ -589,6 +641,8 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
 
                     await using var cmd = new SqlCommand(sql, conn);
                     cmd.Parameters.AddWithValue("@id_machine", idMachine);
+                    if (!hasMatch)
+                        cmd.Parameters.AddWithValue("@machine_name", machineNameMap.TryGetValue(idMachine, out var mName) ? mName : string.Empty);
                     cmd.Parameters.AddWithValue("@production_date", rowDate);
                     cmd.Parameters.AddWithValue("@shift", rowShift);
                     cmd.Parameters.AddWithValue("@packer", packer);
@@ -627,6 +681,117 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     await cmd.ExecuteNonQueryAsync();
                 }
             }
+
+            if (willInsert)
+            {
+                // Rebuild machine_log_{id} from the freshly (re)inserted report rows, per machine, in one batched round-trip.
+                var rebuildLogsSql = string.Join("\n", machineList.Select(m => $@"
+                    ;WITH BaseData_{m.id} AS (
+                        SELECT
+                            r.*,
+                            CASE
+                                WHEN r.shift = 1 THEN DATEADD(HOUR, 6,  CAST(r.production_date AS DATETIME))
+                                WHEN r.shift = 2 THEN DATEADD(HOUR, 18, CAST(r.production_date AS DATETIME))
+                            END AS shift_start
+                        FROM report r
+                        WHERE r.production_date BETWEEN @start_date AND @end_date
+                          AND r.id_machine = {m.id}
+                    ),
+                    Activities_{m.id} AS (
+                        SELECT
+                            b.*,
+                            v.activity_order,
+                            v.duration,
+                            v.category,
+                            v.problem,
+                            ISNULL(v.mould_category, 0) AS mould_category,
+                            v.status_start
+                        FROM BaseData_{m.id} b
+                        CROSS APPLY (VALUES
+                            (1, b.production_running, 'PRODUCTION RUNNING',    NULL,        NULL, 1),
+                            (2, b.change_full_set,    'MOULD CHANGE',          'FULL SET',     1, 0),
+                            (3, b.change_half_set,    'MOULD CHANGE',          'HALF SET',     2, 0),
+                            (4, b.change_parts,       'MOULD CHANGE',          'BLOW MOULD',   3, 0),
+                            (5, b.maintenance_dt,     'SCHEDULED MAINTENANCE', NULL,        NULL, 0),
+                            (6, b.technician_dt,      'QUALITY ISSUE',         b.remark,    NULL, 0),
+                            (7, b.production_dt,      'NO SCHEDULE',           NULL,        NULL, 0)
+                        ) v(activity_order, duration, category, problem, mould_category, status_start)
+                        WHERE v.duration > 0
+                    ),
+                    Sequenced_{m.id} AS (
+                        SELECT *,
+                            SUM(CAST(duration * 3600000 AS BIGINT)) OVER (
+                                PARTITION BY id_machine, production_date, shift
+                                ORDER BY activity_order
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                            ) AS prev_ms
+                        FROM Activities_{m.id}
+                    ),
+                    FlagAssignment_{m.id} AS (
+                        SELECT *,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY id_machine, production_date, shift
+                                ORDER BY
+                                    CASE WHEN status_start = 1 THEN 0 ELSE 1 END,
+                                    activity_order
+                            ) AS assign_row
+                        FROM Sequenced_{m.id}
+                    )
+                    INSERT INTO [machine_log_{m.id}] (
+                        machine_name, id_type, mould, start, finish, shot,
+                        category, problem, mould_category, shift, production_date, act_ct, status_start
+                    )
+                    SELECT
+                        machine_name, id_type, mould,
+                        DATEADD(MILLISECOND, ISNULL(prev_ms, 0), shift_start) AS start,
+                        DATEADD(MILLISECOND, ISNULL(prev_ms, 0) + CAST(duration * 3600000 AS BIGINT), shift_start) AS finish,
+                        CASE WHEN assign_row = 1 THEN shot ELSE 0 END AS shot,
+                        category, problem, mould_category, shift, production_date,
+                        CASE WHEN assign_row = 1 AND status_start = 1 THEN act_ct ELSE NULL END AS act_ct,
+                        status_start
+                    FROM FlagAssignment_{m.id}
+                    ORDER BY production_date, shift, activity_order;
+            "));
+
+                if (!string.IsNullOrWhiteSpace(rebuildLogsSql))
+                {
+                    await using var rebuildLogsCmd = new SqlCommand(rebuildLogsSql, conn);
+                    rebuildLogsCmd.Parameters.AddWithValue("@start_date", rangeStart);
+                    rebuildLogsCmd.Parameters.AddWithValue("@end_date", rangeEnd);
+                    await rebuildLogsCmd.ExecuteNonQueryAsync();
+                }
+
+                // Rebuild reject totals from the imported report rows.
+                int minMachineId = machineList.Count > 0 ? machineList.Min(m => m.id) : 0;
+                int maxMachineId = machineList.Count > 0 ? machineList.Max(m => m.id) : 0;
+
+                const string rebuildRejectSql = @"
+                    INSERT INTO reject (
+                        id_machine, machine_name, id_type, mould, shift, production_date,
+                        total_weight, reject_startup, reject_preform, reject_purging, reject_others,
+                        reject_panelling, reject_lumpy, reject_black_dot, reject_burst
+                    )
+                    SELECT
+                        r.id_machine, r.machine_name, r.id_type, r.mould, r.shift, r.production_date,
+                        SUM(r.reject_startup + r.reject_preform + r.reject_purging + r.reject_prod) AS total_weight,
+                        SUM(r.reject_startup) AS reject_startup,
+                        SUM(r.reject_preform) AS reject_preform,
+                        SUM(r.reject_purging) AS reject_purging,
+                        SUM(r.reject_prod) AS reject_others,
+                        0 AS reject_panelling, 0 AS reject_lumpy, 0 AS reject_black_dot, 0 AS reject_burst
+                    FROM report r
+                    WHERE r.id_machine BETWEEN @min_machine AND @max_machine
+                      AND r.production_date BETWEEN @start_date AND @end_date
+                    GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould, r.shift, r.production_date
+                    ORDER BY r.production_date, r.shift;";
+
+                await using var rebuildRejectCmd = new SqlCommand(rebuildRejectSql, conn);
+                rebuildRejectCmd.Parameters.AddWithValue("@min_machine", minMachineId);
+                rebuildRejectCmd.Parameters.AddWithValue("@max_machine", maxMachineId);
+                rebuildRejectCmd.Parameters.AddWithValue("@start_date", rangeStart);
+                rebuildRejectCmd.Parameters.AddWithValue("@end_date", rangeEnd);
+                await rebuildRejectCmd.ExecuteNonQueryAsync();
+            }
         }
         finally
         {
@@ -634,12 +799,11 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
             await enableCmd.ExecuteNonQueryAsync();
         }
 
-        var reloadDate = DateOnly.TryParse(reportList.First()["production_date"].GetString(), out var date) ? date : DateOnly.MinValue;
+        var reloadDate = DateOnly.TryParse(reportList.First()["production_date"].GetString(), out var reloadDateParsed) ? reloadDateParsed : DateOnly.MinValue;
         var reloadShift = Convert.ToInt32(reportList.First()["shift"].GetDouble());
 
         return await LoadPrevReport(reloadDate, reloadShift);
     }
-
     #endregion
 
     #region CHANGE MOULD

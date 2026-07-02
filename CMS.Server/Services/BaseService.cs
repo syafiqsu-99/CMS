@@ -801,8 +801,8 @@ public class BaseService
                     WHERE finish IS NULL;
                 END
 
-                INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, category, problem, mould_category, shift, production_date, status_start)
-                VALUES (@machine_name, @id_type, @mould, @time, 0, NULLIF(@category, ''), NULLIF(@problem, ''), CASE WHEN NULLIF(@category, '') = 'MOULD CHANGE' THEN @mould_category ELSE 0 END, @shift, @production_date, @status_start);";
+                INSERT INTO [{tableName}] (machine_name, id_type, mould, start, shot, shift, production_date, status_start)
+                VALUES (@machine_name, @id_type, @mould, @time, 0, @shift, @production_date, @status_start);";
 
         await using var cmd = new SqlCommand(sql, conn, tx);
         cmd.Parameters.AddWithValue("@machine_name", master.machine_name);
@@ -813,9 +813,6 @@ public class BaseService
         cmd.Parameters.AddWithValue("@shift", shift);
         cmd.Parameters.AddWithValue("@production_date", productionDate);
         cmd.Parameters.AddWithValue("@status_start", master.status_start);
-        cmd.Parameters.AddWithValue("@category", master.stop_category);
-        cmd.Parameters.AddWithValue("@problem", master.remark);
-        cmd.Parameters.AddWithValue("@mould_category", master.mould_category_no);
 
         await cmd.ExecuteNonQueryAsync();
     }
