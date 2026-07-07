@@ -23,10 +23,11 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                         ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 1 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_full_set,
                         ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 2 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_half_set,
                         ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 3 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_parts,
-                        ROUND(SUM(CASE WHEN ml.category IN ('MACHINE BREAKDOWN', 'SCHEDULED MAINTENANCE', 'OTHERS MAIN') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS maintenance_dt,
+                        ROUND(SUM(CASE WHEN ml.category IN ('MACHINE BREAKDOWN', 'OTHERS MAIN') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS maintenance_dt,
                         ROUND(SUM(CASE WHEN ml.category IN ('QUALITY ISSUE', 'SAMPLE RUNNING', 'OTHERS TECH') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS technician_dt,
-                        ROUND(SUM(CASE WHEN ml.category IN ('NO OPERATOR', 'NO SCHEDULE', 'PRODUCT BUYOFF', 'MATERIAL DRYING', 'OTHERS PROD') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS production_dt,
-                        ROUND(SUM(CASE WHEN category IS NULL THEN DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) END)/3600.0, 2) AS unallocated,
+                        ROUND(SUM(CASE WHEN ml.category IN ('NO OPERATOR', 'MATERIAL DRYING', 'OTHERS PROD') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS production_dt,
+                        ROUND(SUM(CASE WHEN ml.category IN ('PRODUCT BUYOFF') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS buyoff_dt,
+                        ROUND(SUM(CASE WHEN ml.category IN ('SCHEDULED MAINTENANCE', 'NO SCHEDULE') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS planned_dt,
                         STUFF((
                             SELECT ', ' + FORMAT(m2.start, 'h:mmtt') + ' - ' + FORMAT(m2.finish, 'h:mmtt') + ': ' + m2.problem
                             FROM all_logs m2
@@ -75,8 +76,9 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     COALESCE(la.maintenance_dt, 0.0) AS maintenance_dt,
                     COALESCE(la.technician_dt, 0.0) AS technician_dt,
                     COALESCE(la.production_dt, 0.0) AS production_dt,
+                    COALESCE(la.buyoff_dt, 0.0) AS buyoff_dt,
+                    COALESCE(la.planned_dt, 0.0) AS planned_dt,
                     COALESCE(la.remark, '') AS remark,
-                    COALESCE(la.unallocated, 0.0) AS unallocated,
                     COALESCE(mm.part_scrap, 0) AS part_scrap,
                     COALESCE(rej.reject_purging, 0.0) AS reject_purging,
                     COALESCE(rej.reject_preform, 0.0) AS reject_preform,
@@ -141,8 +143,9 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 maintenance_dt = Convert.ToSingle(reader["maintenance_dt"]),
                 technician_dt = Convert.ToSingle(reader["technician_dt"]),
                 production_dt = Convert.ToSingle(reader["production_dt"]),
+                buyoff_dt = Convert.ToSingle(reader["buyoff_dt"]),
+                planned_dt = Convert.ToSingle(reader["planned_dt"]),
                 remark = Convert.ToString(reader["remark"]),
-                unallocated = Convert.ToSingle(reader["unallocated"]),
                 part_scrap = Convert.ToSingle(reader["part_scrap"]),
                 reject_purging = Convert.ToSingle(reader["reject_purging"]),
                 reject_preform = Convert.ToSingle(reader["reject_preform"]),
@@ -192,8 +195,9 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     COALESCE(maintenance_dt, 0.0) AS maintenance_dt,
                     COALESCE(technician_dt, 0.0) AS technician_dt,
                     COALESCE(production_dt, 0.0) AS production_dt,
+                    COALESCE(buyoff_dt, 0.0) AS buyoff_dt,
+                    COALESCE(planned_dt, 0.0) AS planned_dt,
                     COALESCE(remark, '') AS remark,
-                    COALESCE(unallocated, 0.0) AS unallocated,
                     COALESCE(part_scrap, 0.0) AS part_scrap,
                     COALESCE(reject_purging, 0.0) AS reject_purging,
                     COALESCE(reject_preform, 0.0) AS reject_preform,
@@ -250,8 +254,9 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 maintenance_dt = Convert.ToSingle(reader["maintenance_dt"]),
                 technician_dt = Convert.ToSingle(reader["technician_dt"]),
                 production_dt = Convert.ToSingle(reader["production_dt"]),
+                buyoff_dt = Convert.ToSingle(reader["buyoff_dt"]),
+                planned_dt = Convert.ToSingle(reader["planned_dt"]),
                 remark = Convert.ToString(reader["remark"]),
-                unallocated = Convert.ToSingle(reader["unallocated"]),
                 part_scrap = Convert.ToSingle(reader["part_scrap"]),
                 reject_purging = Convert.ToSingle(reader["reject_purging"]),
                 reject_preform = Convert.ToSingle(reader["reject_preform"]),
@@ -360,8 +365,9 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     COALESCE(maintenance_dt, 0.0) AS maintenance_dt,
                     COALESCE(technician_dt, 0.0) AS technician_dt,
                     COALESCE(production_dt, 0.0) AS production_dt,
+                    COALESCE(buyoff_dt, 0.0) AS buyoff_dt,
+                    COALESCE(planned_dt, 0.0) AS planned_dt,
                     COALESCE(remark, '') AS remark,
-                    COALESCE(unallocated, 0.0) AS unallocated,
                     COALESCE(part_scrap, 0.0) AS part_scrap,
                     COALESCE(reject_purging, 0.0) AS reject_purging,
                     COALESCE(reject_preform, 0.0) AS reject_preform,
@@ -418,8 +424,9 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 maintenance_dt = Convert.ToDouble(reader["maintenance_dt"]),
                 technician_dt = Convert.ToDouble(reader["technician_dt"]),
                 production_dt = Convert.ToDouble(reader["production_dt"]),
+                buyoff_dt = Convert.ToDouble(reader["buyoff_dt"]),
+                planned_dt = Convert.ToDouble(reader["planned_dt"]),
                 remark = Convert.ToString(reader["remark"]),
-                unallocated = Convert.ToDouble(reader["unallocated"]),
                 part_scrap = Convert.ToDouble(reader["part_scrap"]),
                 reject_purging = Convert.ToDouble(reader["reject_purging"]),
                 reject_preform = Convert.ToDouble(reader["reject_preform"]),
@@ -474,7 +481,8 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 maintenance_dt     = @maintenance_dt,
                 technician_dt      = @technician_dt,
                 production_dt      = @production_dt,
-                unallocated        = 0,
+                buyoff_dt          = @buyoff_dt,
+                planned_dt         = @planned_dt,
                 remark             = @remark,
                 reject_purging     = @reject_purging,
                 reject_preform     = @reject_preform,
@@ -497,7 +505,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 reject_startup, reject_prod,
                 act_ct, production_running,
                 change_full_set, change_half_set, change_parts,
-                maintenance_dt, technician_dt, production_dt, unallocated,
+                maintenance_dt, technician_dt, production_dt, buyoff_dt, planned_dt,
                 remark, reject_purging, reject_preform, reject_total_pcs
             ) VALUES (
                 @id_machine, @machine_name, @production_date, @shift,
@@ -509,7 +517,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 @reject_startup, @reject_prod,
                 @act_ct, @production_running,
                 @change_full_set, @change_half_set, @change_parts,
-                @maintenance_dt, @technician_dt, @production_dt, 0,
+                @maintenance_dt, @technician_dt, @production_dt, @buyoff_dt, @planned_dt,
                 @remark, @reject_purging, @reject_preform, @reject_total_pcs
             );";
 
@@ -529,8 +537,6 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
         DateOnly rangeStart = grouped.Min(g => g.Key.Date);
         DateOnly rangeEnd = grouped.Max(g => g.Key.Date);
 
-        // Phase 1: capture existing (id_type, mould) matches per group and determine
-        // upfront whether this import will need at least one INSERT (i.e. new rows).
         var dbRowsByGroup = new Dictionary<(int, DateOnly, int), List<(int IdType, int Mould)>>();
         bool willInsert = false;
 
@@ -571,7 +577,6 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
         {
             if (willInsert)
             {
-                // Clear machine_log_{id} for every machine within the imported date range (one batched round-trip).
                 var deleteLogsSql = string.Join("\n", machineList.Select(m =>
                     $"DELETE FROM [machine_log_{m.id}] WHERE production_date BETWEEN @start_date AND @end_date;"));
 
@@ -583,7 +588,6 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     await delLogsCmd.ExecuteNonQueryAsync();
                 }
 
-                // Clear report/reject for the imported date range before re-inserting.
                 await using var delReportRejectCmd = new SqlCommand(@"
                     DELETE FROM report WHERE production_date BETWEEN @start_date AND @end_date;
                     DELETE FROM reject WHERE production_date BETWEEN @start_date AND @end_date;", conn);
@@ -592,7 +596,6 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 await delReportRejectCmd.ExecuteNonQueryAsync();
             }
 
-            // Phase 2: apply insert/update using the matches captured in phase 1.
             foreach (var group in grouped)
             {
                 int idMachine = group.Key.IdMachine;
@@ -673,6 +676,8 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     cmd.Parameters.AddWithValue("@maintenance_dt", csvRow.TryGetValue("maintenance_dt", out var mdEl) ? Convert.ToSingle(mdEl.GetDouble()) : 0f);
                     cmd.Parameters.AddWithValue("@technician_dt", csvRow.TryGetValue("technician_dt", out var tdEl) ? Convert.ToSingle(tdEl.GetDouble()) : 0f);
                     cmd.Parameters.AddWithValue("@production_dt", csvRow.TryGetValue("production_dt", out var pdEl) ? Convert.ToSingle(pdEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@buyoff_dt", csvRow.TryGetValue("buyoff_dt", out var bEl) ? Convert.ToSingle(bEl.GetDouble()) : 0f);
+                    cmd.Parameters.AddWithValue("@planned_dt", csvRow.TryGetValue("planned_dt", out var plEl) ? Convert.ToSingle(plEl.GetDouble()) : 0f);
                     cmd.Parameters.AddWithValue("@remark", csvRow.TryGetValue("remark", out var rmEl) ? rmEl.GetString() ?? string.Empty : string.Empty);
                     cmd.Parameters.AddWithValue("@reject_purging", csvRow.TryGetValue("reject_purging", out var rpuEl) ? Convert.ToSingle(rpuEl.GetDouble()) : 0f);
                     cmd.Parameters.AddWithValue("@reject_preform", csvRow.TryGetValue("reject_preform", out var rpfEl) ? Convert.ToSingle(rpfEl.GetDouble()) : 0f);
@@ -684,7 +689,6 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
 
             if (willInsert)
             {
-                // Rebuild machine_log_{id} from the freshly (re)inserted report rows, per machine, in one batched round-trip.
                 var rebuildLogsSql = string.Join("\n", machineList.Select(m => $@"
                     ;WITH BaseData_{m.id} AS (
                         SELECT
@@ -712,9 +716,11 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                             (2, b.change_full_set,    'MOULD CHANGE',          'FULL SET',     1, 0),
                             (3, b.change_half_set,    'MOULD CHANGE',          'HALF SET',     2, 0),
                             (4, b.change_parts,       'MOULD CHANGE',          'BLOW MOULD',   3, 0),
-                            (5, b.maintenance_dt,     'SCHEDULED MAINTENANCE', NULL,        NULL, 0),
+                            (5, b.maintenance_dt,     'MACHINE BREAKDOWN',     NULL,        NULL, 0),
                             (6, b.technician_dt,      'QUALITY ISSUE',         b.remark,    NULL, 0),
-                            (7, b.production_dt,      'NO SCHEDULE',           NULL,        NULL, 0)
+                            (7, b.production_dt,      'NO OPERATOR',           NULL,        NULL, 0),
+                            (8, b.buyoff_dt,          'PRODUCT BUYOFF',        NULL,        NULL, 0),
+                            (9, b.planned_dt,         'NO SCHEDULE',           NULL,        NULL, 0)
                         ) v(activity_order, duration, category, problem, mould_category, status_start)
                         WHERE v.duration > 0
                     ),

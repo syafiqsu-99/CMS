@@ -31,9 +31,9 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 id_machine = Convert.ToInt32(reader["id_machine"]),
                 machine_name = reader["machine_name"].ToString(),
                 run_time = Convert.ToSingle(reader["run_time"]),
-                down_time = Convert.ToSingle(reader["down_time"]),
-                available_hours = Convert.ToSingle(reader["available_hours"]),
-                unallocated = Convert.ToSingle(reader["unallocated"]),
+                unplanned_dt = Convert.ToSingle(reader["unplanned_dt"]),
+                planned_dt = Convert.ToSingle(reader["planned_dt"]),
+                operating_time = Convert.ToSingle(reader["operating_time"]),
                 material_used = Convert.ToSingle(reader["material_used"]),
                 reject_weight = Convert.ToSingle(reader["reject_weight"]),
                 availability = Convert.ToSingle(reader["availability"]),
@@ -45,7 +45,7 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
         return result;
     }
 
-    private async Task<string> BuildTodayOeeSqlAsync(DateOnly today,int currentShift)
+    private async Task<string> BuildTodayOeeSqlAsync(DateOnly today, int currentShift)
     {
         var logCte = await BuildMachineLogUnionAsync("production_date = @today and shift = @currentShift");
 
@@ -53,30 +53,48 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
             WITH CombinedLogs AS (
                 {logCte}
             ),
-            ShiftIsOffday AS (
-                SELECT CASE
-                    WHEN EXISTS (
-                        SELECT 1 FROM calendar
-                        WHERE production_date = @today
-                          AND shift           = @currentShift
-                          AND day_type        = 'OFFDAY'
-                    ) THEN 1 ELSE 0
-                END AS is_offday
+            ShiftDayType AS (
+                SELECT COALESCE(
+                    (SELECT TOP 1 day_type FROM calendar
+                     WHERE production_date = @today AND shift = @currentShift),
+                    'NORMAL'
+                ) AS day_type
+            ),
+            ShiftHasRun AS (
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1 FROM CombinedLogs WHERE category = 'PRODUCTION RUNNING'
+                ) THEN 1 ELSE 0 END AS has_run
             ),
             MachineAgg AS (
-                SELECT id_machine, machine_name, id_type, mould,
-                    SUM(shot) AS shot,
-                    SUM(CASE WHEN category='PRODUCTION RUNNING' AND status_start=1
-                             THEN DATEDIFF(SECOND,start,COALESCE(finish,GETDATE()))/3600.0 ELSE 0 END) AS run_time,
-                    SUM(CASE WHEN category<>'PRODUCTION RUNNING'
-                             THEN DATEDIFF(SECOND,start,COALESCE(finish,GETDATE()))/3600.0 ELSE 0 END) AS down_time,
-                    SUM(CASE WHEN category IS NULL
-                             THEN DATEDIFF(SECOND, start, COALESCE(finish, GETDATE())) / 3600.0
-                             ELSE 0 END) AS unallocated,
-                    AVG(NULLIF(act_ct,0)) AS act_ct
-                FROM CombinedLogs
-                WHERE production_date=@today AND shift=@currentShift
-                GROUP BY id_machine, machine_name, id_type, mould
+                SELECT cl.id_machine, cl.machine_name, cl.id_type, cl.mould,
+                    SUM(cl.shot) AS shot,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category = 'PRODUCTION RUNNING' AND cl.status_start = 1
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS run_time,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category IS NOT NULL
+                             AND cl.category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE', 'SCHEDULED MAINTENANCE')
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS unplanned_dt,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category IN ('NO SCHEDULE', 'SCHEDULED MAINTENANCE')
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS planned_dt,
+                    AVG(NULLIF(cl.act_ct, 0)) AS act_ct
+                FROM CombinedLogs cl
+                CROSS JOIN ShiftDayType sdt
+                CROSS JOIN ShiftHasRun shr
+                GROUP BY cl.id_machine, cl.machine_name, cl.id_type, cl.mould
             ),
             WithSAP AS (
                 SELECT m.*,
@@ -100,24 +118,22 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     w.id_machine,
                     w.machine_name,
                     SUM(w.run_time)          AS run_time,
-                    SUM(w.down_time)         AS down_time,
-                    SUM(w.unallocated)       AS unallocated,
+                    SUM(w.unplanned_dt)      AS unplanned_dt,
+                    SUM(w.planned_dt)        AS planned_dt,
                     SUM(w.material_used)     AS material_used,
                     SUM(w.reject_weight)     AS reject_weight,
                     SUM(w.total_sap_time)    AS total_sap_time,
                     SUM(w.total_actual_time) AS total_actual_time,
-                    CASE WHEN (SELECT is_offday FROM ShiftIsOffday) = 1 THEN 0.0
-                         ELSE SUM(w.run_time) + SUM(w.down_time)
-                    END AS available_hours
+                    SUM(w.run_time) + SUM(w.unplanned_dt) AS operating_time
                 FROM WithReject w
                 GROUP BY w.id_machine, w.machine_name
             )
-            SELECT id_machine, machine_name, run_time, down_time, available_hours, unallocated, material_used, reject_weight,
-                CASE WHEN (run_time+down_time)=0 THEN 0 ELSE (run_time*1.0/(run_time+down_time))*100 END AS availability,
+            SELECT id_machine, machine_name, run_time, unplanned_dt, planned_dt, operating_time, material_used, reject_weight,
+                CASE WHEN (run_time+unplanned_dt)=0 THEN 0 ELSE (run_time*1.0/(run_time+unplanned_dt))*100 END AS availability,
                 CASE WHEN total_actual_time=0    THEN 0 ELSE (total_sap_time*1.0/total_actual_time)*100 END AS performance,
                 CASE WHEN material_used=0         THEN 0 ELSE ((material_used-reject_weight)*1.0/material_used)*100 END AS quality,
-                CASE WHEN (run_time+down_time)=0 OR total_actual_time=0 OR material_used=0 THEN 0
-                     ELSE (run_time*1.0/(run_time+down_time))*(total_sap_time*1.0/total_actual_time)*((material_used-reject_weight)*1.0/material_used)*100
+                CASE WHEN (run_time+unplanned_dt)=0 OR total_actual_time=0 OR material_used=0 THEN 0
+                     ELSE (run_time*1.0/(run_time+unplanned_dt))*(total_sap_time*1.0/total_actual_time)*((material_used-reject_weight)*1.0/material_used)*100
                 END AS oee
             FROM MachineSummary
             ORDER BY id_machine;";
@@ -157,7 +173,6 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 ) AS day_type
             FROM ShiftDates sd
         ),
-        -- Per machine per OVERTIME shift: flag whether any PRODUCTION RUNNING row exists
         OvertimeRunCheck AS (
             SELECT cl.id_machine, cl.production_date, cl.shift,
                 CASE WHEN SUM(CASE WHEN cl.category = 'PRODUCTION RUNNING' THEN 1 ELSE 0 END) > 0
@@ -173,21 +188,24 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
         ReportAgg AS (
             SELECT
                 r.id_machine, r.machine_name, r.production_date, r.shift,
-                -- run_time: zero for OFFDAY; zero for OVERTIME with no production running
                 COALESCE(SUM(CASE
                     WHEN ec.day_type = 'OFFDAY' THEN 0
                     WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
                     ELSE r.production_running
                 END), 0) AS run_time,
-                -- down_time: same zeroing conditions as run_time
                 COALESCE(SUM(CASE
                     WHEN ec.day_type = 'OFFDAY' THEN 0
                     WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
                     ELSE COALESCE(r.change_full_set, 0) + COALESCE(r.change_half_set, 0)
                        + COALESCE(r.change_parts,    0) + COALESCE(r.maintenance_dt,  0)
                        + COALESCE(r.technician_dt,   0) + COALESCE(r.production_dt,   0)
-                END), 0) AS down_time,
-                COALESCE(SUM(r.unallocated),  0) AS unallocated,
+                       + COALESCE(r.buyoff_dt,       0)
+                END), 0) AS unplanned_dt,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.planned_dt, 0)
+                END), 0) AS planned_dt,
                 SUM(COALESCE(r.material_used, 0) * COALESCE(r.sap_ct, 0)) AS total_sap_time,
                 SUM(COALESCE(r.material_used, 0) * COALESCE(r.act_ct, 0)) AS total_actual_time,
                 COALESCE(SUM(r.material_used), 0) AS material_used,
@@ -209,23 +227,22 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 ra.id_machine,
                 ra.machine_name,
                 SUM(ra.run_time)          AS run_time,
-                SUM(ra.down_time)         AS down_time,
-                SUM(ra.unallocated)       AS unallocated,
+                SUM(ra.unplanned_dt)      AS unplanned_dt,
+                SUM(ra.planned_dt)        AS planned_dt,
                 SUM(ra.material_used)     AS material_used,
                 SUM(ra.reject_weight)     AS reject_weight,
                 SUM(ra.total_sap_time)    AS total_sap_time,
                 SUM(ra.total_actual_time) AS total_actual_time,
-                -- available_hours is run_time + down_time; both already zeroed correctly above
-                SUM(ra.run_time + ra.down_time) AS available_hours
+                SUM(ra.run_time + ra.unplanned_dt) AS operating_time
             FROM ReportAgg ra
             GROUP BY ra.id_machine, ra.machine_name
         )
         SELECT
             id_machine, machine_name,
-            run_time, down_time, available_hours, unallocated,
+            run_time, unplanned_dt, planned_dt, operating_time,
             material_used, reject_weight,
-            CASE WHEN NULLIF(available_hours, 0) IS NULL THEN 0
-                 ELSE (run_time * 1.0 / available_hours) * 100
+            CASE WHEN NULLIF(operating_time, 0) IS NULL THEN 0
+                 ELSE (run_time * 1.0 / operating_time) * 100
             END AS availability,
             CASE WHEN total_actual_time = 0 THEN 0
                  ELSE (total_sap_time * 1.0 / total_actual_time) * 100
@@ -235,10 +252,10 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                  ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100
             END AS quality,
             CASE
-                WHEN NULLIF(available_hours, 0) IS NULL
+                WHEN NULLIF(operating_time, 0) IS NULL
                   OR total_actual_time = 0
                   OR material_used = 0 THEN 0
-                ELSE (run_time           * 1.0 / available_hours)   *
+                ELSE (run_time           * 1.0 / operating_time)   *
                      (total_sap_time     * 1.0 / total_actual_time) *
                      ((material_used - reject_weight) * 1.0 / material_used) * 100
             END AS oee
@@ -315,7 +332,7 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 ON  sap.id_type = ml.id_type
                 AND sap.mould   = ml.mould
             WHERE ml.id_type <> 123456
-              AND ml.category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE')
+              AND ml.category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE', 'SCHEDULED MAINTENANCE')
             GROUP BY sap.id_type, sap.type
             ORDER BY hours DESC;";
 
@@ -877,10 +894,18 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                         WHEN (SELECT day_type FROM ShiftDayType) = 'OFFDAY' THEN 0
                         WHEN (SELECT day_type FROM ShiftDayType) = 'OVERTIME'
                              AND (SELECT has_run FROM ShiftHasRun) = 0 THEN 0
-                        WHEN cl.category <> 'PRODUCTION RUNNING' AND cl.category IS NOT NULL
+                        WHEN cl.category NOT IN ('PRODUCTION RUNNING', 'NO SCHEDULE', 'SCHEDULED MAINTENANCE') AND cl.category IS NOT NULL
                              THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
                         ELSE 0
-                    END) AS down_time,
+                    END) AS unplanned_dt,
+                    SUM(CASE
+                        WHEN (SELECT day_type FROM ShiftDayType) = 'OFFDAY' THEN 0
+                        WHEN (SELECT day_type FROM ShiftDayType) = 'OVERTIME'
+                             AND (SELECT has_run FROM ShiftHasRun) = 0 THEN 0
+                        WHEN cl.category IN ('NO SCHEDULE', 'SCHEDULED MAINTENANCE') AND cl.category IS NOT NULL
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS planned_dt,
                     SUM(CAST(cl.shot AS FLOAT) * COALESCE(NULLIF(cl.act_ct, 0), 0)) / 3600.0 AS total_actual_time
                 FROM CombinedLogs cl
                 GROUP BY cl.id_machine, cl.machine_name, cl.id_type, cl.mould
@@ -913,7 +938,8 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 type,
                 shot,
                 run_time,
-                down_time,
+                unplanned_dt,
+                planned_dt,
                 material_used,
                 reject_weight,
                 sap_ct,
@@ -958,7 +984,6 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     ) AS day_type
                 FROM ShiftDates sd
             ),
-            -- Per machine per OVERTIME shift: flag whether it has any PRODUCTION RUNNING row
             OvertimeRunCheck AS (
                 SELECT cl.id_machine, cl.production_date, cl.shift,
                     CASE WHEN SUM(CASE WHEN cl.category = 'PRODUCTION RUNNING' THEN 1 ELSE 0 END) > 0
@@ -976,23 +1001,26 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     r.id_machine, r.machine_name, r.id_type, r.mould,
                     r.production_date, r.shift,
                     COALESCE(SUM(r.shot), 0) AS shot,
-                    -- Zero run_time for OFFDAY or OVERTIME with no production running
                     COALESCE(SUM(CASE
                         WHEN ec.day_type = 'OFFDAY' THEN 0
                         WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
                         ELSE r.production_running
                     END), 0) AS run_time,
-                    -- Zero down_time under the same conditions
                     COALESCE(SUM(CASE
                         WHEN ec.day_type = 'OFFDAY' THEN 0
                         WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
                         ELSE COALESCE(r.change_full_set, 0) + COALESCE(r.change_half_set, 0)
                            + COALESCE(r.change_parts,    0) + COALESCE(r.maintenance_dt,  0)
                            + COALESCE(r.technician_dt,   0) + COALESCE(r.production_dt,   0)
-                    END), 0) AS down_time,
+                           + COALESCE(r.buyoff_dt,       0)
+                    END), 0) AS unplanned_dt,
+                    COALESCE(SUM(CASE
+                        WHEN ec.day_type = 'OFFDAY' THEN 0
+                        WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                        ELSE COALESCE(r.planned_dt, 0)
+                    END), 0) AS planned_dt,
                     COALESCE(SUM(r.material_used),  0) AS material_used,
                     COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
-                    -- Weighted totals for performance calculation
                     SUM(COALESCE(r.shot, 0) * COALESCE(r.sap_ct, 0)) AS total_sap_time_raw,
                     SUM(COALESCE(r.shot, 0) * COALESCE(r.act_ct, 0)) AS total_actual_time_raw,
                     AVG(COALESCE(r.act_ct, 0)) AS act_ct
@@ -1009,7 +1037,6 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould,
                          r.production_date, r.shift
             ),
-            -- Aggregate per machine + product; join sap for fixed type and sap_ct
             ProductSummary AS (
                 SELECT
                     ra.id_machine,
@@ -1019,14 +1046,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     COALESCE(s.type,   '')  AS type,
                     SUM(ra.shot)            AS shot,
                     SUM(ra.run_time)        AS run_time,
-                    SUM(ra.down_time)       AS down_time,
+                    SUM(ra.unplanned_dt)    AS unplanned_dt,
+                    SUM(ra.planned_dt)      AS planned_dt,
                     SUM(ra.material_used)   AS material_used,
                     SUM(ra.reject_weight)   AS reject_weight,
-                    COALESCE(s.sap_ct, 0)   AS sap_ct,           -- fixed from sap table
-                    AVG(ra.act_ct)          AS act_ct,            -- average across shifts
-                    -- total_sap_time = (shot * sap_ct from sap table) / 3600
+                    COALESCE(s.sap_ct, 0)   AS sap_ct,
+                    AVG(ra.act_ct)          AS act_ct,
                     SUM(ra.shot) * COALESCE(s.sap_ct, 0) / 3600.0 AS total_sap_time,
-                    -- total_actual_time = sum of (shot * act_ct per shift row) / 3600
                     SUM(ra.total_actual_time_raw) / 3600.0 AS total_actual_time
                 FROM ReportAgg ra
                 LEFT JOIN sap s
@@ -1042,7 +1068,8 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 type,
                 shot,
                 run_time,
-                down_time,
+                unplanned_dt,
+                planned_dt,
                 material_used,
                 reject_weight,
                 sap_ct,
@@ -1066,20 +1093,21 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
         while (await reader.ReadAsync())
         {
             result.Add(new OEERawRow(
-                IdMachine: Convert.ToInt32(reader["id_machine"]),
-                MachineName: Convert.ToString(reader["machine_name"]) ?? string.Empty,
-                IdType: Convert.ToInt32(reader["id_type"]),
-                Mould: Convert.ToString(reader["mould"]) ?? string.Empty,
-                Type: Convert.ToString(reader["type"]) ?? string.Empty,
-                Shot: Convert.ToDouble(reader["shot"]),
-                RunTime: Convert.ToDouble(reader["run_time"]),
-                DownTime: Convert.ToDouble(reader["down_time"]),
-                MaterialUsed: Convert.ToDouble(reader["material_used"]),
-                RejectWeight: Convert.ToDouble(reader["reject_weight"]),
-                SapCt: Convert.ToDouble(reader["sap_ct"]),
-                ActCt: Convert.ToDouble(reader["act_ct"]),
-                TotalSapTime: Convert.ToDouble(reader["total_sap_time"]),
-                TotalActTime: Convert.ToDouble(reader["total_actual_time"])
+                id_machine: Convert.ToInt32(reader["id_machine"]),
+                machine_name: Convert.ToString(reader["machine_name"]) ?? string.Empty,
+                id_type: Convert.ToInt32(reader["id_type"]),
+                mould: Convert.ToInt32(reader["mould"]),
+                type: Convert.ToString(reader["type"]) ?? string.Empty,
+                shot: Convert.ToDouble(reader["shot"]),
+                run_time: Convert.ToDouble(reader["run_time"]),
+                unplanned_dt: Convert.ToDouble(reader["unplanned_dt"]),
+                planned_dt: Convert.ToDouble(reader["planned_dt"]),
+                material_used: Convert.ToDouble(reader["material_used"]),
+                reject_weight: Convert.ToDouble(reader["reject_weight"]),
+                sap_ct: Convert.ToDouble(reader["sap_ct"]),
+                act_ct: Convert.ToDouble(reader["act_ct"]),
+                total_sap_time: Convert.ToDouble(reader["total_sap_time"]),
+                total_actual_time: Convert.ToDouble(reader["total_actual_time"])
             ));
         }
         return result;

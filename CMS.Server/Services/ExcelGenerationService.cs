@@ -76,11 +76,13 @@ namespace CMS.Server.Services
             new(33, "M/C DT (hrs) Maintenance", "#FFFF66", 18),
             new(34, "M/C DT (hrs) Technician", "#FFFF66", 18),
             new(35, "Idle DT Prod/ QC/ Other", "#FFFF66", 18),
-            new(36, "Remark", "#FFFF66", 30),
-            new(37, "Part Scrap", "#FFFF66", 12),
-            new(38, "Purging", "#FFFF66", 12),
-            new(39, "Preform", "#FFFF66", 12),
-            new(40, "Prod Reject (pcs)", "#B1A0C7", 16)
+            new(36, "Buyoff DT (hrs)", "#FFFF66", 16),
+            new(37, "Planned DT (hrs)", "#FFFF66", 16),
+            new(38, "Remark", "#FFFF66", 30),
+            new(39, "Part Scrap", "#FFFF66", 12),
+            new(40, "Purging", "#FFFF66", 12),
+            new(41, "Preform", "#FFFF66", 12),
+            new(42, "Prod Reject (pcs)", "#B1A0C7", 16)
         };
         }
 
@@ -107,7 +109,7 @@ namespace CMS.Server.Services
             foreach (var item in data)
             {
                 worksheet.Cell(currentRow, 1).Value = item.machine_name;
-                worksheet.Cell(currentRow, 2).Value = item.shift   ;
+                worksheet.Cell(currentRow, 2).Value = item.shift;
                 worksheet.Cell(currentRow, 3).Value = item.packer;
                 worksheet.Cell(currentRow, 4).Value = item.material;
                 worksheet.Cell(currentRow, 5).Value = item.id_type;
@@ -135,19 +137,21 @@ namespace CMS.Server.Services
                 worksheet.Cell(currentRow, 33).Value = item.maintenance_dt;
                 worksheet.Cell(currentRow, 34).Value = item.technician_dt;
                 worksheet.Cell(currentRow, 35).Value = item.production_dt;
-                worksheet.Cell(currentRow, 36).Value = item.remark;
-                worksheet.Cell(currentRow, 37).Value = item.part_scrap;
-                worksheet.Cell(currentRow, 38).Value = item.reject_purging;
-                worksheet.Cell(currentRow, 39).Value = item.reject_preform;
+                worksheet.Cell(currentRow, 36).Value = item.buyoff_dt;
+                worksheet.Cell(currentRow, 37).Value = item.planned_dt;
+                worksheet.Cell(currentRow, 38).Value = item.remark;
+                worksheet.Cell(currentRow, 39).Value = item.part_scrap;
+                worksheet.Cell(currentRow, 40).Value = item.reject_purging;
+                worksheet.Cell(currentRow, 41).Value = item.reject_preform;
 
                 ApplyFormulas(worksheet, currentRow);
 
-                for (int col = 30; col <= 39; col++)
+                for (int col = 30; col <= 41; col++)
                 {
                     worksheet.Cell(currentRow, col).Style.Fill.BackgroundColor = XLColor.FromHtml("#FFFF99");
                 }
 
-                for (int col = 1; col <= 40; col++)
+                for (int col = 1; col <= 42; col++)
                 {
                     worksheet.Cell(currentRow, col).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
                 }
@@ -185,8 +189,8 @@ namespace CMS.Server.Services
             worksheet.Cell(row, 26).Style.NumberFormat.Format = "0.00";
 
             // Prod Reject (pcs) = (Start Up + Prod Reject + Purging + Preform) / Part Weight
-            worksheet.Cell(row, 40).FormulaA1 = $"=IF(K{row}=0,0,(W{row}+Y{row}+AL{row}+AM{row})/K{row})";
-            worksheet.Cell(row, 40).Style.NumberFormat.Format = "0.00";
+            worksheet.Cell(row, 42).FormulaA1 = $"=IF(K{row}=0,0,(W{row}+Y{row}+AN{row}+AO{row})/K{row})";
+            worksheet.Cell(row, 42).Style.NumberFormat.Format = "0.00";
         }
 
         private void ApplyFinalFormatting(IXLWorksheet worksheet)
@@ -206,47 +210,52 @@ namespace CMS.Server.Services
 
         private static readonly string[] RAW_COLUMNS =
         [
-            "Machine Name",          // 1  (A)
-            "Id Type",               // 2  (B)
-            "Mould",                 // 3  (C)
-            "Type",                  // 4  (D)
-            "Shot",                  // 5  (E)
-            "Run Time (hrs)",        // 6  (F)
-            "Down Time (hrs)",       // 7  (G)
-            "Available Hours (hrs)", // 8  (H)  ← formula: =F+G
-            "Material Used (kg)",    // 9  (I)
-            "Reject Weight (kg)",    // 10 (J)
-            "SAP CT (s)",            // 11 (K)
-            "Act CT (s)",            // 12 (L)
-            "Total SAP Time (hrs)",  // 13 (M)  ← formula: =(E*K)/3600
-            "Total Act Time (hrs)",  // 14 (N)  ← formula: =(E*L)/3600
+            "Machine Name",             // 1  (A)
+            "Id Type",                  // 2  (B)
+            "Mould",                    // 3  (C)
+            "Type",                     // 4  (D)
+            "Shot",                     // 5  (E)
+            "Run Time (hrs)",           // 6  (F)
+            "Unplanned Downtime (hrs)", // 7  (G)
+            "Planned Downtime (hrs)",   // 8  (H)
+            "Operating Hours (hrs)",    // 9  (I)  ← formula: =F+G
+            "Available Hours (hrs)",    // 10 (J)  ← formula: =F+G+H
+            "Material Used (kg)",       // 11 (K)
+            "Reject Weight (kg)",       // 12 (L)
+            "SAP CT (s)",               // 13 (M)
+            "Act CT (s)",               // 14 (N)
+            "Total SAP Time (hrs)",     // 15 (O)  ← formula: =(E*M)/3600
+            "Total Act Time (hrs)",     // 16 (P)  ← formula: =(E*N)/3600
         ];
 
         private static readonly string[] SUMMARY_COLUMNS =
         [
-            "Machine Name",          // 1  (A)
-            "Run Time (hrs)",        // 2  (B)
-            "Down Time (hrs)",       // 3  (C)
-            "Material Used (kg)",    // 4  (D)
-            "Reject Weight (kg)",    // 5  (E)
-            "Available Hours (hrs)", // 6  (F)  ← SUMIFS on Raw col H
-            "Total SAP Time (hrs)",  // 7  (G)  ← SUMIFS on Raw col M
-            "Total Act Time (hrs)",  // 8  (H)  ← SUMIFS on Raw col N
-            "Availability (%)",      // 9  (I)
-            "Performance (%)",       // 10 (J)
-            "Quality (%)",           // 11 (K)
-            "OEE (%)",               // 12 (L)
+            "Machine Name",             // 1  (A)
+            "Run Time (hrs)",           // 2  (B)
+            "Unplanned Downtime (hrs)", // 3  (C)
+            "Planned Downtime (hrs)",   // 4  (D)
+            "Material Used (kg)",       // 5  (E)
+            "Reject Weight (kg)",       // 6  (F)
+            "Operating Hours (hrs)",    // 7  (G)  ← SUMIFS on Raw col I
+            "Available Hours (hrs)",    // 8  (H)  ← SUMIFS on Raw col J
+            "Total SAP Time (hrs)",     // 9  (I)  ← SUMIFS on Raw col O
+            "Total Act Time (hrs)",     // 10 (J)  ← SUMIFS on Raw col P
+            "Availability (%)",         // 11 (K)
+            "Performance (%)",          // 12 (L)
+            "Quality (%)",              // 13 (M)
+            "OEE (%)",                  // 14 (N)
         ];
 
         private static readonly Dictionary<int, string> SUMMARY_HEADER_NOTES = new()
         {
-            [6] = "Available Hours (hrs)\n= Run Time + Down Time\nRun/Down Time already zeroed:\n- OFFDAY: both = 0\n- OVERTIME (no production): both = 0\n- OVERTIME (with production): full values kept",
-            [7] = "Total SAP Time (hrs)\n= (SAP CT × Shot) / 3600",
-            [8] = "Total Act Time (hrs)\n= (Act CT × Shot) / 3600",
-            [9] = "Availability (%)\n= Run Time / Available Hours × 100",
-            [10] = "Performance (%)\n= Total SAP Time / Total Act Time × 100",
-            [11] = "Quality (%)\n= (Material Used − Reject Weight) / Material Used × 100",
-            [12] = "OEE (%)\n= Availability% × Performance% × Quality% / 10000",
+            [7] = "Operating Hours (hrs)\n= Run Time + Unplanned Downtime",
+            [8] = "Available Hours (hrs)\n= Run Time + Unplanned + Planned Downtime\nAll values already zeroed:\n- OFFDAY: all = 0\n- OVERTIME (no production): all = 0\n- OVERTIME (with production): full values kept",
+            [9] = "Total SAP Time (hrs)\n= (SAP CT × Shot) / 3600",
+            [10] = "Total Act Time (hrs)\n= (Act CT × Shot) / 3600",
+            [11] = "Availability (%)\n= Run Time / Operating Hours × 100",
+            [12] = "Performance (%)\n= Total SAP Time / Total Act Time × 100",
+            [13] = "Quality (%)\n= (Material Used − Reject Weight) / Material Used × 100",
+            [14] = "OEE (%)\n= Availability% × Performance% × Quality% / 10000",
         };
 
         private static readonly string[] COL_LETTERS =
@@ -296,26 +305,29 @@ namespace CMS.Server.Services
             int currentRow = HEADER_ROW + 1;
             foreach (var r in rows)
             {
-                ws.Cell(currentRow, 1).Value = r.MachineName;
-                ws.Cell(currentRow, 2).Value = r.IdType;
-                ws.Cell(currentRow, 3).Value = r.Mould;
-                ws.Cell(currentRow, 4).Value = r.Type;
-                ws.Cell(currentRow, 5).Value = r.Shot;
-                ws.Cell(currentRow, 6).Value = r.RunTime;
-                ws.Cell(currentRow, 7).Value = r.DownTime;
+                ws.Cell(currentRow, 1).Value = r.machine_name; //A
+                ws.Cell(currentRow, 2).Value = r.id_type; //B
+                ws.Cell(currentRow, 3).Value = r.mould; //C
+                ws.Cell(currentRow, 4).Value = r.type; //D
+                ws.Cell(currentRow, 5).Value = r.shot; //E
+                ws.Cell(currentRow, 6).Value = r.run_time; //F
+                ws.Cell(currentRow, 7).Value = r.unplanned_dt; //G
+                ws.Cell(currentRow, 8).Value = r.planned_dt; //H
 
-                // Available Hours (H) = Run Time + Down Time
-                ws.Cell(currentRow, 8).FormulaA1 = $"=F{currentRow}+G{currentRow}";
+                // Operating Hours (I) = Run Time + Unplanned Downtime
+                ws.Cell(currentRow, 9).FormulaA1 = $"=F{currentRow}+G{currentRow}";
+                // Available Hours (J) = Run Time + Unplanned Downtime + Planned Downtime
+                ws.Cell(currentRow, 10).FormulaA1 = $"=F{currentRow}+G{currentRow}+H{currentRow}";
 
-                ws.Cell(currentRow, 9).Value = r.MaterialUsed;
-                ws.Cell(currentRow, 10).Value = r.RejectWeight;
-                ws.Cell(currentRow, 11).Value = r.SapCt;
-                ws.Cell(currentRow, 12).Value = r.ActCt;
+                ws.Cell(currentRow, 11).Value = r.material_used; //K
+                ws.Cell(currentRow, 12).Value = r.reject_weight; //L
+                ws.Cell(currentRow, 13).Value = r.sap_ct; //M
+                ws.Cell(currentRow, 14).Value = r.act_ct; //N
 
-                // Total SAP Time (M) = (Shot × SAP CT) / 3600
-                ws.Cell(currentRow, 13).FormulaA1 = $"=(E{currentRow}*K{currentRow})/3600";
-                // Total Act Time (N) = (Shot × Act CT) / 3600
-                ws.Cell(currentRow, 14).FormulaA1 = $"=(E{currentRow}*L{currentRow})/3600";
+                // Total SAP Time (O) = (Shot × SAP CT) / 3600
+                ws.Cell(currentRow, 15).FormulaA1 = $"=(E{currentRow}*M{currentRow})/3600";
+                // Total Act Time (P) = (Shot × Act CT) / 3600
+                ws.Cell(currentRow, 16).FormulaA1 = $"=(E{currentRow}*N{currentRow})/3600";
 
                 for (int c = 5; c <= totalCols; c++)
                     ws.Cell(currentRow, c).Style.NumberFormat.Format = "0.00";
@@ -353,8 +365,8 @@ namespace CMS.Server.Services
                 cell.Style.Alignment.WrapText = true;
                 cell.Style.Fill.BackgroundColor = c switch
                 {
-                    12 => XLColor.FromHtml("#C00000"),
-                    >= 7 => XLColor.FromHtml("#ED7D31"),
+                    14 => XLColor.FromHtml("#C00000"),
+                    >= 11 => XLColor.FromHtml("#ED7D31"),
                     _ => XLColor.FromHtml("#4472C4"),
                 };
             }
@@ -370,36 +382,38 @@ namespace CMS.Server.Services
             }
 
             var machines = rows
-                .GroupBy(r => new { r.IdMachine, r.MachineName })
-                .OrderBy(g => g.Key.IdMachine)
+                .GroupBy(r => new { r.id_machine, r.machine_name })
+                .OrderBy(g => g.Key.id_machine)
                 .ToList();
 
             int currentRow = HEADER_ROW + 1;
             foreach (var machineGroup in machines)
             {
-                ws.Cell(currentRow, 1).Value = machineGroup.Key.MachineName;
+                ws.Cell(currentRow, 1).Value = machineGroup.Key.machine_name; // A
 
-                ws.Cell(currentRow, 2).FormulaA1 = $"=SUMIFS('Raw Data'!F:F,'Raw Data'!A:A,A{currentRow})";  // Run Time
-                ws.Cell(currentRow, 3).FormulaA1 = $"=SUMIFS('Raw Data'!G:G,'Raw Data'!A:A,A{currentRow})";  // Down Time
-                ws.Cell(currentRow, 4).FormulaA1 = $"=SUMIFS('Raw Data'!I:I,'Raw Data'!A:A,A{currentRow})";  // Material Used
-                ws.Cell(currentRow, 5).FormulaA1 = $"=SUMIFS('Raw Data'!J:J,'Raw Data'!A:A,A{currentRow})";  // Reject Weight
-                ws.Cell(currentRow, 6).FormulaA1 = $"=SUMIFS('Raw Data'!H:H,'Raw Data'!A:A,A{currentRow})";  // Available Hours
-                ws.Cell(currentRow, 7).FormulaA1 = $"=SUMIFS('Raw Data'!M:M,'Raw Data'!A:A,A{currentRow})";  // Total SAP Time
-                ws.Cell(currentRow, 8).FormulaA1 = $"=SUMIFS('Raw Data'!N:N,'Raw Data'!A:A,A{currentRow})";  // Total Act Time
+                ws.Cell(currentRow, 2).FormulaA1 = $"=SUMIFS('Raw Data'!F:F,'Raw Data'!A:A,A{currentRow})";  // Run Time B
+                ws.Cell(currentRow, 3).FormulaA1 = $"=SUMIFS('Raw Data'!G:G,'Raw Data'!A:A,A{currentRow})";  // Unplanned Downtime C
+                ws.Cell(currentRow, 4).FormulaA1 = $"=SUMIFS('Raw Data'!H:H,'Raw Data'!A:A,A{currentRow})";  // Planned Downtime D
+                ws.Cell(currentRow, 5).FormulaA1 = $"=SUMIFS('Raw Data'!K:K,'Raw Data'!A:A,A{currentRow})";  // Material Used E
+                ws.Cell(currentRow, 6).FormulaA1 = $"=SUMIFS('Raw Data'!L:L,'Raw Data'!A:A,A{currentRow})";  // Reject Weight F
+                ws.Cell(currentRow, 7).FormulaA1 = $"=SUMIFS('Raw Data'!I:I,'Raw Data'!A:A,A{currentRow})";  // Operating Hours G
+                ws.Cell(currentRow, 8).FormulaA1 = $"=SUMIFS('Raw Data'!J:J,'Raw Data'!A:A,A{currentRow})";  // Available Hours H
+                ws.Cell(currentRow, 9).FormulaA1 = $"=SUMIFS('Raw Data'!O:O,'Raw Data'!A:A,A{currentRow})";  // Total SAP Time I
+                ws.Cell(currentRow, 10).FormulaA1 = $"=SUMIFS('Raw Data'!P:P,'Raw Data'!A:A,A{currentRow})"; // Total Act Time J
 
-                // Availability (I) = Run Time / Available Hours × 100
-                ws.Cell(currentRow, 9).FormulaA1 = $"=IF(F{currentRow}>0,B{currentRow}/F{currentRow}*100,0)";
-                // Performance (J) = Total SAP Time / Total Act Time × 100
-                ws.Cell(currentRow, 10).FormulaA1 = $"=IF(H{currentRow}=0,0,G{currentRow}/H{currentRow}*100)";
-                // Quality (K) = (Material Used - Reject) / Material Used × 100
-                ws.Cell(currentRow, 11).FormulaA1 = $"=IF(D{currentRow}=0,0,MAX(0,(D{currentRow}-E{currentRow})/D{currentRow}*100))";
-                // OEE (L)
-                ws.Cell(currentRow, 12).FormulaA1 = $"=IF(OR(I{currentRow}=0,J{currentRow}=0,K{currentRow}=0),0,I{currentRow}/100*J{currentRow}/100*K{currentRow}/100*100)";
+                // Availability (K) = Run Time / Operating Hours × 100
+                ws.Cell(currentRow, 11).FormulaA1 = $"=IF(G{currentRow}>0,B{currentRow}/G{currentRow}*100,0)";
+                // Performance (L) = Total SAP Time / Total Act Time × 100
+                ws.Cell(currentRow, 12).FormulaA1 = $"=IF(J{currentRow}=0,0,I{currentRow}/J{currentRow}*100)";
+                // Quality (M) = (Material Used - Reject) / Material Used × 100
+                ws.Cell(currentRow, 13).FormulaA1 = $"=IF(E{currentRow}=0,0,MAX(0,(E{currentRow}-F{currentRow})/E{currentRow}*100))";
+                // OEE (N)
+                ws.Cell(currentRow, 14).FormulaA1 = $"=IF(OR(K{currentRow}=0,L{currentRow}=0,M{currentRow}=0),0,K{currentRow}/100*L{currentRow}/100*M{currentRow}/100*100)";
 
                 for (int c = 2; c <= totalCols; c++)
                     ws.Cell(currentRow, c).Style.NumberFormat.Format = "0.00";
 
-                ws.Cell(currentRow, 12).Style.Font.Bold = true;
+                ws.Cell(currentRow, 14).Style.Font.Bold = true;
 
                 for (int c = 1; c <= totalCols; c++)
                     ws.Cell(currentRow, c).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
@@ -413,12 +427,12 @@ namespace CMS.Server.Services
             int totalRow = currentRow + 1;
             ws.Cell(totalRow, 1).Value = "TOTAL / AVG";
 
-            foreach (int c in new[] { 2, 3, 4, 5, 6, 7, 8 })
+            foreach (int c in new[] { 2, 3, 4, 5, 6, 7, 8, 9, 10 })
             {
                 string letter = COL_LETTERS[c - 1];
                 ws.Cell(totalRow, c).FormulaA1 = $"=SUM({letter}4:{letter}{lastDataRow})";
             }
-            foreach (int c in new[] { 9, 10, 11, 12 })
+            foreach (int c in new[] { 11, 12, 13, 14 })
             {
                 string letter = COL_LETTERS[c - 1];
                 ws.Cell(totalRow, c).FormulaA1 = $"=AVERAGE({letter}4:{letter}{lastDataRow})";
@@ -434,7 +448,7 @@ namespace CMS.Server.Services
             int targetRow = totalRow + 1;
             ws.Cell(targetRow, 1).Value = "TARGET";
 
-            foreach (var (col, val) in new (int, double)[] { (9, 70.0), (10, 95.0), (11, 97.0), (12, 65.0) })
+            foreach (var (col, val) in new (int, double)[] { (11, 70.0), (12, 95.0), (13, 97.0), (14, 65.0) })
                 ws.Cell(targetRow, col).Value = val;
 
             for (int c = 1; c <= totalCols; c++)
@@ -458,6 +472,8 @@ namespace CMS.Server.Services
             ws.Column(10).Width = 14;
             ws.Column(11).Width = 12;
             ws.Column(12).Width = 12;
+            ws.Column(13).Width = 12;
+            ws.Column(14).Width = 12;
 
             ws.SheetView.FreezeRows(HEADER_ROW);
             ws.SheetView.FreezeColumns(1);
@@ -473,19 +489,20 @@ namespace CMS.Server.Services
     }
 
     public sealed record OEERawRow(
-        int IdMachine,
-        string MachineName,
-        int IdType,
-        string Mould,
-        string Type,
-        double Shot,
-        double RunTime,
-        double DownTime,
-        double MaterialUsed,
-        double RejectWeight,
-        double SapCt,
-        double ActCt,
-        double TotalSapTime,
-        double TotalActTime
+        int id_machine,
+        string machine_name,
+        int id_type,
+        int mould,
+        string type,
+        double shot,
+        double run_time,
+        double unplanned_dt,
+        double planned_dt,
+        double material_used,
+        double reject_weight,
+        double sap_ct,
+        double act_ct,
+        double total_sap_time,
+        double total_actual_time
     );
 }

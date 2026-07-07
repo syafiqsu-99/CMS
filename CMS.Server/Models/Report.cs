@@ -59,7 +59,8 @@ public class Report
     public double maintenance_dt { get; set; }
     public double technician_dt { get; set; }
     public double production_dt { get; set; }
-    public double unallocated { get; set; }
+    public double buyoff_dt { get; set; }
+    public double planned_dt { get; set; }
 
     #endregion
 

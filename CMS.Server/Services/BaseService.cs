@@ -273,6 +273,9 @@ public class BaseService
 
         var master = await GetMachineMaster(id_machine, time, plcData);
 
+        if (!master.status_start && master.stop_category == "PRODUCTION RUNNING")
+            master.stop_category = "";
+
         var prev = _lastMachineMaster.GetValueOrDefault(id_machine);
         var (productionDate, shift) = GetProductionDate(time);
 

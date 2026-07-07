@@ -126,7 +126,7 @@
   // ── Summary metrics derived from machine data ─────────────────────────────────
 
   const summaryMetrics = computed(() => {
-    const valid = machineData.value.filter(m => m.id_machine >= 1 && m.id_machine <= 40 && Number(m.oee) > 0);
+    const valid = machineData.value.filter(m => Number(m.oee) > 0);
     if (!valid.length) return defaultMetrics();
 
     const avg = (key) => valid.reduce((s, m) => s + (Number(m[key]) || 0), 0) / valid.length;
@@ -189,7 +189,9 @@
       availability: Number(item.availability || 0).toFixed(0),
       quality: Number(item.quality || 0).toFixed(0),
       run_time: Number(item.run_time || 0),
-      down_time: Number(item.down_time || 0),
+      unplanned_dt: Number(item.unplanned_dt || 0),
+      planned_dt: Number(item.planned_dt || 0),
+      operating_time: Number(item.operating_time || 0),
       material_used: Number(item.material_used || 0),
       reject_weight: Number(item.reject_weight || 0),
     };

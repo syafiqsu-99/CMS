@@ -196,8 +196,8 @@
     'gross_weight', 'part_weight', 'inward', 'material_used', 'runner',
     'reject_startup', 'reject_startup_per', 'reject_prod', 'reject_prod_per',
     'act_ct', 'production_running', 'sap_ct', 'change_full_set', 'change_half_set',
-    'change_parts', 'maintenance_dt', 'technician_dt', 'production_dt',
-    'unallocated', 'part_scrap', 'reject_purging',
+    'change_parts', 'maintenance_dt', 'technician_dt', 'production_dt', 'buyoff_dt', 'planned_dt',
+    'part_scrap', 'reject_purging',
     'reject_preform', 'reject_prod_pcs'
   ]);
 
@@ -442,7 +442,7 @@
     'reject_startup', 'reject_prod',
     'act_ct', 'production_running', 'sap_ct',
     'change_full_set', 'change_half_set', 'change_parts',
-    'maintenance_dt', 'technician_dt', 'production_dt', 'unallocated',
+    'maintenance_dt', 'technician_dt', 'production_dt', 'buyoff_dt', 'planned_dt',
     'reject_purging', 'reject_preform'
   ])
 
