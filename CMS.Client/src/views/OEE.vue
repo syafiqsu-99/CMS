@@ -41,6 +41,20 @@
       </v-col>
     </v-row>
 
+    <v-row no-gutters justify="center" class="mb-2">
+      <v-col cols="12" class="px-1 d-flex flex-wrap justify-center ga-1">
+        <v-chip v-for="(label, index) in monthLabels"
+                :key="label"
+                size="small"
+                label
+                :color="isMonthSelected(index) ? 'primary' : undefined"
+                :variant="isMonthSelected(index) ? 'flat' : 'outlined'"
+                @click="selectMonth(index)">
+          {{ label }}
+        </v-chip>
+      </v-col>
+    </v-row>
+
     <!-- Summary doughnut cards -->
     <SummaryCards :metrics="summaryMetrics" class="mb-2" />
 
@@ -55,39 +69,39 @@
     <v-row>
       <v-col cols="12" md="4" class="px-1">
         <ParetoChart title="Total Reject"
-                      :data="rejectData"
-                      value-key="total_reject"
-                      label-key="id_type"
-                      full-label-key="type"
-                      bar-label="Total Reject (kg)"
-                      bar-color="#F44336"
-                      y-axis-label="Weight (kg)"
-                      x-axis-label="Product Type"
-                      empty-icon="mdi-chart-bar" />
+                     :data="rejectData"
+                     value-key="total_reject"
+                     label-key="id_type"
+                     full-label-key="type"
+                     bar-label="Total Reject (kg)"
+                     bar-color="#F44336"
+                     y-axis-label="Weight (kg)"
+                     x-axis-label="Product Type"
+                     empty-icon="mdi-chart-bar" />
       </v-col>
       <v-col cols="12" md="4" class="px-1">
         <ParetoChart title="Total Output"
-                      :data="outputData"
-                      value-key="total_output"
-                      label-key="id_type"
-                      full-label-key="type"
-                      bar-label="Total Output (kg)"
-                      bar-color="#2196F3"
-                      y-axis-label="Weight (kg)"
-                      x-axis-label="Product Type"
-                      empty-icon="mdi-chart-bar" />
+                     :data="outputData"
+                     value-key="total_output"
+                     label-key="id_type"
+                     full-label-key="type"
+                     bar-label="Total Output (kg)"
+                     bar-color="#2196F3"
+                     y-axis-label="Weight (kg)"
+                     x-axis-label="Product Type"
+                     empty-icon="mdi-chart-bar" />
       </v-col>
       <v-col cols="12" md="4" class="px-1">
         <ParetoChart title="Total Downtime"
-                      :data="downtimeData"
-                      value-key="hours"
-                      label-key="id_type"
-                      full-label-key="type"
-                      bar-label="Downtime (Hours)"
-                      bar-color="#FF7043"
-                      y-axis-label="Time (hrs)"
-                      x-axis-label="Downtime Category"
-                      empty-icon="mdi-chart-timeline-variant" />
+                     :data="downtimeData"
+                     value-key="hours"
+                     label-key="id_type"
+                     full-label-key="type"
+                     bar-label="Downtime (Hours)"
+                     bar-color="#FF7043"
+                     y-axis-label="Time (hrs)"
+                     x-axis-label="Downtime Category"
+                     empty-icon="mdi-chart-timeline-variant" />
       </v-col>
     </v-row>
 
@@ -123,18 +137,44 @@
   const selectedMachine = ref(null);
   const exporting = ref(false);
 
+  const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
   // ── Summary metrics derived from machine data ─────────────────────────────────
 
   const summaryMetrics = computed(() => {
-    const valid = machineData.value.filter(m => Number(m.oee) > 0);
-    if (!valid.length) return defaultMetrics();
+    const rows = machineData.value;
+    if (!rows.length) return defaultMetrics();
 
-    const avg = (key) => valid.reduce((s, m) => s + (Number(m[key]) || 0), 0) / valid.length;
+    const sum = (key) => rows.reduce((s, r) => s + (Number(r[key]) || 0), 0);
+
+    const runTime = sum('run_time');
+    const operating = sum('operating_time');
+    const materialUsed = sum('material_used');
+    const rejectWeight = sum('reject_weight');
+    const sapTime = sum('total_sap_time');
+    const actTime = sum('total_actual_time');
+    const sapTime_ = sum('sap_time');
+    const actTime_ = sum('act_time');
+
+    console.log("SAP Time: ", sapTime_);
+    console.log("Actual Time: ", actTime_);
+
+    const availability = operating > 0 ? (runTime / operating) * 100 : 0;
+    const performance = actTime > 0 ? (sapTime / actTime) * 100 : 0;
+    const goodMaterial = materialUsed - rejectWeight;
+    const quality = materialUsed > 0 ? Math.max(0, (goodMaterial / materialUsed) * 100) : 0;
+    const oee = (availability / 100) * (performance / 100) * (quality / 100) * 100;
+
+    console.log("Availability: ", availability);
+    console.log("Performance: ", performance);
+    console.log("Quality: ", goodMaterial);
+    console.log("OEE: ", oee);
+
     return [
-      { title: 'Overall OEE', value: Number(avg('oee').toFixed(0)), type: 'oee' },
-      { title: 'Performance', value: Number(avg('performance').toFixed(0)), type: 'performance' },
-      { title: 'Availability', value: Number(avg('availability').toFixed(0)), type: 'availability' },
-      { title: 'Quality', value: Number(avg('quality').toFixed(0)), type: 'quality' },
+      { title: 'Overall OEE', value: Number(oee.toFixed(0)), type: 'oee' },
+      { title: 'Performance', value: Number(performance.toFixed(0)), type: 'performance' },
+      { title: 'Availability', value: Number(availability.toFixed(0)), type: 'availability' },
+      { title: 'Quality', value: Number(quality.toFixed(0)), type: 'quality' },
     ];
   });
 
@@ -145,6 +185,21 @@
       { title: 'Availability', value: 0, type: 'availability' },
       { title: 'Quality', value: 0, type: 'quality' },
     ];
+  }
+
+  function selectMonth(index) {
+    const year = new Date().getFullYear();
+    startDate.value = new Date(year, index, 1);
+    endDate.value = new Date(year, index + 1, 0);
+  }
+
+  function isMonthSelected(index) {
+    const year = new Date().getFullYear();
+    const s = startDate.value instanceof Date ? startDate.value : new Date(startDate.value);
+    const e = endDate.value instanceof Date ? endDate.value : new Date(endDate.value);
+    return s.getFullYear() === year && s.getMonth() === index && s.getDate() === 1 &&
+      e.getFullYear() === year && e.getMonth() === index &&
+      e.getDate() === new Date(year, index + 1, 0).getDate();
   }
 
   // ── Date helpers ──────────────────────────────────────────────────────────────

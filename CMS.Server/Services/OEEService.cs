@@ -34,6 +34,8 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 unplanned_dt = Convert.ToSingle(reader["unplanned_dt"]),
                 planned_dt = Convert.ToSingle(reader["planned_dt"]),
                 operating_time = Convert.ToSingle(reader["operating_time"]),
+                total_actual_time = Convert.ToSingle(reader["total_actual_time"]),
+                total_sap_time = Convert.ToSingle(reader["total_sap_time"]),
                 material_used = Convert.ToSingle(reader["material_used"]),
                 reject_weight = Convert.ToSingle(reader["reject_weight"]),
                 availability = Convert.ToSingle(reader["availability"]),
@@ -98,10 +100,9 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
             ),
             WithSAP AS (
                 SELECT m.*,
-                    COALESCE(s.sap_ct,0) AS sap_ct,
                     COALESCE((m.shot * s.qty_perct * s.part_weight)/1000.0,0) AS material_used,
-                    COALESCE(m.shot * s.sap_ct,0) AS total_sap_time,
-                    COALESCE(m.shot * m.act_ct,0)  AS total_actual_time
+                    COALESCE(m.shot * s.sap_ct,0) / 3600.0 AS total_sap_time,
+                    COALESCE(m.shot * m.act_ct,0) / 3600.0 AS total_actual_time
                 FROM MachineAgg m
                 LEFT JOIN sap s ON s.id_type=m.id_type AND s.mould=m.mould
             ),
@@ -128,11 +129,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 FROM WithReject w
                 GROUP BY w.id_machine, w.machine_name
             )
-            SELECT id_machine, machine_name, run_time, unplanned_dt, planned_dt, operating_time, material_used, reject_weight,
+            SELECT id_machine, machine_name, run_time, unplanned_dt, planned_dt, operating_time, material_used, reject_weight, total_actual_time, total_sap_time,
                 CASE WHEN (run_time+unplanned_dt)=0 THEN 0 ELSE (run_time*1.0/(run_time+unplanned_dt))*100 END AS availability,
                 CASE WHEN total_actual_time=0    THEN 0 ELSE (total_sap_time*1.0/total_actual_time)*100 END AS performance,
-                CASE WHEN material_used=0         THEN 0 ELSE ((material_used-reject_weight)*1.0/material_used)*100 END AS quality,
-                CASE WHEN (run_time+unplanned_dt)=0 OR total_actual_time=0 OR material_used=0 THEN 0
+                CASE WHEN material_used=0        THEN 0
+                     WHEN ((material_used-reject_weight)*1.0/material_used) < 0 THEN 0
+                     ELSE ((material_used-reject_weight)*1.0/material_used)*100 END AS quality,
+                CASE WHEN (run_time+unplanned_dt)=0 OR total_actual_time=0 OR material_used=0 OR (material_used-reject_weight) < 0 THEN 0
                      ELSE (run_time*1.0/(run_time+unplanned_dt))*(total_sap_time*1.0/total_actual_time)*((material_used-reject_weight)*1.0/material_used)*100
                 END AS oee
             FROM MachineSummary
@@ -187,7 +190,9 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
         ),
         ReportAgg AS (
             SELECT
-                r.id_machine, r.machine_name, r.production_date, r.shift,
+                r.id_machine, r.machine_name, r.id_type, r.mould,
+                r.production_date, r.shift,
+                COALESCE(SUM(r.shot), 0) AS shot,
                 COALESCE(SUM(CASE
                     WHEN ec.day_type = 'OFFDAY' THEN 0
                     WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
@@ -206,10 +211,10 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
                     ELSE COALESCE(r.planned_dt, 0)
                 END), 0) AS planned_dt,
-                SUM(COALESCE(r.material_used, 0) * COALESCE(r.sap_ct, 0)) AS total_sap_time,
-                SUM(COALESCE(r.material_used, 0) * COALESCE(r.act_ct, 0)) AS total_actual_time,
-                COALESCE(SUM(r.material_used), 0) AS material_used,
-                COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight
+                COALESCE(SUM(r.material_used),  0) AS material_used,
+                COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
+                SUM(COALESCE(r.shot, 0) * COALESCE(r.sap_ct, 0)) AS total_sap_time_raw,
+                SUM(COALESCE(r.shot, 0) * COALESCE(r.act_ct, 0)) AS total_actual_time_raw
             FROM report r
             INNER JOIN EffectiveCalendar ec
                 ON  ec.production_date = r.production_date
@@ -220,27 +225,45 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 AND orc.production_date = r.production_date
                 AND orc.shift           = r.shift
             WHERE r.production_date BETWEEN @start_date AND @end_date
-            GROUP BY r.id_machine, r.machine_name, r.production_date, r.shift
+            GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould,
+                     r.production_date, r.shift
         ),
-        MachineSummary AS (
+        ProductSummary AS (
             SELECT
                 ra.id_machine,
                 ra.machine_name,
-                SUM(ra.run_time)          AS run_time,
-                SUM(ra.unplanned_dt)      AS unplanned_dt,
-                SUM(ra.planned_dt)        AS planned_dt,
-                SUM(ra.material_used)     AS material_used,
-                SUM(ra.reject_weight)     AS reject_weight,
-                SUM(ra.total_sap_time)    AS total_sap_time,
-                SUM(ra.total_actual_time) AS total_actual_time,
-                SUM(ra.run_time + ra.unplanned_dt) AS operating_time
+                ra.id_type,
+                ra.mould,
+                SUM(ra.shot)            AS shot,
+                SUM(ra.run_time)        AS run_time,
+                SUM(ra.unplanned_dt)    AS unplanned_dt,
+                SUM(ra.planned_dt)      AS planned_dt,
+                SUM(ra.material_used)   AS material_used,
+                SUM(ra.reject_weight)   AS reject_weight,
+                SUM(ra.total_sap_time_raw)    / 3600.0 AS total_sap_time,
+                SUM(ra.total_actual_time_raw) / 3600.0 AS total_actual_time
             FROM ReportAgg ra
-            GROUP BY ra.id_machine, ra.machine_name
+            GROUP BY ra.id_machine, ra.machine_name, ra.id_type, ra.mould
+        ),
+        MachineSummary AS (
+            SELECT
+                ps.id_machine,
+                ps.machine_name,
+                SUM(ps.run_time)          AS run_time,
+                SUM(ps.unplanned_dt)      AS unplanned_dt,
+                SUM(ps.planned_dt)        AS planned_dt,
+                SUM(ps.material_used)     AS material_used,
+                SUM(ps.reject_weight)     AS reject_weight,
+                SUM(ps.total_sap_time)    AS total_sap_time,
+                SUM(ps.total_actual_time) AS total_actual_time,
+                SUM(ps.run_time) + SUM(ps.unplanned_dt) AS operating_time
+            FROM ProductSummary ps
+            GROUP BY ps.id_machine, ps.machine_name
         )
         SELECT
             id_machine, machine_name,
             run_time, unplanned_dt, planned_dt, operating_time,
-            material_used, reject_weight,
+            material_used, reject_weight, total_actual_time, total_sap_time,
             CASE WHEN NULLIF(operating_time, 0) IS NULL THEN 0
                  ELSE (run_time * 1.0 / operating_time) * 100
             END AS availability,
@@ -251,13 +274,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                  WHEN ((material_used - reject_weight) * 1.0 / material_used) < 0 THEN 0
                  ELSE ((material_used - reject_weight) * 1.0 / material_used) * 100
             END AS quality,
-            CASE
-                WHEN NULLIF(operating_time, 0) IS NULL
-                  OR total_actual_time = 0
-                  OR material_used = 0 THEN 0
-                ELSE (run_time           * 1.0 / operating_time)   *
-                     (total_sap_time     * 1.0 / total_actual_time) *
-                     ((material_used - reject_weight) * 1.0 / material_used) * 100
+            CASE WHEN NULLIF(operating_time, 0) IS NULL
+                   OR total_actual_time = 0
+                   OR material_used = 0
+                   OR (material_used - reject_weight) < 0 THEN 0
+                 ELSE (run_time * 1.0 / operating_time) *
+                      (total_sap_time * 1.0 / total_actual_time) *
+                      ((material_used - reject_weight) * 1.0 / material_used) * 100
             END AS oee
         FROM MachineSummary
         ORDER BY id_machine;";
@@ -1021,9 +1044,10 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     END), 0) AS planned_dt,
                     COALESCE(SUM(r.material_used),  0) AS material_used,
                     COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
-                    SUM(COALESCE(r.shot, 0) * COALESCE(r.sap_ct, 0)) AS total_sap_time_raw,
-                    SUM(COALESCE(r.shot, 0) * COALESCE(r.act_ct, 0)) AS total_actual_time_raw,
-                    AVG(COALESCE(r.act_ct, 0)) AS act_ct
+                    SUM(COALESCE(r.shot, 0) * COALESCE(r.sap_ct, 0)) AS total_sap_time,
+                    SUM(COALESCE(r.shot, 0) * COALESCE(r.act_ct, 0)) AS total_actual_time,
+                    AVG(COALESCE(r.act_ct, 0)) AS act_ct,
+                    AVG(COALESCE(r.sap_ct, 0)) AS sap_ct
                 FROM report r
                 INNER JOIN EffectiveCalendar ec
                     ON  ec.production_date = r.production_date
@@ -1050,15 +1074,15 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     SUM(ra.planned_dt)      AS planned_dt,
                     SUM(ra.material_used)   AS material_used,
                     SUM(ra.reject_weight)   AS reject_weight,
-                    COALESCE(s.sap_ct, 0)   AS sap_ct,
+                    AVG(ra.sap_ct)          AS sap_ct,
                     AVG(ra.act_ct)          AS act_ct,
-                    SUM(ra.shot) * COALESCE(s.sap_ct, 0) / 3600.0 AS total_sap_time,
-                    SUM(ra.total_actual_time_raw) / 3600.0 AS total_actual_time
+                    SUM(ra.total_sap_time) / 3600.0 AS total_sap_time,
+                    SUM(ra.total_actual_time) / 3600.0 AS total_actual_time
                 FROM ReportAgg ra
                 LEFT JOIN sap s
                     ON  s.id_type = ra.id_type
                     AND s.mould   = ra.mould
-                GROUP BY ra.id_machine, ra.machine_name, ra.id_type, ra.mould, s.type, s.sap_ct
+                GROUP BY ra.id_machine, ra.machine_name, ra.id_type, ra.mould, s.type, ra.sap_ct
             )
             SELECT
                 id_machine,

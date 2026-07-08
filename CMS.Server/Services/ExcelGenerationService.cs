@@ -240,10 +240,10 @@ namespace CMS.Server.Services
             "Available Hours (hrs)",    // 8  (H)  ← SUMIFS on Raw col J
             "Total SAP Time (hrs)",     // 9  (I)  ← SUMIFS on Raw col O
             "Total Act Time (hrs)",     // 10 (J)  ← SUMIFS on Raw col P
-            "Availability (%)",         // 11 (K)
+            "OEE (%)",                  // 11 (K)
             "Performance (%)",          // 12 (L)
-            "Quality (%)",              // 13 (M)
-            "OEE (%)",                  // 14 (N)
+            "Availability (%)",         // 13 (M)
+            "Quality (%)",              // 14 (N)
         ];
 
         private static readonly Dictionary<int, string> SUMMARY_HEADER_NOTES = new()
@@ -252,10 +252,10 @@ namespace CMS.Server.Services
             [8] = "Available Hours (hrs)\n= Run Time + Unplanned + Planned Downtime\nAll values already zeroed:\n- OFFDAY: all = 0\n- OVERTIME (no production): all = 0\n- OVERTIME (with production): full values kept",
             [9] = "Total SAP Time (hrs)\n= (SAP CT × Shot) / 3600",
             [10] = "Total Act Time (hrs)\n= (Act CT × Shot) / 3600",
-            [11] = "Availability (%)\n= Run Time / Operating Hours × 100",
+            [11] = "OEE (%)\n= Availability% × Performance% × Quality% / 10000",
             [12] = "Performance (%)\n= Total SAP Time / Total Act Time × 100",
-            [13] = "Quality (%)\n= (Material Used − Reject Weight) / Material Used × 100",
-            [14] = "OEE (%)\n= Availability% × Performance% × Quality% / 10000",
+            [13] = "Availability (%)\n= Run Time / Operating Hours × 100",
+            [14] = "Quality (%)\n= (Material Used − Reject Weight) / Material Used × 100",
         };
 
         private static readonly string[] COL_LETTERS =
@@ -282,7 +282,7 @@ namespace CMS.Server.Services
         {
             const int TITLE_ROW = 1;
             const int HEADER_ROW = 3;
-            int totalCols = RAW_COLUMNS.Length; // 14
+            int totalCols = RAW_COLUMNS.Length; // 16
 
             var title = ws.Cell(TITLE_ROW, 1);
             title.Value = $"Raw Data  |  {startDate:dd MMM yyyy} – {endDate:dd MMM yyyy}";
@@ -324,10 +324,10 @@ namespace CMS.Server.Services
                 ws.Cell(currentRow, 13).Value = r.sap_ct; //M
                 ws.Cell(currentRow, 14).Value = r.act_ct; //N
 
-                // Total SAP Time (O) = (Shot × SAP CT) / 3600
-                ws.Cell(currentRow, 15).FormulaA1 = $"=(E{currentRow}*M{currentRow})/3600";
-                // Total Act Time (P) = (Shot × Act CT) / 3600
-                ws.Cell(currentRow, 16).FormulaA1 = $"=(E{currentRow}*N{currentRow})/3600";
+                // Total SAP Time (O): SUM(shot × sap_ct) / 3600
+                ws.Cell(currentRow, 15).Value = r.total_sap_time;
+                // Total Act Time (P): SUM(shot × act_ct) / 3600
+                ws.Cell(currentRow, 16).Value = r.total_actual_time;
 
                 for (int c = 5; c <= totalCols; c++)
                     ws.Cell(currentRow, c).Style.NumberFormat.Format = "0.00";
@@ -342,7 +342,6 @@ namespace CMS.Server.Services
             ws.SheetView.FreezeRows(HEADER_ROW);
             ws.SheetView.FreezeColumns(1);
         }
-
         private static void BuildOEESummarySheet(IXLWorksheet ws, List<OEERawRow> rows, DateOnly startDate, DateOnly endDate)
         {
             const int TITLE_ROW = 1;
@@ -401,19 +400,19 @@ namespace CMS.Server.Services
                 ws.Cell(currentRow, 9).FormulaA1 = $"=SUMIFS('Raw Data'!O:O,'Raw Data'!A:A,A{currentRow})";  // Total SAP Time I
                 ws.Cell(currentRow, 10).FormulaA1 = $"=SUMIFS('Raw Data'!P:P,'Raw Data'!A:A,A{currentRow})"; // Total Act Time J
 
-                // Availability (K) = Run Time / Operating Hours × 100
-                ws.Cell(currentRow, 11).FormulaA1 = $"=IF(G{currentRow}>0,B{currentRow}/G{currentRow}*100,0)";
+                // OEE (N)
+                ws.Cell(currentRow, 11).FormulaA1 = $"=IF(OR(K{currentRow}=0,L{currentRow}=0,M{currentRow}=0),0,K{currentRow}/100*L{currentRow}/100*M{currentRow}/100*100)";
                 // Performance (L) = Total SAP Time / Total Act Time × 100
                 ws.Cell(currentRow, 12).FormulaA1 = $"=IF(J{currentRow}=0,0,I{currentRow}/J{currentRow}*100)";
+                // Availability (K) = Run Time / Operating Hours × 100
+                ws.Cell(currentRow, 13).FormulaA1 = $"=IF(G{currentRow}>0,B{currentRow}/G{currentRow}*100,0)";
                 // Quality (M) = (Material Used - Reject) / Material Used × 100
-                ws.Cell(currentRow, 13).FormulaA1 = $"=IF(E{currentRow}=0,0,MAX(0,(E{currentRow}-F{currentRow})/E{currentRow}*100))";
-                // OEE (N)
-                ws.Cell(currentRow, 14).FormulaA1 = $"=IF(OR(K{currentRow}=0,L{currentRow}=0,M{currentRow}=0),0,K{currentRow}/100*L{currentRow}/100*M{currentRow}/100*100)";
+                ws.Cell(currentRow, 14).FormulaA1 = $"=IF(E{currentRow}=0,0,MAX(0,(E{currentRow}-F{currentRow})/E{currentRow}*100))";
 
                 for (int c = 2; c <= totalCols; c++)
                     ws.Cell(currentRow, c).Style.NumberFormat.Format = "0.00";
 
-                ws.Cell(currentRow, 14).Style.Font.Bold = true;
+                ws.Cell(currentRow, 11).Style.Font.Bold = true;
 
                 for (int c = 1; c <= totalCols; c++)
                     ws.Cell(currentRow, c).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
@@ -432,11 +431,11 @@ namespace CMS.Server.Services
                 string letter = COL_LETTERS[c - 1];
                 ws.Cell(totalRow, c).FormulaA1 = $"=SUM({letter}4:{letter}{lastDataRow})";
             }
-            foreach (int c in new[] { 11, 12, 13, 14 })
-            {
-                string letter = COL_LETTERS[c - 1];
-                ws.Cell(totalRow, c).FormulaA1 = $"=AVERAGE({letter}4:{letter}{lastDataRow})";
-            }
+
+            ws.Cell(totalRow, 11).FormulaA1 = $"=IF(OR(K{totalRow}=0,L{totalRow}=0,M{totalRow}=0),0,K{totalRow}/100*L{totalRow}/100*M{totalRow}/100*100)";
+            ws.Cell(totalRow, 12).FormulaA1 = $"=IF(J{totalRow}=0,0,I{totalRow}/J{totalRow}*100)";
+            ws.Cell(totalRow, 13).FormulaA1 = $"=IF(G{totalRow}>0,B{totalRow}/G{totalRow}*100,0)";
+            ws.Cell(totalRow, 14).FormulaA1 = $"=IF(E{totalRow}=0,0,MAX(0,(E{totalRow}-F{totalRow})/E{totalRow}*100))";
 
             for (int c = 1; c <= totalCols; c++)
             {
