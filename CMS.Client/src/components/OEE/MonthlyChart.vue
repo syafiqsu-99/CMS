@@ -20,6 +20,36 @@
 
   const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'YTD'];
 
+  const valueLabelPlugin = {
+    id: 'valueLabel',
+    afterDatasetsDraw(c) {
+      const { ctx } = c;
+      c.data.datasets.forEach((dataset, di) => {
+        if (dataset.label === 'OEE Target') return;
+        const meta = c.getDatasetMeta(di);
+        if (meta.hidden) return;
+        meta.data.forEach((element, i) => {
+          const raw = dataset.data[i];
+          if (raw === null || raw === undefined) return;
+          ctx.save();
+          ctx.font = 'bold 10px sans-serif';
+          ctx.textAlign = 'center';
+
+          if (dataset.type === 'line') {
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = dataset.borderColor;
+            ctx.fillText(`${Number(raw).toFixed(0)}%`, element.x, element.y - 6);
+          } else {
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = '#0d47a1';
+            ctx.fillText(`${Number(raw).toFixed(0)}%`, element.x, element.base - 4);
+          }
+          ctx.restore();
+        });
+      });
+    },
+  };
+
   function buildSeries() {
     const utilization = Array(13).fill(null);
     const oee = Array(13).fill(null);
@@ -29,6 +59,15 @@
       utilization[idx] = Number(row.availability || 0);
       oee[idx] = Number(row.oee || 0);
     }
+
+    if (props.year === new Date().getFullYear()) {
+      const currentIdx = new Date().getMonth();
+      utilization[currentIdx] = null;
+      oee[currentIdx] = null;
+    }
+
+    console.log(utilization);
+    console.log(oee);
     return { utilization, oee };
   }
 
@@ -72,6 +111,7 @@
     const options = {
       responsive: true,
       maintainAspectRatio: false,
+      layout: { padding: { top: 20 } },
       scales: {
         y: { min: 0, max: 100, ticks: { callback: v => v + '%' } },
       },
@@ -89,7 +129,12 @@
       chart.data = data;
       chart.update();
     } else {
-      chart = new Chart(canvas.value, { type: 'bar', data, options });
+      chart = new Chart(canvas.value, {
+        type: 'bar',
+        data,
+        options,
+        plugins: [valueLabelPlugin],
+      });
     }
   }
 
