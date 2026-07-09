@@ -10,7 +10,7 @@
 
     <!-- Date Filters -->
     <v-row no-gutters align="center" justify="center" class="mb-2">
-      <v-col cols="12" md="4" class="px-1">
+      <v-col cols="12" md="5" class="px-1">
         <v-date-input v-model="startDate"
                       label="Start Date"
                       :max="endDate"
@@ -19,7 +19,7 @@
                       hide-details
                       display-format="fullDate" />
       </v-col>
-      <v-col cols="12" md="4" class="px-1">
+      <v-col cols="12" md="5" class="px-1">
         <v-date-input v-model="endDate"
                       label="End Date"
                       :min="startDate"
@@ -28,7 +28,7 @@
                       hide-details
                       display-format="fullDate" />
       </v-col>
-      <v-col cols="12" md="4" class="px-1 d-flex align-center">
+      <v-col cols="12" md="2" class="px-1 d-flex align-center">
         <v-btn color="success"
                prepend-icon="mdi-microsoft-excel"
                variant="elevated"
@@ -57,6 +57,12 @@
 
     <!-- Summary doughnut cards -->
     <SummaryCards :metrics="summaryMetrics" class="mb-2" />
+
+    <v-row class="mb-2">
+      <v-col cols="12">
+        <MonthlyChart :monthly="monthlyData" :target="oeeTarget" :year="monthlyYear" />
+      </v-col>
+    </v-row>
 
     <!-- Machine table -->
     <v-row class="mb-2">
@@ -123,6 +129,7 @@
   import MachineList from '@/components/OEE/MachineList.vue';
   import ParetoChart from '@/components/OEE/ParetoChart.vue';
   import MachineOEE from '@/components/OEE/MachineOEE.vue';
+  import MonthlyChart from '@/components/OEE/MonthlyChart.vue';
 
   // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -136,8 +143,11 @@
   const detailDialog = ref(false);
   const selectedMachine = ref(null);
   const exporting = ref(false);
+  const oeeTarget = 65;
 
   const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const monthlyData = ref([]);
+  const monthlyYear = ref(new Date().getFullYear());
 
   // ── Summary metrics derived from machine data ─────────────────────────────────
 
@@ -156,19 +166,11 @@
     const sapTime_ = sum('sap_time');
     const actTime_ = sum('act_time');
 
-    console.log("SAP Time: ", sapTime_);
-    console.log("Actual Time: ", actTime_);
-
     const availability = operating > 0 ? (runTime / operating) * 100 : 0;
     const performance = actTime > 0 ? (sapTime / actTime) * 100 : 0;
     const goodMaterial = materialUsed - rejectWeight;
     const quality = materialUsed > 0 ? Math.max(0, (goodMaterial / materialUsed) * 100) : 0;
     const oee = (availability / 100) * (performance / 100) * (quality / 100) * 100;
-
-    console.log("Availability: ", availability);
-    console.log("Performance: ", performance);
-    console.log("Quality: ", goodMaterial);
-    console.log("OEE: ", oee);
 
     return [
       { title: 'Overall OEE', value: Number(oee.toFixed(0)), type: 'oee' },
@@ -236,6 +238,19 @@
     downtimeData.value = await downtimeRes.json();
   }
 
+  async function fetchMonthly() {
+    const s = startDate.value instanceof Date ? startDate.value : new Date(startDate.value);
+    const year = s.getFullYear();
+
+    const res = await fetch(`/api/oee/monthly?year=${year}`);
+    if (!res.ok) {
+      console.error('[OEE] /api/oee/monthly failed:', res.status);
+      return;
+    }
+    monthlyYear.value = year;
+    monthlyData.value = await res.json();
+  }
+
   function normaliseRow(item) {
     return {
       ...item,
@@ -249,6 +264,13 @@
       operating_time: Number(item.operating_time || 0),
       material_used: Number(item.material_used || 0),
       reject_weight: Number(item.reject_weight || 0),
+      change_full_set: Number(item.change_full_set || 0),
+      change_half_set: Number(item.change_half_set || 0),
+      change_parts: Number(item.change_parts || 0),
+      maintenance_dt: Number(item.maintenance_dt || 0),
+      technician_dt: Number(item.technician_dt || 0),
+      production_dt: Number(item.production_dt || 0),
+      buyoff_dt: Number(item.buyoff_dt || 0),
     };
   }
 
@@ -303,5 +325,8 @@
     }
   };
 
-  onMounted(fetchAll);
+  onMounted(() => {
+    fetchAll();
+    fetchMonthly();
+  });
 </script>

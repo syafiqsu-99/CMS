@@ -38,6 +38,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 total_sap_time = Convert.ToSingle(reader["total_sap_time"]),
                 material_used = Convert.ToSingle(reader["material_used"]),
                 reject_weight = Convert.ToSingle(reader["reject_weight"]),
+                change_full_set = Convert.ToSingle(reader["change_full_set"]),
+                change_half_set = Convert.ToSingle(reader["change_half_set"]),
+                change_parts = Convert.ToSingle(reader["change_parts"]),
+                maintenance_dt = Convert.ToSingle(reader["maintenance_dt"]),
+                technician_dt = Convert.ToSingle(reader["technician_dt"]),
+                production_dt = Convert.ToSingle(reader["production_dt"]),
+                buyoff_dt = Convert.ToSingle(reader["buyoff_dt"]),
                 availability = Convert.ToSingle(reader["availability"]),
                 performance = Convert.ToSingle(reader["performance"]),
                 quality = Convert.ToSingle(reader["quality"]),
@@ -92,6 +99,55 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                              THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
                         ELSE 0
                     END) AS planned_dt,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category = 'MOULD CHANGE' AND cl.mould_category = 1
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS change_full_set,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category = 'MOULD CHANGE' AND cl.mould_category = 2
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS change_half_set,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category = 'MOULD CHANGE' AND cl.mould_category = 3
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS change_parts,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category IN ('MACHINE BREAKDOWN', 'OTHERS MAIN')
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS maintenance_dt,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category IN ('QUALITY ISSUE', 'SAMPLE RUNNING', 'OTHERS TECH')
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS technician_dt,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category IN ('NO OPERATOR', 'MATERIAL DRYING', 'OTHERS PROD')
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS production_dt,
+                    SUM(CASE
+                        WHEN sdt.day_type = 'OFFDAY' THEN 0
+                        WHEN sdt.day_type = 'OVERTIME' AND shr.has_run = 0 THEN 0
+                        WHEN cl.category IN ('PRODUCT BUYOFF')
+                             THEN DATEDIFF(SECOND, cl.start, COALESCE(cl.finish, GETDATE())) / 3600.0
+                        ELSE 0
+                    END) AS buyoff_dt,
                     AVG(NULLIF(cl.act_ct, 0)) AS act_ct
                 FROM CombinedLogs cl
                 CROSS JOIN ShiftDayType sdt
@@ -121,6 +177,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     SUM(w.run_time)          AS run_time,
                     SUM(w.unplanned_dt)      AS unplanned_dt,
                     SUM(w.planned_dt)        AS planned_dt,
+                    SUM(w.change_full_set)   AS change_full_set,
+                    SUM(w.change_half_set)   AS change_half_set,
+                    SUM(w.change_parts)      AS change_parts,
+                    SUM(w.maintenance_dt)    AS maintenance_dt,
+                    SUM(w.technician_dt)     AS technician_dt,
+                    SUM(w.production_dt)     AS production_dt,
+                    SUM(w.buyoff_dt)         AS buyoff_dt,
                     SUM(w.material_used)     AS material_used,
                     SUM(w.reject_weight)     AS reject_weight,
                     SUM(w.total_sap_time)    AS total_sap_time,
@@ -129,7 +192,9 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 FROM WithReject w
                 GROUP BY w.id_machine, w.machine_name
             )
-            SELECT id_machine, machine_name, run_time, unplanned_dt, planned_dt, operating_time, material_used, reject_weight, total_actual_time, total_sap_time,
+            SELECT id_machine, machine_name, run_time, unplanned_dt, planned_dt, operating_time,
+                change_full_set, change_half_set, change_parts, maintenance_dt, technician_dt, production_dt, buyoff_dt,
+                material_used, reject_weight, total_actual_time, total_sap_time,
                 CASE WHEN (run_time+unplanned_dt)=0 THEN 0 ELSE (run_time*1.0/(run_time+unplanned_dt))*100 END AS availability,
                 CASE WHEN total_actual_time=0    THEN 0 ELSE (total_sap_time*1.0/total_actual_time)*100 END AS performance,
                 CASE WHEN material_used=0        THEN 0
@@ -139,6 +204,7 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                      ELSE (run_time*1.0/(run_time+unplanned_dt))*(total_sap_time*1.0/total_actual_time)*((material_used-reject_weight)*1.0/material_used)*100
                 END AS oee
             FROM MachineSummary
+            WHERE id_machine <> 0
             ORDER BY id_machine;";
     }
 
@@ -211,6 +277,41 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                     WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
                     ELSE COALESCE(r.planned_dt, 0)
                 END), 0) AS planned_dt,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.change_full_set, 0)
+                END), 0) AS change_full_set,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.change_half_set, 0)
+                END), 0) AS change_half_set,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.change_parts, 0)
+                END), 0) AS change_parts,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.maintenance_dt, 0)
+                END), 0) AS maintenance_dt,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.technician_dt, 0)
+                END), 0) AS technician_dt,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.production_dt, 0)
+                END), 0) AS production_dt,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OFFDAY' THEN 0
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.buyoff_dt, 0)
+                END), 0) AS buyoff_dt,
                 COALESCE(SUM(r.material_used),  0) AS material_used,
                 COALESCE(SUM(r.reject_prod + r.reject_startup), 0) AS reject_weight,
                 SUM(COALESCE(r.shot, 0) * COALESCE(r.sap_ct, 0)) AS total_sap_time_raw,
@@ -225,6 +326,7 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 AND orc.production_date = r.production_date
                 AND orc.shift           = r.shift
             WHERE r.production_date BETWEEN @start_date AND @end_date
+              AND r.id_machine <> 0
             GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould,
                      r.production_date, r.shift
         ),
@@ -238,6 +340,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 SUM(ra.run_time)        AS run_time,
                 SUM(ra.unplanned_dt)    AS unplanned_dt,
                 SUM(ra.planned_dt)      AS planned_dt,
+                SUM(ra.change_full_set) AS change_full_set,
+                SUM(ra.change_half_set) AS change_half_set,
+                SUM(ra.change_parts)    AS change_parts,
+                SUM(ra.maintenance_dt)  AS maintenance_dt,
+                SUM(ra.technician_dt)   AS technician_dt,
+                SUM(ra.production_dt)   AS production_dt,
+                SUM(ra.buyoff_dt)       AS buyoff_dt,
                 SUM(ra.material_used)   AS material_used,
                 SUM(ra.reject_weight)   AS reject_weight,
                 SUM(ra.total_sap_time_raw)    / 3600.0 AS total_sap_time,
@@ -252,6 +361,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 SUM(ps.run_time)          AS run_time,
                 SUM(ps.unplanned_dt)      AS unplanned_dt,
                 SUM(ps.planned_dt)        AS planned_dt,
+                SUM(ps.change_full_set)   AS change_full_set,
+                SUM(ps.change_half_set)   AS change_half_set,
+                SUM(ps.change_parts)      AS change_parts,
+                SUM(ps.maintenance_dt)    AS maintenance_dt,
+                SUM(ps.technician_dt)     AS technician_dt,
+                SUM(ps.production_dt)     AS production_dt,
+                SUM(ps.buyoff_dt)         AS buyoff_dt,
                 SUM(ps.material_used)     AS material_used,
                 SUM(ps.reject_weight)     AS reject_weight,
                 SUM(ps.total_sap_time)    AS total_sap_time,
@@ -263,6 +379,7 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
         SELECT
             id_machine, machine_name,
             run_time, unplanned_dt, planned_dt, operating_time,
+            change_full_set, change_half_set, change_parts, maintenance_dt, technician_dt, production_dt, buyoff_dt,
             material_used, reject_weight, total_actual_time, total_sap_time,
             CASE WHEN NULLIF(operating_time, 0) IS NULL THEN 0
                  ELSE (run_time * 1.0 / operating_time) * 100
@@ -286,6 +403,152 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
         ORDER BY id_machine;";
     }
 
+    public async Task<IReadOnlyList<object>> CalculateMonthlyOeeAsync(int year)
+    {
+        var logCte = await BuildMachineLogUnionAsync("production_date BETWEEN @year_start AND @year_end");
+
+        string sql = $@"
+        WITH CombinedLogs AS (
+            {logCte}
+        ),
+        AllDates AS (
+            SELECT DATEADD(DAY, n.n, @year_start) AS d
+            FROM (
+                SELECT TOP (DATEDIFF(DAY, @year_start, @year_end) + 1)
+                       ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) - 1 AS n
+                FROM sys.all_objects
+            ) n
+        ),
+        ShiftDates AS (
+            SELECT d.d AS production_date, s.shift
+            FROM AllDates d
+            CROSS JOIN (SELECT 1 AS shift UNION ALL SELECT 2) s
+        ),
+        EffectiveCalendar AS (
+            SELECT
+                sd.production_date,
+                sd.shift,
+                COALESCE(
+                    (SELECT TOP 1 cx.day_type
+                     FROM calendar cx
+                     WHERE cx.production_date = sd.production_date
+                       AND cx.shift           = sd.shift),
+                    'NORMAL'
+                ) AS day_type
+            FROM ShiftDates sd
+        ),
+        OvertimeRunCheck AS (
+            SELECT cl.id_machine, cl.production_date, cl.shift,
+                CASE WHEN SUM(CASE WHEN cl.category = 'PRODUCTION RUNNING' THEN 1 ELSE 0 END) > 0
+                     THEN 1 ELSE 0
+                END AS has_run
+            FROM CombinedLogs cl
+            INNER JOIN EffectiveCalendar ec
+                ON  ec.production_date = cl.production_date
+                AND ec.shift           = cl.shift
+                AND ec.day_type        = 'OVERTIME'
+            GROUP BY cl.id_machine, cl.production_date, cl.shift
+        ),
+        ReportAgg AS (
+            SELECT
+                MONTH(r.production_date) AS month_no,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE r.production_running
+                END), 0) AS run_time,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.change_full_set, 0) + COALESCE(r.change_half_set, 0)
+                       + COALESCE(r.change_parts,    0) + COALESCE(r.maintenance_dt,  0)
+                       + COALESCE(r.technician_dt,   0) + COALESCE(r.production_dt,   0)
+                       + COALESCE(r.buyoff_dt,       0)
+                END), 0) AS unplanned_dt,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE r.material_used
+                END), 0) AS material_used,
+                COALESCE(SUM(CASE
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE r.reject_prod + r.reject_startup
+                END), 0) AS reject_weight,
+                SUM(CASE
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.shot, 0) * COALESCE(r.sap_ct, 0)
+                END) AS total_sap_time_raw,
+                SUM(CASE
+                    WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
+                    ELSE COALESCE(r.shot, 0) * COALESCE(r.act_ct, 0)
+                END) AS total_actual_time_raw
+            FROM report r
+            INNER JOIN EffectiveCalendar ec
+                ON  ec.production_date = r.production_date
+                AND ec.shift           = r.shift
+                AND ec.day_type        <> 'OFFDAY'
+            LEFT JOIN OvertimeRunCheck orc
+                ON  orc.id_machine      = r.id_machine
+                AND orc.production_date = r.production_date
+                AND orc.shift           = r.shift
+            WHERE r.id_machine <> 0
+              AND r.production_date BETWEEN @year_start AND @year_end
+            GROUP BY MONTH(r.production_date)
+        ),
+        Combined AS (
+            SELECT month_no, run_time, unplanned_dt, material_used, reject_weight,
+                   total_sap_time_raw, total_actual_time_raw
+            FROM ReportAgg
+            UNION ALL
+            SELECT 0,
+                   COALESCE(SUM(run_time), 0),
+                   COALESCE(SUM(unplanned_dt), 0),
+                   COALESCE(SUM(material_used), 0),
+                   COALESCE(SUM(reject_weight), 0),
+                   COALESCE(SUM(total_sap_time_raw), 0),
+                   COALESCE(SUM(total_actual_time_raw), 0)
+            FROM ReportAgg
+        )
+        SELECT
+            month_no,
+            CASE WHEN (run_time + unplanned_dt) = 0 THEN 0
+                 ELSE (run_time * 100.0 / (run_time + unplanned_dt))
+            END AS availability,
+            CASE WHEN total_actual_time_raw = 0 THEN 0
+                 ELSE (total_sap_time_raw * 100.0 / total_actual_time_raw)
+            END AS performance,
+            CASE WHEN material_used = 0 THEN 0
+                 WHEN (material_used - reject_weight) < 0 THEN 0
+                 ELSE ((material_used - reject_weight) * 100.0 / material_used)
+            END AS quality,
+            CASE WHEN (run_time + unplanned_dt) = 0
+                   OR total_actual_time_raw = 0
+                   OR material_used = 0
+                   OR (material_used - reject_weight) < 0 THEN 0
+                 ELSE (run_time * 1.0 / (run_time + unplanned_dt))
+                    * (total_sap_time_raw * 1.0 / total_actual_time_raw)
+                    * ((material_used - reject_weight) * 1.0 / material_used) * 100.0
+            END AS oee
+        FROM Combined
+        ORDER BY month_no;";
+
+        var result = new List<object>();
+        await using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@year_start", new DateOnly(year, 1, 1));
+        cmd.Parameters.AddWithValue("@year_end", new DateOnly(year, 12, 31));
+
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            result.Add(new
+            {
+                month_no = Convert.ToInt32(reader["month_no"]),
+                availability = Convert.ToSingle(reader["availability"]),
+                performance = Convert.ToSingle(reader["performance"]),
+                quality = Convert.ToSingle(reader["quality"]),
+                oee = Convert.ToSingle(reader["oee"]),
+            });
+        }
+        return result;
+    }
     // ── Pareto helpers (Reject / Output / Downtime) ────────────────────────────
 
     public async Task<IReadOnlyList<object>> LoadRejectAsync(DateOnly start, DateOnly end)

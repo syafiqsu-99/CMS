@@ -20,6 +20,10 @@ public class OeeController : ControllerBase
     public async Task<IActionResult> Oee( [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
         => Ok(await _oeeService.CalculateOeeAsync(start_date, end_date));
 
+    [HttpGet("monthly")]
+    public async Task<IActionResult> Monthly([FromQuery] int? year)
+        => Ok(await _oeeService.CalculateMonthlyOeeAsync(year ?? DateTime.Now.Year));
+
     [HttpGet("reject")]
     public async Task<IActionResult> Reject( [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
         => Ok(await _oeeService.LoadRejectAsync(start_date, end_date));
