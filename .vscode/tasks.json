@@ -1,0 +1,68 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/CMS.sln",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "publish",
+        "${workspaceFolder}/CMS.Server/CMS.Server.csproj",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish-iis-sb",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$site='\\\\68d-mmslpm\\cms'; $offline=(Get-Date).ToUniversalTime().AddSeconds(60).Ticks; Set-Content -Path \"$site\\maintenance.flag\" -Value $offline -Force; Write-Host 'Warning banner active. App still live. Waiting 60s...'; Start-Sleep -Seconds 60; Copy-Item '${workspaceFolder}\\app_offline.htm' \"$site\\app_offline.htm\" -Force; Remove-Item \"$site\\maintenance.flag\" -ErrorAction SilentlyContinue; Write-Host 'App offline. Publishing...'; try { dotnet publish '${workspaceFolder}\\CMS.Server\\CMS.Server.csproj' -c Release -o $site } finally { Remove-Item \"$site\\app_offline.htm\" -ErrorAction SilentlyContinue; Write-Host 'Done, app back online.' }"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "publish-iis",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "publish",
+        "${workspaceFolder}/CMS.Server/CMS.Server.csproj",
+        "-c",
+        "Release",
+        "-o",
+        "\\\\68d-mmslpm\\cms"
+      ],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "watch",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "watch",
+        "run",
+        "--project",
+        "${workspaceFolder}/CMS.Server/CMS.Server.csproj"
+      ],
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}

@@ -2,8 +2,11 @@
 
 var builder = WebApplication.CreateBuilder(args);
 
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var connectionString = builder.Configuration.GetConnectionString("CmsConnection");
+var defaultConnectionConfigured = !string.IsNullOrWhiteSpace(connectionString);
+
+if (!defaultConnectionConfigured)
+    connectionString = "Server=(unconfigured);Database=(unconfigured);Trusted_Connection=True;TrustServerCertificate=True";
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
@@ -12,7 +15,13 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSingleton<MainPlcService>();
 builder.Services.AddSingleton<SubPlcService>();
 
+// ── Scoped (per-request / per-scope) ──────────────────────────────────────────
 builder.Services.AddScoped<ExcelGenerationService>();
+builder.Services.AddScoped<ReportExportService>(sp =>
+    new ReportExportService(
+        connectionString,
+        sp.GetRequiredService<SettingService>(),
+        sp.GetRequiredService<ILogger<ReportExportService>>()));
 
 builder.Services.AddSingleton<BaseService>(sp =>
     new BaseService(connectionString, sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<ILogger<BaseService>>()));
@@ -32,10 +41,15 @@ builder.Services.AddSingleton<MachinesService>(sp =>
 builder.Services.AddSingleton<SettingService>(sp =>
     new SettingService(sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<SubPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
 
-// ── Background service ─────────────────────────────────
+// ── Background services (production only) ───────────────
 if (!builder.Environment.IsDevelopment())
 {
     builder.Services.AddHostedService(sp => sp.GetRequiredService<MainPlcService>());
+    builder.Services.AddHostedService(sp =>
+        new ShiftReportBackgroundService(
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            connectionString,
+            sp.GetRequiredService<ILogger<ShiftReportBackgroundService>>()));
 }
 
 // ── App pipeline ──────────────────────────────────────────────────────────────

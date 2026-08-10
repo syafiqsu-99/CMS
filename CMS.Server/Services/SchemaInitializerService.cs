@@ -39,7 +39,7 @@ namespace CMS.Server.Services
             var staticTables = new[]
             {
                 "machine_master", "reject", "report", "sap", "staff_list",
-                "utilities", "attendance", "calendar", "plc_passwords", "db_log"
+                "utilities", "attendance", "calendar", "plc_passwords", "db_log", "app_setting"
             };
 
             foreach (var table in staticTables)
@@ -57,10 +57,16 @@ namespace CMS.Server.Services
 
                     if (table == "plc_passwords")
                         await SeedPlcPasswordsAsync(conn);
+
+                    if (table == "app_setting")
+                        await SeedAppSettingAsync(conn);
                 }
                 else
                 {
                     await MigrateTableAsync(conn, table, GetCreateTableDDL(table));
+
+                    if (table == "app_setting")
+                        await SeedAppSettingAsync(conn);
                 }
             }
 
@@ -288,6 +294,18 @@ namespace CMS.Server.Services
             await cmd.ExecuteNonQueryAsync();
         }
 
+        private static async Task SeedAppSettingAsync(SqlConnection conn)
+        {
+            const string sql = @"
+                IF NOT EXISTS (SELECT 1 FROM app_setting WHERE [Key] = 'report_folder_path')
+                    INSERT INTO app_setting ([Key], [Value]) VALUES ('report_folder_path', '');
+                IF NOT EXISTS (SELECT 1 FROM app_setting WHERE [Key] = 'report_auto_save_enabled')
+                    INSERT INTO app_setting ([Key], [Value]) VALUES ('report_auto_save_enabled', 'false');";
+
+            using var cmd = new SqlCommand(sql, conn);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
         private static async Task<bool> TableExistsAsync(SqlConnection conn, string tableName)
         {
             using var cmd = new SqlCommand(
@@ -318,6 +336,14 @@ namespace CMS.Server.Services
                     status_start BIT
                 )";
             }
+
+            if (table == "app_setting")
+                return @"
+            CREATE TABLE app_setting(
+                [Key] NVARCHAR(100) NOT NULL PRIMARY KEY,
+                [Value] NVARCHAR(1000) NULL,
+                [updated_at] DATETIME NOT NULL DEFAULT GETDATE()
+            )";
 
             if (table == "machine_master")
                 return @"

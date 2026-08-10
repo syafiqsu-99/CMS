@@ -106,4 +106,60 @@ public class SettingService(MainPlcService mainPlcService, SubPlcService subPlcS
 
         return items;
     }
+
+    // ── app_setting (generic key/value) ──────────────────────────────────────
+
+    public async Task<string?> GetSettingAsync(string key)
+    {
+        const string sql = "SELECT [Value] FROM app_setting WHERE [Key] = @key";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@key", key);
+
+        var result = await cmd.ExecuteScalarAsync();
+        return result is null || result is DBNull ? null : (string?)result;
+    }
+
+    public async Task UpsertSettingAsync(string key, string? value)
+    {
+        const string sql = @"
+            MERGE app_setting AS target
+            USING (SELECT @key AS [Key], @value AS [Value]) AS source
+                  ON target.[Key] = source.[Key]
+            WHEN MATCHED THEN
+                UPDATE SET [Value] = source.[Value], updated_at = GETDATE()
+            WHEN NOT MATCHED THEN
+                INSERT ([Key], [Value]) VALUES (source.[Key], source.[Value]);";
+
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        cmd.Parameters.AddWithValue("@key", key);
+        cmd.Parameters.AddWithValue("@value", (object?)value ?? DBNull.Value);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    // ── Report auto-save config ──────────────────────────────────────────────
+
+    public async Task<object> GetReportConfigAsync()
+    {
+        var path = await GetSettingAsync("report_folder_path") ?? string.Empty;
+        var enabledRaw = await GetSettingAsync("report_auto_save_enabled") ?? "false";
+        bool enabled = string.Equals(enabledRaw, "true", StringComparison.OrdinalIgnoreCase);
+
+        return new { folderPath = path, autoSaveEnabled = enabled };
+    }
+
+    public async Task<object> UpdateReportConfigAsync(string? folderPath, bool autoSaveEnabled)
+    {
+        folderPath = (folderPath ?? string.Empty).Trim();
+
+        if (autoSaveEnabled && string.IsNullOrWhiteSpace(folderPath))
+            throw new ArgumentException("A report folder path is required when auto-save is enabled.");
+
+        await UpsertSettingAsync("report_folder_path", folderPath);
+        await UpsertSettingAsync("report_auto_save_enabled", autoSaveEnabled ? "true" : "false");
+
+        return new { folderPath, autoSaveEnabled };
+    }
 }

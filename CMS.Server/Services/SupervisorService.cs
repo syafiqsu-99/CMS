@@ -1,11 +1,22 @@
 ﻿using CMS.Server.Models;
 using Microsoft.Data.SqlClient;
+using System.Globalization;
 using System.Text.Json;
 
 namespace CMS.Server.Services;
 
 public class SupervisorService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger) : BaseService(connectionString, mainPlcService, logger)
 {
+    private static readonly string[] DateFormats = { "d/M/yyyy", "dd/MM/yyyy", "yyyy-MM-dd" };
+
+    private static DateOnly ParseProductionDate(JsonElement el)
+    {
+        var raw = el.ValueKind == JsonValueKind.String ? el.GetString() : el.ToString();
+        if (DateOnly.TryParseExact(raw, DateFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+            return parsed;
+        throw new FormatException($"Unrecognized production_date value: '{raw}'. Expected d/M/yyyy or yyyy-MM-dd.");
+    }
+
     #region PRODUCTION REPORT
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
     {
@@ -529,7 +540,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
         var grouped = reportList
             .GroupBy(r => (
                 IdMachine: Convert.ToInt32(r["id_machine"].GetDouble()),
-                Date: DateOnly.TryParse(r["production_date"].GetString(), out var date) ? date : DateOnly.MinValue,
+                Date: ParseProductionDate(r["production_date"]),
                 Shift: Convert.ToInt32(r["shift"].GetDouble())
             ))
             .ToList();
@@ -633,6 +644,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                         partWeight = Convert.ToSingle(sapReader["part_weight"]);
                         sapCt = Convert.ToSingle(sapReader["sap_ct"]);
                     }
+                    await sapReader.CloseAsync();
 
                     int origIdType = hasMatch ? matchedDb.IdType : (dbRows.Count > 0 ? dbRows[0].IdType : csvIdType);
                     int origMould = hasMatch ? matchedDb.Mould : (dbRows.Count > 0 ? dbRows[0].Mould : csvMould);
@@ -805,7 +817,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
             await enableCmd.ExecuteNonQueryAsync();
         }
 
-        var reloadDate = DateOnly.TryParse(reportList.First()["production_date"].GetString(), out var reloadDateParsed) ? reloadDateParsed : DateOnly.MinValue;
+        var reloadDate = ParseProductionDate(reportList.First()["production_date"]);
         var reloadShift = Convert.ToInt32(reportList.First()["shift"].GetDouble());
 
         return await LoadPrevReport(reloadDate, reloadShift);
@@ -1263,7 +1275,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
         return result;
     }
 
-    public async Task UpsertShiftCalendar(List<Calendar> entries)
+    public async Task UpsertShiftCalendar(List<Models.Calendar> entries)
     {
         var groups = entries
             .GroupBy(e => (e.production_date, e.shift))

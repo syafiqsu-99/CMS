@@ -83,9 +83,6 @@ public class SupervisorController : ControllerBase
         {
             if (!row.ContainsKey("production_date") || !row.ContainsKey("shift"))
                 return BadRequest(new { message = "Each row must contain 'production_date' and 'shift'." });
-
-            if (!DateOnly.TryParse(row["production_date"].GetString(), out _))
-                return BadRequest(new { message = $"Invalid production_date: {row["production_date"].GetString()}. Use YYYY-MM-DD." });
         }
 
         try

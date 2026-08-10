@@ -8,10 +8,8 @@
 
     <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="height: 90vh;">
       <v-col cols="12" class="pa-1 d-flex" style="height: 100%;">
-        <v-card variant="text"
-                class="d-flex flex-column"
-                elevation="2"
-                style="width: 100%; height: 100%; overflow: hidden;">
+        <v-card variant="text" class="d-flex flex-column" elevation="2"
+          style="width: 100%; height: 100%; overflow: hidden;">
           <v-card-text class="d-flex flex-column pa-2" style="height: 100%; overflow: hidden;">
 
             <v-tabs v-model="activeTab" color="primary" density="compact" class="flex-shrink-0">
@@ -22,6 +20,10 @@
               <v-tab value="signals">
                 <v-icon start>mdi-sine-wave</v-icon>
                 PLC Signals
+              </v-tab>
+              <v-tab value="report">
+                <v-icon start>mdi-file-excel-outline</v-icon>
+                Report
               </v-tab>
               <v-tab value="dblog">
                 <v-icon start>mdi-database-eye</v-icon>
@@ -36,6 +38,9 @@
               <v-window-item value="signals" class="h-100 overflow-hidden">
                 <PlcSignalMonitor />
               </v-window-item>
+              <v-window-item value="report" class="h-100 overflow-auto">
+                <ReportTab />
+              </v-window-item>
               <v-window-item value="dblog" class="h-100 overflow-hidden">
                 <DbLogTab />
               </v-window-item>
@@ -49,10 +54,11 @@
 </template>
 
 <script setup>
-  import { ref } from 'vue';
-  import PasswordTab from '@/components/Setting/PasswordTab.vue';
-  import PlcSignalMonitor from '@/components/Setting/PlcSignalMonitor.vue';
-  import DbLogTab from '@/components/Setting/DbLogTab.vue';
+import { ref } from 'vue';
+import PasswordTab from '@/components/Setting/PasswordTab.vue';
+import PlcSignalMonitor from '@/components/Setting/PlcSignalMonitor.vue';
+import ReportTab from '@/components/Setting/ReportTab.vue';
+import DbLogTab from '@/components/Setting/DbLogTab.vue';
 
-  const activeTab = ref('password');
+const activeTab = ref('password');
 </script>
