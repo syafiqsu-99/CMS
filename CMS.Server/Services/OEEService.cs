@@ -452,6 +452,7 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
         ReportAgg AS (
             SELECT
                 MONTH(r.production_date) AS month_no,
+                r.id_machine,
                 COALESCE(SUM(CASE
                     WHEN ec.day_type = 'OVERTIME' AND COALESCE(orc.has_run, 0) = 0 THEN 0
                     ELSE r.production_running
@@ -490,44 +491,19 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
                 AND orc.shift           = r.shift
             WHERE r.id_machine <> 0
               AND r.production_date BETWEEN @year_start AND @year_end
-            GROUP BY MONTH(r.production_date)
-        ),
-        Combined AS (
-            SELECT month_no, run_time, unplanned_dt, material_used, reject_weight,
-                   total_sap_time_raw, total_actual_time_raw
-            FROM ReportAgg
-            UNION ALL
-            SELECT 0,
-                   COALESCE(SUM(run_time), 0),
-                   COALESCE(SUM(unplanned_dt), 0),
-                   COALESCE(SUM(material_used), 0),
-                   COALESCE(SUM(reject_weight), 0),
-                   COALESCE(SUM(total_sap_time_raw), 0),
-                   COALESCE(SUM(total_actual_time_raw), 0)
-            FROM ReportAgg
+            GROUP BY MONTH(r.production_date), r.id_machine
         )
         SELECT
             month_no,
-            CASE WHEN (run_time + unplanned_dt) = 0 THEN 0
-                 ELSE (run_time * 100.0 / (run_time + unplanned_dt))
-            END AS availability,
-            CASE WHEN total_actual_time_raw = 0 THEN 0
-                 ELSE (total_sap_time_raw * 100.0 / total_actual_time_raw)
-            END AS performance,
-            CASE WHEN material_used = 0 THEN 0
-                 WHEN (material_used - reject_weight) < 0 THEN 0
-                 ELSE ((material_used - reject_weight) * 100.0 / material_used)
-            END AS quality,
-            CASE WHEN (run_time + unplanned_dt) = 0
-                   OR total_actual_time_raw = 0
-                   OR material_used = 0
-                   OR (material_used - reject_weight) < 0 THEN 0
-                 ELSE (run_time * 1.0 / (run_time + unplanned_dt))
-                    * (total_sap_time_raw * 1.0 / total_actual_time_raw)
-                    * ((material_used - reject_weight) * 1.0 / material_used) * 100.0
-            END AS oee
-        FROM Combined
-        ORDER BY month_no;";
+            id_machine,
+            run_time,
+            unplanned_dt,
+            material_used,
+            reject_weight,
+            total_sap_time_raw,
+            total_actual_time_raw
+        FROM ReportAgg
+        ORDER BY month_no, id_machine;";
 
         var result = new List<object>();
         await using var conn = await CreateConnectionAsync();
@@ -541,10 +517,13 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
             result.Add(new
             {
                 month_no = Convert.ToInt32(reader["month_no"]),
-                availability = Convert.ToSingle(reader["availability"]),
-                performance = Convert.ToSingle(reader["performance"]),
-                quality = Convert.ToSingle(reader["quality"]),
-                oee = Convert.ToSingle(reader["oee"]),
+                id_machine = Convert.ToInt32(reader["id_machine"]),
+                run_time = Convert.ToDouble(reader["run_time"]),
+                unplanned_dt = Convert.ToDouble(reader["unplanned_dt"]),
+                material_used = Convert.ToDouble(reader["material_used"]),
+                reject_weight = Convert.ToDouble(reader["reject_weight"]),
+                total_sap_time = Convert.ToDouble(reader["total_sap_time_raw"]),
+                total_actual_time = Convert.ToDouble(reader["total_actual_time_raw"]),
             });
         }
         return result;

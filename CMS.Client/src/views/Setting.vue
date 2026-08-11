@@ -1,3 +1,4 @@
+<!-- eslint-disable vue/multi-word-component-names -->
 <template>
   <v-container fluid class="pa-2 h-100 d-flex flex-column">
     <v-row no-gutters align="center" justify="center">
