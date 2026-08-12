@@ -85,6 +85,35 @@
       </v-col>
     </v-row>
 
+    <v-expansion-panels multiple class="mt-2">
+      <v-expansion-panel title="Machine Utilization — by Individual">
+        <v-expansion-panel-text>
+          <UtilizationByType :data="utilByType" :month="utilMonth" :year="monthlyYear" :selected-type="selectedType" />
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+
+      <v-expansion-panel title="Unplanned Downtime">
+        <v-expansion-panel-text>
+          <UnplannedDowntimeChart :payload="unplannedDt" />
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+
+      <v-expansion-panel title="ISBM / EBM Mould Setup Hours">
+        <v-expansion-panel-text>
+          <MouldSetupChart :payload="mouldSetup" @edit-targets="targetDialog = true" />
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+
+      <v-expansion-panel title="Production Wastages">
+        <v-expansion-panel-text>
+          <WastageChart :data="wastage" @edit-groups="materialDialog = true" />
+        </v-expansion-panel-text>
+      </v-expansion-panel>
+    </v-expansion-panels>
+
+    <MaterialGroupSettings v-model="materialDialog" @saved="fetchAnnualCharts" />
+    <MouldTargetSettings v-model="targetDialog" @saved="fetchAnnualCharts" />
+
     <!-- Machine detail dialog -->
     <v-dialog v-model="detailDialog" max-width="1400px" scrollable>
       <MachineOEE :selected-machine="selectedMachine" :detail-dialog="detailDialog" :start-date="dateString(startDate)"
@@ -102,6 +131,12 @@ import ParetoChart from '@/components/OEE/ParetoChart.vue';
 import MachineOEE from '@/components/OEE/MachineOEE.vue';
 import MonthlyChart from '@/components/OEE/MonthlyChart.vue';
 import TypeOEEStrip from '@/components/OEE/TypeOEEStrip.vue';
+import UtilizationByType from '@/components/OEE/UtilizationByType.vue';
+import UnplannedDowntimeChart from '@/components/OEE/UnplannedDowntimeChart.vue';
+import MouldSetupChart from '@/components/OEE/MouldSetupChart.vue';
+import WastageChart from '@/components/OEE/WastageChart.vue';
+import MaterialGroupSettings from '@/components/OEE/MaterialGroupSettings.vue';
+import MouldTargetSettings from '@/components/OEE/MouldTargetSettings.vue';
 import { TYPE_ORDER, machinesOfType } from '@/utils/machineType';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -118,6 +153,13 @@ const detailDialog = ref(false);
 const selectedMachine = ref(null);
 const exporting = ref(false);
 const oeeTarget = 65;
+const utilByType = ref([]);
+const unplannedDt = ref(null);
+const mouldSetup = ref(null);
+const wastage = ref([]);
+const utilMonth = ref(new Date().getMonth() + 1);   // 1-based
+const materialDialog = ref(false);
+const targetDialog = ref(false);
 
 const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const monthlyData = ref([]);
@@ -159,8 +201,6 @@ const summaryMetrics = computed(() => {
   const rejectWeight = sum('reject_weight');
   const sapTime = sum('total_sap_time');
   const actTime = sum('total_actual_time');
-  const sapTime_ = sum('sap_time');
-  const actTime_ = sum('act_time');
 
   const availability = operating > 0 ? (runTime / operating) * 100 : 0;
   const performance = actTime > 0 ? (sapTime / actTime) * 100 : 0;
@@ -189,6 +229,8 @@ function selectMonth(index) {
   const year = new Date().getFullYear();
   startDate.value = new Date(year, index, 1);
   endDate.value = new Date(year, index + 1, 0);
+  utilMonth.value = index + 1;
+  fetchUtilByType();
 }
 
 function isMonthSelected(index) {
@@ -258,6 +300,9 @@ function normaliseRow(item) {
     unplanned_dt: Number(item.unplanned_dt || 0),
     planned_dt: Number(item.planned_dt || 0),
     operating_time: Number(item.operating_time || 0),
+    available_hours: Number(item.available_hours || 0),
+    total_sap_time: Number(item.total_sap_time || 0),
+    total_actual_time: Number(item.total_actual_time || 0),
     material_used: Number(item.material_used || 0),
     reject_weight: Number(item.reject_weight || 0),
     change_full_set: Number(item.change_full_set || 0),
@@ -268,6 +313,23 @@ function normaliseRow(item) {
     production_dt: Number(item.production_dt || 0),
     buyoff_dt: Number(item.buyoff_dt || 0),
   };
+}
+
+async function fetchAnnualCharts() {
+  const y = monthlyYear.value;
+  const [udRes, msRes, wRes] = await Promise.all([
+    fetch(`/api/oee/unplanned-downtime?year=${y}`),
+    fetch(`/api/oee/mould-setup?year=${y}`),
+    fetch(`/api/oee/wastage?year=${y}`),
+  ]);
+  if (udRes.ok) unplannedDt.value = (await udRes.json())[0] ?? null;
+  if (msRes.ok) mouldSetup.value = (await msRes.json())[0] ?? null;
+  if (wRes.ok) wastage.value = await wRes.json();
+}
+
+async function fetchUtilByType() {
+  const res = await fetch(`/api/oee/utilization-by-type?month=${utilMonth.value}&year=${monthlyYear.value}`);
+  if (res.ok) utilByType.value = await res.json();
 }
 
 // ── Detail dialog ─────────────────────────────────────────────────────────────
@@ -324,5 +386,7 @@ const exportOEEExcel = async () => {
 onMounted(() => {
   fetchAll();
   fetchMonthly();
+  fetchAnnualCharts();
+  fetchUtilByType();
 });
 </script>

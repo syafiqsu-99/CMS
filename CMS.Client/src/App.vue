@@ -1,15 +1,28 @@
 <template>
   <v-app>
     <!-- Loading overlay -->
-    <v-overlay v-model="isLoading"
-               persistent
-               class="align-center justify-center loading-overlay"
-               style="z-index: 9999">
+    <v-overlay v-model="isLoading" persistent class="align-center justify-center loading-overlay" style="z-index: 9999">
       <div class="text-center">
         <v-progress-circular indeterminate size="80" width="8" color="white" />
         <div class="mt-6 text-h5 font-weight-bold text-white">{{ loadingMessage }}</div>
         <div v-if="retryCount > 0" class="mt-3 text-body-1 text-white">
           Retry attempt: {{ retryCount }}
+        </div>
+      </div>
+    </v-overlay>
+
+    <!-- Maintenance countdown overlay -->
+    <v-overlay v-model="maintenanceActive" persistent class="align-center justify-center maintenance-overlay"
+      style="z-index: 10000">
+      <div class="text-center">
+        <v-progress-circular indeterminate size="80" width="8" color="white" />
+        <div class="mt-6 text-h4 font-weight-bold text-white">System update starting</div>
+        <div class="mt-4 text-h6 text-white">
+          The system will go offline for an update in
+        </div>
+        <div class="mt-2 text-h2 font-weight-bold text-white">{{ countdownDisplay }}</div>
+        <div class="mt-4 text-body-1 text-white">
+          Please save any work now. This page will show an update notice shortly.
         </div>
       </div>
     </v-overlay>
@@ -29,91 +42,146 @@
 </template>
 
 <script setup>
-  import { ref, provide, onMounted } from 'vue';
-  import NavBar from '@/components/NavBar.vue';
-  import { useMachineStore } from '@/store/machineStore';
+import { ref, computed, provide, onMounted, onUnmounted } from 'vue';
+import NavBar from '@/components/NavBar.vue';
+import { useMachineStore } from '@/store/machineStore';
 
-  const store = useMachineStore();
+const store = useMachineStore();
 
-  const isLoading = ref(true);
-  const loadingMessage = ref('Connecting to server…');
-  const retryCount = ref(0);
-  const MAX_RETRIES = 10;
-  const RETRY_DELAY = 2000;
+const isLoading = ref(true);
+const loadingMessage = ref('Connecting to server...');
+const retryCount = ref(0);
+const MAX_RETRIES = 10;
+const RETRY_DELAY = 2000;
 
-  // ── Snackbar (global via provide) ─────────────────────────────────────────────
+const MAINTENANCE_POLL_INTERVAL = 5000;
 
-  const snackbar = ref({ show: false, message: '', color: 'success' });
+// ── Snackbar (global via provide) ─────────────────────────────────────────────
 
-  function showSnackbar(message, color = 'success') {
-    snackbar.value = { show: true, message, color };
-  }
-  provide('showSnackbar', showSnackbar);
+const snackbar = ref({ show: false, message: '', color: 'success' });
 
-  // ── Backend health check ──────────────────────────────────────────────────────
+function showSnackbar(message, color = 'success') {
+  snackbar.value = { show: true, message, color };
+}
+provide('showSnackbar', showSnackbar);
 
-  async function checkHealth() {
-    try {
-      const res = await fetch('/api/base/Health');
-      if (!res.ok) return false;
-      const data = await res.json();
-      return data.status === 'Ready';
-    } catch {
-      return false;
-    }
-  }
+// ── Backend health check ──────────────────────────────────────────────────────
 
-  async function waitForBackend() {
-    while (retryCount.value < MAX_RETRIES) {
-      if (await checkHealth()) return true;
-      retryCount.value++;
-      loadingMessage.value = `Waiting for server (${retryCount.value}/${MAX_RETRIES})…`;
-      await new Promise(r => setTimeout(r, RETRY_DELAY));
-    }
-    loadingMessage.value = 'Unable to connect to server';
-    showSnackbar('Failed to connect. Please refresh.', 'error');
+async function checkHealth() {
+  try {
+    const res = await fetch('/api/base/Health');
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.status === 'Ready';
+  } catch {
     return false;
   }
+}
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────────
+async function waitForBackend() {
+  while (retryCount.value < MAX_RETRIES) {
+    if (await checkHealth()) return true;
+    retryCount.value++;
+    loadingMessage.value = `Waiting for server (${retryCount.value}/${MAX_RETRIES})...`;
+    await new Promise(r => setTimeout(r, RETRY_DELAY));
+  }
+  loadingMessage.value = 'Unable to connect to server';
+  showSnackbar('Failed to connect. Please refresh.', 'error');
+  return false;
+}
 
-  onMounted(async () => {
-    try {
-      const ready = await waitForBackend();
-      if (ready) {
-        loadingMessage.value = 'Loading data…';
-        await store.loadInitialData();
-      }
-    } catch (error) {
-      console.error('[App] Initialization error:', error);
-      showSnackbar('An error occurred while loading data.', 'error');
-    } finally {
-      isLoading.value = false;
+// ── Maintenance countdown ───────────────────────────────────────────────────
+
+const maintenanceActive = ref(false);
+const shutdownAt = ref(null);
+const now = ref(Date.now());
+
+let maintenancePollTimer = null;
+let countdownTimer = null;
+
+const countdownDisplay = computed(() => {
+  if (!shutdownAt.value) return '--';
+  const remaining = Math.max(0, Math.ceil((shutdownAt.value - now.value) / 1000));
+  const m = Math.floor(remaining / 60);
+  const s = remaining % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+});
+
+async function pollMaintenance() {
+  const result = await store.checkMaintenance();
+  if (result.active) {
+    shutdownAt.value = result.shutdownAt;
+    maintenanceActive.value = true;
+  } else {
+    maintenanceActive.value = false;
+    shutdownAt.value = null;
+  }
+}
+
+function startMaintenancePolling() {
+  pollMaintenance();
+  maintenancePollTimer = setInterval(pollMaintenance, MAINTENANCE_POLL_INTERVAL);
+  countdownTimer = setInterval(() => { now.value = Date.now(); }, 1000);
+}
+
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
+
+onMounted(async () => {
+  try {
+    const ready = await waitForBackend();
+    if (ready) {
+      loadingMessage.value = 'Loading data...';
+      await store.loadInitialData();
     }
-  });
+  } catch (error) {
+    console.error('[App] Initialization error:', error);
+    showSnackbar('An error occurred while loading data.', 'error');
+  } finally {
+    isLoading.value = false;
+    startMaintenancePolling();
+  }
+});
+
+onUnmounted(() => {
+  if (maintenancePollTimer) clearInterval(maintenancePollTimer);
+  if (countdownTimer) clearInterval(countdownTimer);
+});
 </script>
 
 <style scoped>
-  .loading-overlay {
-    background-image: url('../dist/jjbackground.png');
-    background-size: cover;
-    background-position: center;
-  }
+.loading-overlay {
+  background-image: url('../dist/jjbackground.png');
+  background-size: cover;
+  background-position: center;
+}
 
-    .loading-overlay::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background-color: rgba(0, 0, 0, 0.75);
-      z-index: 1;
-    }
+.loading-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  z-index: 1;
+}
 
-    .loading-overlay .text-center {
-      position: relative;
-      z-index: 2;
-    }
+.loading-overlay .text-center {
+  position: relative;
+  z-index: 2;
+}
 
-  .v-overlay :deep(.v-overlay__scrim) {
-    opacity: 0;
-  }
+.maintenance-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  z-index: 1;
+}
+
+.maintenance-overlay .text-center {
+  position: relative;
+  z-index: 2;
+}
+
+.v-overlay :deep(.v-overlay__scrim) {
+  opacity: 0;
+}
 </style>

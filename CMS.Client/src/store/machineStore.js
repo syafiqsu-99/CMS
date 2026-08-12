@@ -109,6 +109,20 @@ export const useMachineStore = defineStore('machine', {
     },
     // #endregion
 
+    // #region Maintenance
+    async checkMaintenance() {
+      try {
+        const res = await fetch('/api/base/Maintenance');
+        if (!res.ok) return { active: false, shutdownAt: null };
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) return { active: false, shutdownAt: null };
+        return await res.json();
+      } catch {
+        return { active: false, shutdownAt: null };
+      }
+    },
+    // #endregion
+
     // #region Bootstrap
     async loadInitialData() {
       await this.loadMachineMaster();

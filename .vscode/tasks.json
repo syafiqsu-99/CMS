@@ -34,7 +34,7 @@
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$site='\\\\68d-mmslpm\\cms'; $offline=(Get-Date).ToUniversalTime().AddSeconds(60).Ticks; Set-Content -Path \"$site\\maintenance.flag\" -Value $offline -Force; Write-Host 'Warning banner active. App still live. Waiting 60s...'; Start-Sleep -Seconds 60; Copy-Item '${workspaceFolder}\\app_offline.htm' \"$site\\app_offline.htm\" -Force; Remove-Item \"$site\\maintenance.flag\" -ErrorAction SilentlyContinue; Write-Host 'App offline. Publishing...'; try { dotnet publish '${workspaceFolder}\\CMS.Server\\CMS.Server.csproj' -c Release -o $site } finally { Remove-Item \"$site\\app_offline.htm\" -ErrorAction SilentlyContinue; Write-Host 'Done, app back online.' }"
+        "$site='\\\\68d-mmslpm\\cms'; $flag=Join-Path $site 'maintenance.flag'; $index=Join-Path $site 'wwwroot\\index.html'; $indexBak=Join-Path $site 'wwwroot\\index.html.bak'; $shutdownAt=[DateTimeOffset]::UtcNow.AddSeconds(60).ToUnixTimeMilliseconds(); Set-Content -Path $flag -Value $shutdownAt -Force; Write-Host 'Maintenance countdown active. Waiting 60s for in-flight users...'; Start-Sleep -Seconds 60; Copy-Item '${workspaceFolder}\\app_offline.htm' (Join-Path $site 'app_offline.htm') -Force; if (Test-Path $index) { Move-Item $index $indexBak -Force }; Write-Host 'App offline. Publishing...'; try { dotnet publish '${workspaceFolder}\\CMS.Server\\CMS.Server.csproj' -c Release -o $site } finally { Remove-Item (Join-Path $site 'app_offline.htm') -ErrorAction SilentlyContinue; Remove-Item $flag -ErrorAction SilentlyContinue; if (Test-Path $indexBak) { Remove-Item $indexBak -ErrorAction SilentlyContinue }; Write-Host 'Done, app back online.' }"
       ],
       "problemMatcher": "$msCompile"
     },

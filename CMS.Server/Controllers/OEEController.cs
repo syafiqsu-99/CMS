@@ -17,7 +17,7 @@ public class OeeController : ControllerBase
     // ── Summary ────────────────────────────────────────────────────────────────
 
     [HttpGet]
-    public async Task<IActionResult> Oee( [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    public async Task<IActionResult> Oee([FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
         => Ok(await _oeeService.CalculateOeeAsync(start_date, end_date));
 
     [HttpGet("monthly")]
@@ -25,15 +25,15 @@ public class OeeController : ControllerBase
         => Ok(await _oeeService.CalculateMonthlyOeeAsync(year ?? DateTime.Now.Year));
 
     [HttpGet("reject")]
-    public async Task<IActionResult> Reject( [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    public async Task<IActionResult> Reject([FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
         => Ok(await _oeeService.LoadRejectAsync(start_date, end_date));
 
     [HttpGet("output")]
-    public async Task<IActionResult> Output( [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    public async Task<IActionResult> Output([FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
         => Ok(await _oeeService.LoadOutputAsync(start_date, end_date));
 
     [HttpGet("downtime")]
-    public async Task<IActionResult> Downtime( [FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
+    public async Task<IActionResult> Downtime([FromQuery] DateOnly start_date, [FromQuery] DateOnly end_date)
         => Ok(await _oeeService.LoadDowntimeAsync(start_date, end_date));
 
     // ── Machine Detail ─────────────────────────────────────────────────────────
@@ -87,4 +87,62 @@ public class OeeController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+
+    [HttpGet("utilization-by-type")]
+    public async Task<IActionResult> UtilizationByType([FromQuery] int month, [FromQuery] int year)
+    {
+        if (month is < 1 or > 12)
+            return BadRequest(new { error = "month must be between 1 and 12." });
+
+        return Ok(await _oeeService.LoadUtilizationByTypeAsync(month, year));
+    }
+
+    // ── Unplanned downtime (% of total downtime, per month) ──────────────────────
+
+    [HttpGet("unplanned-downtime")]
+    public async Task<IActionResult> UnplannedDowntime([FromQuery] int? year)
+        => Ok(await _oeeService.LoadUnplannedDowntimeAsync(year ?? DateTime.Now.Year));
+
+    // ── Mould setup hours (ISBM + EBM only) ──────────────────────────────────────
+
+    [HttpGet("mould-setup")]
+    public async Task<IActionResult> MouldSetup([FromQuery] int? year)
+        => Ok(await _oeeService.LoadMouldSetupAsync(year ?? DateTime.Now.Year));
+
+    // ── Production wastage by material group ─────────────────────────────────────
+
+    [HttpGet("wastage")]
+    public async Task<IActionResult> Wastage([FromQuery] int? year)
+        => Ok(await _oeeService.LoadWastageAsync(year ?? DateTime.Now.Year));
+
+    // ── Material group mapping (config) ──────────────────────────────────────────
+
+    [HttpGet("material-groups")]
+    public async Task<IActionResult> GetMaterialGroups()
+        => Ok(await _oeeService.GetMaterialGroupsAsync());
+
+    [HttpPut("material-groups")]
+    public async Task<IActionResult> UpdateMaterialGroups([FromBody] Dictionary<string, List<string>> groups)
+    {
+        if (groups is null)
+            return BadRequest(new { error = "No mapping supplied." });
+
+        await _oeeService.SaveMaterialGroupsAsync(groups);
+        return Ok(new { message = "Material groups saved." });
+    }
+
+    // ── Mould setup targets (config) ─────────────────────────────────────────────
+
+    [HttpGet("mould-targets")]
+    public async Task<IActionResult> GetMouldTargets()
+        => Ok(await _oeeService.GetMouldTargetsAsync());
+
+    [HttpPut("mould-targets")]
+    public async Task<IActionResult> UpdateMouldTargets([FromBody] MouldTargetsDto dto)
+    {
+        await _oeeService.SaveMouldTargetsAsync(dto.blow, dto.half, dto.full);
+        return Ok(new { message = "Mould targets saved." });
+    }
 }
+
+public record MouldTargetsDto(double blow, double half, double full);

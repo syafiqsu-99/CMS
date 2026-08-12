@@ -450,60 +450,11 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
 
     public async Task<object> ImportReport(List<Dictionary<string, JsonElement>> reportList, DateOnly production_date, int shift)
     {
-        const string checkSql = @"
-            SELECT id_type, mould
-            FROM   report
-            WHERE  id_machine      = @id_machine
-              AND  production_date = @production_date
-              AND  shift           = @shift;";
-
         const string sapSql = @"
             SELECT material, type, qty_perct, gross_weight, part_weight, sap_ct
             FROM   sap
             WHERE  id_type = @id_type
               AND  mould   = @mould;";
-
-        const string updateSql = @"
-            UPDATE report
-            SET
-                packer             = @packer,
-                jo_no              = CASE WHEN jo_no = '0' THEN @jo_no ELSE jo_no END,
-                id_type            = @new_id_type,
-                mould              = @new_mould,
-                material           = @material,
-                type               = @type,
-                qty_perct          = @qty_perct,
-                gross_weight       = @gross_weight,
-                part_weight        = @part_weight,
-                sap_ct             = @sap_ct,
-                shot               = @shot,
-                qty_order          = @qty_order,
-                wip_opening        = @wip_opening,
-                wip_closing        = @wip_closing,
-                finish_good        = @finish_good,
-                qty_accum          = @qty_accum,
-                reject_startup     = @reject_startup,
-                reject_prod        = @reject_prod,
-                act_ct             = @act_ct,
-                production_running = @production_running,
-                change_full_set    = @change_full_set,
-                change_half_set    = @change_half_set,
-                change_parts       = @change_parts,
-                maintenance_dt     = @maintenance_dt,
-                technician_dt      = @technician_dt,
-                production_dt      = @production_dt,
-                buyoff_dt          = @buyoff_dt,
-                planned_dt         = @planned_dt,
-                remark             = @remark,
-                reject_purging     = @reject_purging,
-                reject_preform     = @reject_preform,
-                reject_total_pcs   = @reject_total_pcs
-            WHERE  id_machine      = @id_machine
-              AND  id_type         = @orig_id_type
-              AND  mould           = @orig_mould
-              AND  production_date = @production_date
-              AND  shift           = @shift
-              AND  (jo_no = '0' OR jo_no = @jo_no);";
 
         const string insertSql = @"
             INSERT INTO report (
@@ -531,6 +482,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 @maintenance_dt, @technician_dt, @production_dt, @buyoff_dt, @planned_dt,
                 @remark, @reject_purging, @reject_preform, @reject_total_pcs
             );";
+        // NOTE: @new_id_type / @new_mould retained as the CSV's id_type / mould.
 
         using var conn = await CreateConnectionAsync();
 
@@ -545,66 +497,29 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
             ))
             .ToList();
 
-        DateOnly rangeStart = grouped.Min(g => g.Key.Date);
-        DateOnly rangeEnd = grouped.Max(g => g.Key.Date);
-
-        var dbRowsByGroup = new Dictionary<(int, DateOnly, int), List<(int IdType, int Mould)>>();
-        bool willInsert = false;
-
-        foreach (var group in grouped)
-        {
-            var dbRows = new List<(int IdType, int Mould)>();
-
-            await using (var checkCmd = new SqlCommand(checkSql, conn))
-            {
-                checkCmd.Parameters.AddWithValue("@id_machine", group.Key.IdMachine);
-                checkCmd.Parameters.AddWithValue("@production_date", group.Key.Date);
-                checkCmd.Parameters.AddWithValue("@shift", group.Key.Shift);
-
-                await using var reader = await checkCmd.ExecuteReaderAsync();
-                while (await reader.ReadAsync())
-                    dbRows.Add((Convert.ToInt32(reader["id_type"]), Convert.ToInt32(reader["mould"])));
-            }
-
-            dbRowsByGroup[group.Key] = dbRows;
-
-            foreach (var csvRow in group)
-            {
-                int csvIdType = Convert.ToInt32(csvRow["id_type"].GetDouble());
-                int csvMould = Convert.ToInt32(csvRow["mould"].GetDouble());
-
-                if (!dbRows.Any(db => db.IdType == csvIdType && db.Mould == csvMould))
-                {
-                    willInsert = true;
-                    break;
-                }
-            }
-        }
+        var affectedMachineIds = grouped.Select(g => g.Key.IdMachine).Distinct().ToList();
 
         await using (var disableCmd = new SqlCommand("DISABLE TRIGGER updateReport ON report;", conn))
             await disableCmd.ExecuteNonQueryAsync();
 
         try
         {
-            if (willInsert)
+            var knownMachineIds = machineList.Select(m => m.id).ToHashSet();
+
+            foreach (var group in grouped)
             {
-                var deleteLogsSql = string.Join("\n", machineList.Select(m =>
-                    $"DELETE FROM [machine_log_{m.id}] WHERE production_date BETWEEN @start_date AND @end_date;"));
+                string logDelete = knownMachineIds.Contains(group.Key.IdMachine)
+                    ? $"DELETE FROM [machine_log_{group.Key.IdMachine}] WHERE production_date = @production_date AND shift = @shift;"
+                    : string.Empty;
 
-                if (!string.IsNullOrWhiteSpace(deleteLogsSql))
-                {
-                    await using var delLogsCmd = new SqlCommand(deleteLogsSql, conn);
-                    delLogsCmd.Parameters.AddWithValue("@start_date", rangeStart);
-                    delLogsCmd.Parameters.AddWithValue("@end_date", rangeEnd);
-                    await delLogsCmd.ExecuteNonQueryAsync();
-                }
-
-                await using var delReportRejectCmd = new SqlCommand(@"
-                    DELETE FROM report WHERE production_date BETWEEN @start_date AND @end_date;
-                    DELETE FROM reject WHERE production_date BETWEEN @start_date AND @end_date;", conn);
-                delReportRejectCmd.Parameters.AddWithValue("@start_date", rangeStart);
-                delReportRejectCmd.Parameters.AddWithValue("@end_date", rangeEnd);
-                await delReportRejectCmd.ExecuteNonQueryAsync();
+                await using var delCmd = new SqlCommand($@"
+                    DELETE FROM report WHERE production_date = @production_date AND shift = @shift AND id_machine = @id_machine;
+                    DELETE FROM reject WHERE production_date = @production_date AND shift = @shift AND id_machine = @id_machine;
+                    {logDelete}", conn);
+                delCmd.Parameters.AddWithValue("@production_date", group.Key.Date);
+                delCmd.Parameters.AddWithValue("@shift", group.Key.Shift);
+                delCmd.Parameters.AddWithValue("@id_machine", group.Key.IdMachine);
+                await delCmd.ExecuteNonQueryAsync();
             }
 
             foreach (var group in grouped)
@@ -613,15 +528,10 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 DateOnly rowDate = group.Key.Date;
                 int rowShift = group.Key.Shift;
 
-                var dbRows = dbRowsByGroup[group.Key];
-
                 foreach (var csvRow in group)
                 {
                     int csvIdType = Convert.ToInt32(csvRow["id_type"].GetDouble());
                     int csvMould = Convert.ToInt32(csvRow["mould"].GetDouble());
-
-                    var matchedDb = dbRows.FirstOrDefault(db => db.IdType == csvIdType && db.Mould == csvMould);
-                    bool hasMatch = matchedDb != default;
 
                     string material = csvRow.TryGetValue("material", out var mEl) ? mEl.GetString() ?? string.Empty : string.Empty;
                     string type = csvRow.TryGetValue("type", out var tEl) ? tEl.GetString() ?? string.Empty : string.Empty;
@@ -634,38 +544,31 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     sapCmd.Parameters.AddWithValue("@id_type", csvIdType);
                     sapCmd.Parameters.AddWithValue("@mould", csvMould);
 
-                    await using var sapReader = await sapCmd.ExecuteReaderAsync();
-                    if (await sapReader.ReadAsync())
+                    await using (var sapReader = await sapCmd.ExecuteReaderAsync())
                     {
-                        material = Convert.ToString(sapReader["material"]) ?? string.Empty;
-                        type = Convert.ToString(sapReader["type"]) ?? string.Empty;
-                        qtyPerct = Convert.ToInt32(sapReader["qty_perct"]);
-                        grossWeight = Convert.ToSingle(sapReader["gross_weight"]);
-                        partWeight = Convert.ToSingle(sapReader["part_weight"]);
-                        sapCt = Convert.ToSingle(sapReader["sap_ct"]);
+                        if (await sapReader.ReadAsync())
+                        {
+                            material = Convert.ToString(sapReader["material"]) ?? string.Empty;
+                            type = Convert.ToString(sapReader["type"]) ?? string.Empty;
+                            qtyPerct = Convert.ToInt32(sapReader["qty_perct"]);
+                            grossWeight = Convert.ToSingle(sapReader["gross_weight"]);
+                            partWeight = Convert.ToSingle(sapReader["part_weight"]);
+                            sapCt = Convert.ToSingle(sapReader["sap_ct"]);
+                        }
                     }
-                    await sapReader.CloseAsync();
-
-                    int origIdType = hasMatch ? matchedDb.IdType : (dbRows.Count > 0 ? dbRows[0].IdType : csvIdType);
-                    int origMould = hasMatch ? matchedDb.Mould : (dbRows.Count > 0 ? dbRows[0].Mould : csvMould);
 
                     string packer = csvRow.TryGetValue("packer", out var pEl) ? pEl.GetString() ?? string.Empty : string.Empty;
-                    string joNo = csvRow.TryGetValue("jo_no", out var jEl) ? jEl.GetString() ?? "0" : "0";
+                    string joNo = csvRow.TryGetValue("jo_no", out var jEl) ? (jEl.ValueKind == JsonValueKind.String ? jEl.GetString() ?? "0" : jEl.ToString()) : "0";
 
-                    var sql = hasMatch ? updateSql : insertSql;
-
-                    await using var cmd = new SqlCommand(sql, conn);
+                    await using var cmd = new SqlCommand(insertSql, conn);
                     cmd.Parameters.AddWithValue("@id_machine", idMachine);
-                    if (!hasMatch)
-                        cmd.Parameters.AddWithValue("@machine_name", machineNameMap.TryGetValue(idMachine, out var mName) ? mName : string.Empty);
+                    cmd.Parameters.AddWithValue("@machine_name", machineNameMap.TryGetValue(idMachine, out var mName) ? mName : string.Empty);
                     cmd.Parameters.AddWithValue("@production_date", rowDate);
                     cmd.Parameters.AddWithValue("@shift", rowShift);
                     cmd.Parameters.AddWithValue("@packer", packer);
                     cmd.Parameters.AddWithValue("@jo_no", joNo);
                     cmd.Parameters.AddWithValue("@new_id_type", csvIdType);
                     cmd.Parameters.AddWithValue("@new_mould", csvMould);
-                    cmd.Parameters.AddWithValue("@orig_id_type", origIdType);
-                    cmd.Parameters.AddWithValue("@orig_mould", origMould);
                     cmd.Parameters.AddWithValue("@material", material);
                     cmd.Parameters.AddWithValue("@type", type);
                     cmd.Parameters.AddWithValue("@qty_perct", qtyPerct);
@@ -699,9 +602,21 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 }
             }
 
-            if (willInsert)
+            var affectedMachines = machineList.Where(m => affectedMachineIds.Contains(m.id)).ToList();
+
+            var tuplesByMachine = grouped
+                .GroupBy(g => g.Key.IdMachine)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(x => (x.Key.Date, x.Key.Shift)).Distinct().ToList());
+
             {
-                var rebuildLogsSql = string.Join("\n", machineList.Select(m => $@"
+                var rebuildLogsSql = string.Join("\n", affectedMachines.Select(m =>
+                {
+                    string tupleValues = string.Join(", ",
+                        tuplesByMachine[m.id].Select(t => $"('{t.Date:yyyy-MM-dd}', {t.Shift})"));
+
+                    return $@"
                     ;WITH BaseData_{m.id} AS (
                         SELECT
                             r.*,
@@ -710,8 +625,11 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                                 WHEN r.shift = 2 THEN DATEADD(HOUR, 18, CAST(r.production_date AS DATETIME))
                             END AS shift_start
                         FROM report r
-                        WHERE r.production_date BETWEEN @start_date AND @end_date
-                          AND r.id_machine = {m.id}
+                        WHERE r.id_machine = {m.id}
+                          AND EXISTS (
+                                SELECT 1 FROM (VALUES {tupleValues}) AS t(d, s)
+                                WHERE CAST(t.d AS date) = r.production_date AND t.s = r.shift
+                          )
                     ),
                     Activities_{m.id} AS (
                         SELECT
@@ -769,21 +687,21 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                         status_start
                     FROM FlagAssignment_{m.id}
                     ORDER BY production_date, shift, activity_order;
-            "));
+            ";
+                }));
 
                 if (!string.IsNullOrWhiteSpace(rebuildLogsSql))
                 {
                     await using var rebuildLogsCmd = new SqlCommand(rebuildLogsSql, conn);
-                    rebuildLogsCmd.Parameters.AddWithValue("@start_date", rangeStart);
-                    rebuildLogsCmd.Parameters.AddWithValue("@end_date", rangeEnd);
                     await rebuildLogsCmd.ExecuteNonQueryAsync();
                 }
 
-                // Rebuild reject totals from the imported report rows.
-                int minMachineId = machineList.Count > 0 ? machineList.Min(m => m.id) : 0;
-                int maxMachineId = machineList.Count > 0 ? machineList.Max(m => m.id) : 0;
+                // Rebuild reject totals from the imported report rows, for the exact
+                // (id_machine, production_date, shift) tuples that were imported.
+                string rejectTupleValues = string.Join(", ",
+                    grouped.Select(g => $"({g.Key.IdMachine}, '{g.Key.Date:yyyy-MM-dd}', {g.Key.Shift})"));
 
-                const string rebuildRejectSql = @"
+                string rebuildRejectSql = $@"
                     INSERT INTO reject (
                         id_machine, machine_name, id_type, mould, shift, production_date,
                         total_weight, reject_startup, reject_preform, reject_purging, reject_others,
@@ -798,16 +716,14 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                         SUM(r.reject_prod) AS reject_others,
                         0 AS reject_panelling, 0 AS reject_lumpy, 0 AS reject_black_dot, 0 AS reject_burst
                     FROM report r
-                    WHERE r.id_machine BETWEEN @min_machine AND @max_machine
-                      AND r.production_date BETWEEN @start_date AND @end_date
+                    WHERE EXISTS (
+                            SELECT 1 FROM (VALUES {rejectTupleValues}) AS t(mid, d, s)
+                            WHERE t.mid = r.id_machine AND CAST(t.d AS date) = r.production_date AND t.s = r.shift
+                          )
                     GROUP BY r.id_machine, r.machine_name, r.id_type, r.mould, r.shift, r.production_date
                     ORDER BY r.production_date, r.shift;";
 
                 await using var rebuildRejectCmd = new SqlCommand(rebuildRejectSql, conn);
-                rebuildRejectCmd.Parameters.AddWithValue("@min_machine", minMachineId);
-                rebuildRejectCmd.Parameters.AddWithValue("@max_machine", maxMachineId);
-                rebuildRejectCmd.Parameters.AddWithValue("@start_date", rangeStart);
-                rebuildRejectCmd.Parameters.AddWithValue("@end_date", rangeEnd);
                 await rebuildRejectCmd.ExecuteNonQueryAsync();
             }
         }

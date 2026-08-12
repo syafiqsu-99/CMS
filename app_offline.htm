@@ -4,9 +4,20 @@
     <meta charset="utf-8" />
     <meta http-equiv="refresh" content="10" />
     <title>CMS - Updating</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f5f7; color: #333; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .box { text-align: center; padding: 40px 56px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        h1 { font-size: 1.5rem; margin: 0 0 12px; }
+        p { color: #666; margin: 0; }
+        .spinner { margin: 24px auto 0; width: 32px; height: 32px; border: 3px solid #e0e0e0; border-top-color: #1976d2; border-radius: 50%; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
 </head>
 <body>
-    <h1>CMS is being updated</h1>
-    <p>The system is briefly offline for an update. This page will refresh automatically.</p>
+    <div class="box">
+        <h1>CMS is being updated</h1>
+        <p>The system is briefly offline for an update.<br />This page will refresh automatically.</p>
+        <div class="spinner"></div>
+    </div>
 </body>
 </html>
