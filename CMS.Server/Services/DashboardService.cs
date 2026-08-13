@@ -1,6 +1,7 @@
 ﻿using Microsoft.Data.SqlClient;
 namespace CMS.Server.Services;
-public class DashboardService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger) : BaseService(connectionString, mainPlcService, logger)
+
+public class DashboardService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger, bool isDevelopment = false) : BaseService(connectionString, mainPlcService, logger, isDevelopment)
 {
     public async Task<object> LoadAttendance()
     {

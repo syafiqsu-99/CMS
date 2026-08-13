@@ -2,7 +2,7 @@
 
 namespace CMS.Server.Services;
 
-public class MachinesService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger) : BaseService(connectionString, mainPlcService, logger)
+public class MachinesService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger, bool isDevelopment = false) : BaseService(connectionString, mainPlcService, logger, isDevelopment)
 {
 
     public async Task<object> LoadMachineMaster()
@@ -12,7 +12,10 @@ public class MachinesService(MainPlcService mainPlcService, string connectionStr
 
         var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date and shift = @shift");
 
-        var sql = @"
+        var testFilter = TestMachineFilter("mm.id_machine");
+        var masterWhere = testFilter.Length == 0 ? "" : $"WHERE {testFilter}";
+
+        var sql = $@"
             SELECT
                 mm.id_machine,
                 mm.machine_name,
@@ -66,6 +69,7 @@ public class MachinesService(MainPlcService mainPlcService, string connectionStr
                 AND r.mould           = mm.mould
                 AND r.production_date = @production_date
                 AND r.shift           = @shift
+            {masterWhere}
             ORDER BY mm.id_machine";
 
         var result = new List<object>();
@@ -86,29 +90,29 @@ public class MachinesService(MainPlcService mainPlcService, string connectionStr
 
             result.Add(new
             {
-                id_machine     = Convert.ToInt32(reader["id_machine"]),
-                machine_name   = Convert.ToString(reader["machine_name"]),
-                packer         = Convert.ToString(reader["packer"]),
-                material       = Convert.ToString(reader["material"]),
-                id_type        = Convert.ToInt32(reader["id_type"]),
-                mould          = Convert.ToInt32(reader["mould"]),
-                type           = Convert.ToString(reader["type"]),
-                status_start   = Convert.ToBoolean(reader["status_start"]),
-                status_off     = Convert.ToBoolean(reader["status_off"]),
-                qty_perct      = Convert.ToInt32(reader["qty_perct"]),
-                act_ct         = Convert.ToSingle(reader["act_ct"]),
-                sap_ct         = Convert.ToSingle(reader["sap_ct"]),
-                shot           = Convert.ToInt32(reader["shot"]),
-                output         = output,
-                part_weight    = Convert.ToSingle(reader["part_weight"]),
+                id_machine = Convert.ToInt32(reader["id_machine"]),
+                machine_name = Convert.ToString(reader["machine_name"]),
+                packer = Convert.ToString(reader["packer"]),
+                material = Convert.ToString(reader["material"]),
+                id_type = Convert.ToInt32(reader["id_type"]),
+                mould = Convert.ToInt32(reader["mould"]),
+                type = Convert.ToString(reader["type"]),
+                status_start = Convert.ToBoolean(reader["status_start"]),
+                status_off = Convert.ToBoolean(reader["status_off"]),
+                qty_perct = Convert.ToInt32(reader["qty_perct"]),
+                act_ct = Convert.ToSingle(reader["act_ct"]),
+                sap_ct = Convert.ToSingle(reader["sap_ct"]),
+                shot = Convert.ToInt32(reader["shot"]),
+                output = output,
+                part_weight = Convert.ToSingle(reader["part_weight"]),
                 planned_output = plannedOutput,
-                reject_weight  = Convert.ToSingle(reader["reject_weight"]),
-                reject_pcs     = Convert.ToSingle(reader["reject_pcs"]),
-                visual_qc      = Convert.ToInt32(reader["visual_qc"]),
-                measure_qc     = Convert.ToInt32(reader["measure_qc"]),
-                category       = category,
-                efficiency     = plannedOutput > 0 ? Math.Round((double)output / plannedOutput * 100, 2) : 0.0,
-                color          = BaseService.GetColor(category),
+                reject_weight = Convert.ToSingle(reader["reject_weight"]),
+                reject_pcs = Convert.ToSingle(reader["reject_pcs"]),
+                visual_qc = Convert.ToInt32(reader["visual_qc"]),
+                measure_qc = Convert.ToInt32(reader["measure_qc"]),
+                category = category,
+                efficiency = plannedOutput > 0 ? Math.Round((double)output / plannedOutput * 100, 2) : 0.0,
+                color = BaseService.GetColor(category),
             });
         }
 

@@ -2,13 +2,15 @@
 <html>
 <head>
     <meta charset="utf-8" />
-    <meta http-equiv="refresh" content="10" />
+    <meta http-equiv="cache-control" content="no-store, no-cache, must-revalidate" />
+    <meta http-equiv="pragma" content="no-cache" />
+    <meta http-equiv="expires" content="0" />
     <title>CMS - Updating</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f5f7; color: #333; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .box { text-align: center; padding: 40px 56px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        .box { text-align: center; padding: 40px 56px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); max-width: 420px; }
         h1 { font-size: 1.5rem; margin: 0 0 12px; }
-        p { color: #666; margin: 0; }
+        p { color: #666; margin: 0 0 8px; }
         .spinner { margin: 24px auto 0; width: 32px; height: 32px; border: 3px solid #e0e0e0; border-top-color: #1976d2; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
@@ -16,8 +18,28 @@
 <body>
     <div class="box">
         <h1>CMS is being updated</h1>
-        <p>The system is briefly offline for an update.<br />This page will refresh automatically.</p>
+        <p>The system is currently offline while an update is applied.</p>
+        <p>This page will reload automatically once the system is back online.</p>
         <div class="spinner"></div>
     </div>
+    <script>
+        (function () {
+            var POLL = 3000;
+            function check() {
+                fetch('/api/base/Health', { cache: 'no-store', headers: { 'Accept': 'application/json' } })
+                    .then(function (r) {
+                        var ct = r.headers.get('content-type') || '';
+                        if (!r.ok || ct.indexOf('application/json') === -1) { throw new Error('not-ready'); }
+                        return r.json();
+                    })
+                    .then(function (d) {
+                        if (d && d.status === 'Ready') { window.location.href = '/'; }
+                        else { setTimeout(check, POLL); }
+                    })
+                    .catch(function () { setTimeout(check, POLL); });
+            }
+            setTimeout(check, POLL);
+        })();
+    </script>
 </body>
 </html>

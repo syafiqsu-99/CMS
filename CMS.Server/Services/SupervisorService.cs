@@ -5,7 +5,7 @@ using System.Text.Json;
 
 namespace CMS.Server.Services;
 
-public class SupervisorService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger) : BaseService(connectionString, mainPlcService, logger)
+public class SupervisorService(MainPlcService mainPlcService, string connectionString, ILogger<BaseService> logger, bool isDevelopment = false) : BaseService(connectionString, mainPlcService, logger, isDevelopment)
 {
     private static readonly string[] DateFormats = { "d/M/yyyy", "dd/MM/yyyy", "yyyy-MM-dd" };
 
@@ -20,25 +20,43 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
     #region PRODUCTION REPORT
     public async Task<object> LoadDailyReport(DateOnly production_date, int shift)
     {
+        var (currentDate, currentShift) = GetProductionDate(DateTime.Now);
+        bool isCurrent = production_date == currentDate && shift == currentShift;
+
+        return isCurrent
+            ? await LoadLiveReport(production_date, shift)
+            : await LoadReportFromTable(production_date, shift);
+    }
+
+    private async Task<object> LoadLiveReport(DateOnly production_date, int shift)
+    {
         var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date AND shift = @shift");
+
+        var testFilter = TestMachineFilter("mm.id_machine");
+        var liveWhere = testFilter.Length == 0 ? "" : $"WHERE {testFilter}";
 
         var sql = $@"
                 WITH all_logs AS (
                     {logUnion}
-                ),log_aggregation AS (
-                    SELECT 
+                ),
+                current_category AS (
+                    SELECT id_machine, id_type, mould, category
+                    FROM (
+                        SELECT
+                            cl.id_machine, cl.id_type, cl.mould, cl.category,
+                            ROW_NUMBER() OVER (
+                                PARTITION BY cl.id_machine, cl.id_type, cl.mould
+                                ORDER BY cl.start DESC
+                            ) AS rn
+                        FROM all_logs cl
+                    ) t
+                    WHERE t.rn = 1
+                ),
+                remark_agg AS (
+                    SELECT
                         ml.id_machine,
                         ml.id_type,
                         ml.mould,
-                        ROUND(SUM(CASE WHEN ml.category = 'PRODUCTION RUNNING' THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS production_running,
-                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 1 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_full_set,
-                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 2 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_half_set,
-                        ROUND(SUM(CASE WHEN ml.category = 'MOULD CHANGE' AND ml.mould_category = 3 THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS change_parts,
-                        ROUND(SUM(CASE WHEN ml.category IN ('MACHINE BREAKDOWN', 'OTHERS MAIN') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS maintenance_dt,
-                        ROUND(SUM(CASE WHEN ml.category IN ('QUALITY ISSUE', 'SAMPLE RUNNING', 'OTHERS TECH') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS technician_dt,
-                        ROUND(SUM(CASE WHEN ml.category IN ('NO OPERATOR', 'MATERIAL DRYING', 'OTHERS PROD') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS production_dt,
-                        ROUND(SUM(CASE WHEN ml.category IN ('PRODUCT BUYOFF') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS buyoff_dt,
-                        ROUND(SUM(CASE WHEN ml.category IN ('SCHEDULED MAINTENANCE', 'NO SCHEDULE') THEN DATEDIFF(SECOND, ml.start, COALESCE(ml.finish, GETDATE())) END)/3600.0, 2) AS planned_dt,
                         STUFF((
                             SELECT ', ' + FORMAT(m2.start, 'h:mmtt') + ' - ' + FORMAT(m2.finish, 'h:mmtt') + ': ' + m2.problem
                             FROM all_logs m2
@@ -49,13 +67,20 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                             FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS remark
                     FROM all_logs ml
                     GROUP BY ml.id_machine, ml.id_type, ml.mould
+                ),
+                avail_agg AS (
+                    SELECT
+                        al.id_machine,
+                        ROUND(SUM(DATEDIFF(SECOND, al.start, COALESCE(al.finish, GETDATE()))) / 3600.0, 2) AS avail_hour
+                    FROM all_logs al
+                    GROUP BY al.id_machine
                 )
-                SELECT 
+                SELECT
                     COALESCE(mm.id_machine, 0) AS id_machine,
                     COALESCE(mm.shift, 1) AS shift,
                     COALESCE(mm.machine_name, '') AS machine_name,
                     COALESCE(mm.packer, '') AS packer,
-                    COALESCE(mm.material, '') as material,
+                    COALESCE(mm.material, '') AS material,
                     COALESCE(mm.id_type, 0) AS id_type,
                     COALESCE(mm.mould, 0) AS mould,
                     COALESCE(mm.type, '') AS type,
@@ -76,110 +101,69 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     COALESCE(mm.runner, 0.0) AS runner,
                     COALESCE(rej.reject_startup, 0.0) AS reject_startup,
                     COALESCE(((rej.reject_startup / NULLIF(mm.material_used,0)) * 100.0), 0.0) AS reject_startup_per,
-                    COALESCE((rej.reject_panelling + rej.reject_lumpy + rej.reject_black_dot + rej.reject_burst + rej.reject_others), 0.0) AS reject_prod,
-                    COALESCE((((rej.reject_panelling + rej.reject_lumpy + rej.reject_black_dot + rej.reject_burst + rej.reject_others) / NULLIF(mm.material_used,0)) * 100.0), 0.0) AS reject_prod_per,
+                    (COALESCE(rej.reject_panelling,0) + COALESCE(rej.reject_lumpy,0) + COALESCE(rej.reject_black_dot,0) + COALESCE(rej.reject_burst,0) + COALESCE(rej.reject_others,0)) AS reject_prod,
+                    COALESCE((((COALESCE(rej.reject_panelling,0) + COALESCE(rej.reject_lumpy,0) + COALESCE(rej.reject_black_dot,0) + COALESCE(rej.reject_burst,0) + COALESCE(rej.reject_others,0)) / NULLIF(mm.material_used,0)) * 100.0), 0.0) AS reject_prod_per,
                     COALESCE(mm.act_ct, 0.0) AS act_ct,
-                    COALESCE(la.production_running, 0.0) AS production_running,
+                    0.0 AS production_running,
                     COALESCE(mm.sap_ct, 0.0) AS sap_ct,
-                    COALESCE(la.change_full_set, 0.0) AS change_full_set,
-                    COALESCE(la.change_half_set, 0.0) AS change_half_set,
-                    COALESCE(la.change_parts, 0.0) AS change_parts,
-                    COALESCE(la.maintenance_dt, 0.0) AS maintenance_dt,
-                    COALESCE(la.technician_dt, 0.0) AS technician_dt,
-                    COALESCE(la.production_dt, 0.0) AS production_dt,
-                    COALESCE(la.buyoff_dt, 0.0) AS buyoff_dt,
-                    COALESCE(la.planned_dt, 0.0) AS planned_dt,
-                    COALESCE(la.remark, '') AS remark,
+                    0.0 AS change_full_set,
+                    0.0 AS change_half_set,
+                    0.0 AS change_parts,
+                    0.0 AS maintenance_dt,
+                    0.0 AS technician_dt,
+                    0.0 AS production_dt,
+                    0.0 AS buyoff_dt,
+                    0.0 AS planned_dt,
+                    COALESCE(aa.avail_hour, 0.0) AS avail_hour,
+                    COALESCE(cc.category, '') AS category,
+                    COALESCE(ra.remark, '') AS remark,
                     COALESCE(mm.part_scrap, 0) AS part_scrap,
                     COALESCE(rej.reject_purging, 0.0) AS reject_purging,
                     COALESCE(rej.reject_preform, 0.0) AS reject_preform,
-                    COALESCE((rej.total_weight / NULLIF(mm.part_weight, 0)), 0) AS reject_total_pcs
+                    COALESCE((rej.total_weight / NULLIF(mm.part_weight, 0)), 0) AS reject_total_pcs,
+                    (COALESCE(rej.reject_startup,0)
+                        + COALESCE(rej.reject_panelling,0) + COALESCE(rej.reject_lumpy,0) + COALESCE(rej.reject_black_dot,0) + COALESCE(rej.reject_burst,0) + COALESCE(rej.reject_others,0)
+                        + COALESCE(rej.reject_purging,0) + COALESCE(rej.reject_preform,0)
+                        + COALESCE(mm.part_scrap,0)) AS total_reject_weight
                 FROM machine_master mm
-                LEFT JOIN reject rej 
-                    ON mm.id_machine = rej.id_machine 
-                    AND rej.production_date = @production_date 
+                LEFT JOIN reject rej
+                    ON mm.id_machine = rej.id_machine
+                    AND rej.production_date = @production_date
                     AND rej.shift = @shift
-                    AND rej.id_type = mm.id_type 
+                    AND rej.id_type = mm.id_type
                     AND rej.mould = mm.mould
-                LEFT JOIN log_aggregation la 
-                    ON mm.id_machine = la.id_machine 
-                    AND mm.id_type = la.id_type 
-                    AND mm.mould = la.mould";
+                LEFT JOIN current_category cc
+                    ON mm.id_machine = cc.id_machine
+                    AND mm.id_type = cc.id_type
+                    AND mm.mould = cc.mould
+                LEFT JOIN remark_agg ra
+                    ON mm.id_machine = ra.id_machine
+                    AND mm.id_type = ra.id_type
+                    AND mm.mould = ra.mould
+                LEFT JOIN avail_agg aa
+                    ON mm.id_machine = aa.id_machine
+                {liveWhere}";
 
-        var result = new List<object>();
-
-        using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(sql, conn);
-        cmd.Parameters.AddWithValue("@production_date", production_date);
-        cmd.Parameters.AddWithValue("@shift", shift);
-        using var reader = await cmd.ExecuteReaderAsync();
-
-        while (await reader.ReadAsync())
-        {
-            result.Add(new
-            {
-                id_machine = Convert.ToInt32(reader["id_machine"]),
-                shift = Convert.ToInt32(reader["shift"]) == 1 ? "Morning" : "Night",
-                machine_name = Convert.ToString(reader["machine_name"]),
-                packer = Convert.ToString(reader["packer"]),
-                material = Convert.ToString(reader["material"]),
-                id_type = Convert.ToInt32(reader["id_type"]),
-                mould = Convert.ToInt32(reader["mould"]),
-                type = Convert.ToString(reader["type"]),
-                jo_no = Convert.ToString(reader["jo_no"]),
-                qty_perct = Convert.ToInt32(reader["qty_perct"]),
-                gross_weight = Convert.ToSingle(reader["gross_weight"]),
-                part_weight = Convert.ToSingle(reader["part_weight"]),
-                shot_accum = Convert.ToInt32(reader["shot"]),
-                qty_order = Convert.ToInt32(reader["qty_order"]),
-                wip_opening = Convert.ToInt32(reader["wip_opening"]),
-                wip_closing = Convert.ToInt32(reader["wip_closing"]),
-                shift_output = Convert.ToInt32(reader["shift_output"]),
-                finish_good = Convert.ToInt32(reader["finish_good"]),
-                inward = Convert.ToSingle(reader["inward"]),
-                qty_accum = Convert.ToInt32(reader["qty_accum"]),
-                qty_balance = Convert.ToInt32(reader["qty_balance"]),
-                material_used = Convert.ToSingle(reader["material_used"]),
-                runner = Convert.ToSingle(reader["runner"]),
-                reject_startup = Convert.ToSingle(reader["reject_startup"]),
-                reject_startup_per = Convert.ToSingle(reader["reject_startup_per"]),
-                reject_prod = Convert.ToSingle(reader["reject_prod"]),
-                reject_prod_per = Convert.ToSingle(reader["reject_prod_per"]),
-                act_ct = Convert.ToSingle(reader["act_ct"]),
-                production_running = Convert.ToSingle(reader["production_running"]),
-                sap_ct = Convert.ToSingle(reader["sap_ct"]),
-                change_full_set = Convert.ToSingle(reader["change_full_set"]),
-                change_half_set = Convert.ToSingle(reader["change_half_set"]),
-                change_parts = Convert.ToSingle(reader["change_parts"]),
-                maintenance_dt = Convert.ToSingle(reader["maintenance_dt"]),
-                technician_dt = Convert.ToSingle(reader["technician_dt"]),
-                production_dt = Convert.ToSingle(reader["production_dt"]),
-                buyoff_dt = Convert.ToSingle(reader["buyoff_dt"]),
-                planned_dt = Convert.ToSingle(reader["planned_dt"]),
-                remark = Convert.ToString(reader["remark"]),
-                part_scrap = Convert.ToSingle(reader["part_scrap"]),
-                reject_purging = Convert.ToSingle(reader["reject_purging"]),
-                reject_preform = Convert.ToSingle(reader["reject_preform"]),
-                reject_total_pcs = Convert.ToInt32(reader["reject_total_pcs"]),
-            });
-        }
-        return result;
+        return await ReadReportRows(sql, production_date, shift);
     }
 
-    public async Task<object> LoadPrevReport(DateOnly production_date, int shift)
+    private async Task<object> LoadReportFromTable(DateOnly production_date, int shift)
     {
-        var sql = @"
-                SELECT 
-                    COALESCE(id_machine, 1) AS id_machine,
+        var testFilter = TestMachineFilter("id_machine");
+        var reportWhere = testFilter.Length == 0 ? "" : $"AND {testFilter}";
+
+        var sql = $@"
+                SELECT
+                    COALESCE(id_machine, 0) AS id_machine,
                     COALESCE(shift, 1) AS shift,
                     COALESCE(machine_name, '') AS machine_name,
                     COALESCE(packer, '') AS packer,
                     COALESCE(material, '') AS material,
-                    COALESCE(id_type, 123456) AS id_type,
+                    COALESCE(id_type, 0) AS id_type,
                     COALESCE(mould, 0) AS mould,
                     COALESCE(type, '') AS type,
                     COALESCE(jo_no, '') AS jo_no,
-                    COALESCE(qty_perct, 1) AS qty_perct,
+                    COALESCE(qty_perct, 0) AS qty_perct,
                     COALESCE(gross_weight, 0.0) AS gross_weight,
                     COALESCE(part_weight, 0.0) AS part_weight,
                     COALESCE(shot, 0) AS shot,
@@ -208,15 +192,24 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     COALESCE(production_dt, 0.0) AS production_dt,
                     COALESCE(buyoff_dt, 0.0) AS buyoff_dt,
                     COALESCE(planned_dt, 0.0) AS planned_dt,
+                    COALESCE(avail_hour, 0.0) AS avail_hour,
+                    '' AS category,
                     COALESCE(remark, '') AS remark,
                     COALESCE(part_scrap, 0.0) AS part_scrap,
                     COALESCE(reject_purging, 0.0) AS reject_purging,
                     COALESCE(reject_preform, 0.0) AS reject_preform,
-                    COALESCE(reject_total_pcs, 0) AS reject_total_pcs
+                    COALESCE(reject_total_pcs, 0) AS reject_total_pcs,
+                    (COALESCE(reject_startup,0) + COALESCE(reject_prod,0) + COALESCE(reject_purging,0) + COALESCE(reject_preform,0) + COALESCE(part_scrap,0)) AS total_reject_weight
                 FROM report
-                WHERE production_date = @production_date 
-                AND shift = @shift";
+                WHERE production_date = @production_date
+                AND shift = @shift
+                {reportWhere}";
 
+        return await ReadReportRows(sql, production_date, shift);
+    }
+
+    private async Task<object> ReadReportRows(string sql, DateOnly production_date, int shift)
+    {
         var result = new List<object>();
 
         using var conn = await CreateConnectionAsync();
@@ -267,14 +260,16 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 production_dt = Convert.ToSingle(reader["production_dt"]),
                 buyoff_dt = Convert.ToSingle(reader["buyoff_dt"]),
                 planned_dt = Convert.ToSingle(reader["planned_dt"]),
+                avail_hour = Convert.ToSingle(reader["avail_hour"]),
+                category = Convert.ToString(reader["category"]),
                 remark = Convert.ToString(reader["remark"]),
                 part_scrap = Convert.ToSingle(reader["part_scrap"]),
                 reject_purging = Convert.ToSingle(reader["reject_purging"]),
                 reject_preform = Convert.ToSingle(reader["reject_preform"]),
                 reject_total_pcs = Convert.ToInt32(reader["reject_total_pcs"]),
+                total_reject_weight = Convert.ToSingle(reader["total_reject_weight"]),
             });
         }
-
         return result;
     }
 
@@ -306,9 +301,6 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
             await cmd.ExecuteNonQueryAsync();
         }
     }
-
-    public async Task UpsertPrevReport(DateOnly production_date, int shift, List<Dictionary<string, JsonElement>> reportList)
-        => await UpsertDailyReport(production_date, shift, reportList);
 
     private static void AddReportParams(SqlCommand cmd, Dictionary<string, JsonElement> row)
     {
@@ -736,7 +728,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
         var reloadDate = ParseProductionDate(reportList.First()["production_date"]);
         var reloadShift = Convert.ToInt32(reportList.First()["shift"].GetDouble());
 
-        return await LoadPrevReport(reloadDate, reloadShift);
+        return await LoadReportFromTable(reloadDate, reloadShift);
     }
     #endregion
 

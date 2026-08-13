@@ -28,7 +28,7 @@
             <td v-for="column in columns" :key="column.key" class="text-center text-caption py-0"
               :style="{ backgroundColor: getColumnColor(column.key), color: 'black' }">
               <v-text-field v-if="isEditable(column.key)" v-model="item[column.key]" hide-details variant="plain"
-                density="compact" :style="{ minWidth: column.minWidth }"
+                density="compact" :style="{ minWidth: column.minWidth }" @focus="onFieldFocus"
                 @update:modelValue="onFieldChange(item, column.key)" @blur="onFieldBlur(item, column.key)" />
               <span v-else>{{ item[column.key] }}</span>
             </td>
@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { useMachineStore } from '@/store/machineStore';
 
 const { SAPData } = defineProps({
@@ -126,13 +126,14 @@ const productHeaders = [
   { title: 'Part Scrap', key: 'part_scrap', width: '100px', backgroundColor: '#FFFF66' },
   { title: 'Purging', key: 'reject_purging', width: '100px', backgroundColor: '#FFFF66' },
   { title: 'Preform', key: 'reject_preform', width: '100px', backgroundColor: '#FFFF66' },
-  { title: 'Prod Reject (pcs)', key: 'reject_prod_pcs', width: '130px', backgroundColor: '#B1A0C7' }
+  { title: 'Prod Reject (pcs)', key: 'reject_total_pcs', width: '130px', backgroundColor: '#B1A0C7' },
+  { title: 'Total Reject (kg)', key: 'total_reject_weight', width: '130px', backgroundColor: '#B1A0C7' }
 ];
 
 const CALC_TRIGGER_KEYS = new Set([
   'shot_accum', 'qty_perct', 'part_weight', 'gross_weight',
   'finish_good', 'qty_order', 'qty_accum',
-  'reject_startup', 'reject_prod', 'reject_purging', 'reject_preform'
+  'reject_startup', 'reject_prod', 'reject_purging', 'reject_preform', 'part_scrap'
 ]);
 
 const FLOAT_KEYS = new Set([
@@ -145,7 +146,8 @@ const NON_EDITABLE_KEYS = new Set([
   'shift_output', 'inward', 'qty_balance', 'material_used', 'runner',
   'reject_startup_per', 'reject_prod_per', 'production_running',
   'change_full_set', 'change_half_set', 'change_parts',
-  'maintenance_dt', 'technician_dt', 'production_dt', 'reject_prod_pcs'
+  'maintenance_dt', 'technician_dt', 'production_dt', 'reject_total_pcs',
+  'avail_hour', 'total_reject_weight'
 ]);
 
 const YELLOW_KEYS = new Set([
@@ -166,7 +168,7 @@ const FLOAT_FIELDS = new Set([
   'act_ct', 'production_running', 'sap_ct', 'change_full_set', 'change_half_set',
   'change_parts', 'maintenance_dt', 'technician_dt', 'production_dt', 'buyoff_dt', 'planned_dt',
   'part_scrap', 'reject_purging',
-  'reject_preform', 'reject_prod_pcs'
+  'reject_preform', 'total_reject_weight', 'avail_hour'
 ]);
 
 function sanitizeRow(row) {
@@ -185,6 +187,14 @@ const shift = ref(null);
 const f = (v, d = 2) => parseFloat((parseFloat(v) || 0).toFixed(d));
 const n = (v) => parseFloat(v) || 0;
 const i = (v) => parseInt(v) || 0;
+
+function roundFloats(row) {
+  const out = { ...row };
+  for (const key of FLOAT_FIELDS) {
+    if (key in out && out[key] !== null && out[key] !== '') out[key] = f(out[key]);
+  }
+  return out;
+}
 
 function getDate() {
   return new Date().toISOString().split('T')[0];
@@ -214,6 +224,7 @@ function recalcRow(item) {
   const rejProd = n(item.reject_prod);
   const purging = n(item.reject_purging);
   const preform = n(item.reject_preform);
+  const partScrap = n(item.part_scrap);
 
   const shiftOutput = shot * cav;
   const materialUsed = f((partWt * shiftOutput) / 1000);
@@ -225,21 +236,50 @@ function recalcRow(item) {
   item.runner = f(((grossWt - partWt) * shiftOutput) / 1000);
   item.reject_startup_per = f(materialUsed ? (startup / materialUsed) * 100 : 0);
   item.reject_prod_per = f(materialUsed ? (rejProd / materialUsed) * 100 : 0);
-  item.reject_prod_pcs = f(partWt ? (startup + rejProd + purging + preform) / partWt : 0);
+  item.total_reject_weight = f(startup + rejProd + purging + preform + partScrap);
 }
 
 const maxDate = computed(() => getDate());
 const isEditable = (key) => !NON_EDITABLE_KEYS.has(key);
 const getColumnColor = (key) => YELLOW_KEYS.has(key) ? '#FFFF99' : 'transparent';
 
+const LIVE_REFRESH_MS = 5000;
+let liveTimer = null;
+const isEditing = ref(false);
+
+function isCurrentSelection() {
+  return formatDate(production_date.value) === formatDate(getDate()) && shift.value === getShift();
+}
+
+function stopLiveRefresh() {
+  if (liveTimer) {
+    clearInterval(liveTimer);
+    liveTimer = null;
+  }
+}
+
+function startLiveRefresh() {
+  stopLiveRefresh();
+  if (!isCurrentSelection()) return;
+  liveTimer = setInterval(() => {
+    if (!isEditing.value && !loading.value) loadReportData(true);
+  }, LIVE_REFRESH_MS);
+}
+
 onMounted(async () => {
   production_date.value = getDate();
   shift.value = getShift();
   await loadReportData();
+  startLiveRefresh();
 });
 
+onUnmounted(stopLiveRefresh);
+
 watch([production_date, shift], ([date, s]) => {
-  if (date && s) loadReportData();
+  if (date && s) {
+    loadReportData();
+    startLiveRefresh();
+  }
 });
 
 function onFieldChange(item, key) {
@@ -268,33 +308,36 @@ function onFieldChange(item, key) {
   }
 }
 
+function onFieldFocus() {
+  isEditing.value = true;
+}
+
 function onFieldBlur(item, key) {
   if (FLOAT_KEYS.has(key)) {
     item[key] = f(item[key]);
   }
+  isEditing.value = false;
 }
 
-async function loadReportData() {
+async function loadReportData(silent = false) {
   if (!production_date.value || !shift.value) return;
 
-  loading.value = true;
+  if (!silent) loading.value = true;
 
   try {
     const selectedDate = formatDate(production_date.value);
-    const isCurrentShift = selectedDate === formatDate(getDate()) && shift.value === getShift();
-    const loader = isCurrentShift ? store.loadDailyReport : store.loadPrevReport;
-    const result = await loader(selectedDate, shift.value);
+    const result = await store.loadDailyReport(selectedDate, shift.value);
 
     dailyReport.value = result.map(row => ({
-      ...row,
+      ...roundFloats(row),
       _orig_id_type: row.id_type,
       _orig_mould: row.mould
     }));
   } catch (err) {
     console.error('Error loading report data:', err);
-    dailyReport.value = [];
+    if (!silent) dailyReport.value = [];
   } finally {
-    loading.value = false;
+    if (!silent) loading.value = false;
   }
 }
 
@@ -303,10 +346,8 @@ async function saveReport() {
   loading.value = true;
   try {
     const selectedDate = formatDate(production_date.value);
-    const isCurrentShift = selectedDate === formatDate(getDate()) && shift.value === getShift();
-    const endpoint = isCurrentShift ? '/api/supervisor/daily-report' : '/api/supervisor/prev-report';
 
-    const response = await fetch(endpoint, {
+    const response = await fetch('/api/supervisor/daily-report', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

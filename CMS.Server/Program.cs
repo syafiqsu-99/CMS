@@ -11,6 +11,8 @@ if (!defaultConnectionConfigured)
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
+var isDevelopment = builder.Environment.IsDevelopment();
+
 // ── Core singletons ──────────────────────────────────────────────────────
 builder.Services.AddSingleton<MainPlcService>();
 builder.Services.AddSingleton<SubPlcService>();
@@ -24,22 +26,22 @@ builder.Services.AddScoped<ReportExportService>(sp =>
         sp.GetRequiredService<ILogger<ReportExportService>>()));
 
 builder.Services.AddSingleton<BaseService>(sp =>
-    new BaseService(connectionString, sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<ILogger<BaseService>>()));
+    new BaseService(connectionString, sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<ILogger<BaseService>>(), isDevelopment));
 
 // ── Schema init ───────────────────────────────────────
 builder.Services.AddSingleton(new SchemaInitializerService(connectionString));
 
 // ── Page-specific data services ──────
 builder.Services.AddSingleton<OEEService>(sp =>
-    new OEEService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
+    new OEEService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>(), isDevelopment));
 builder.Services.AddSingleton<SupervisorService>(sp =>
-    new SupervisorService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
+    new SupervisorService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>(), isDevelopment));
 builder.Services.AddSingleton<DashboardService>(sp =>
-    new DashboardService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
+    new DashboardService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>(), isDevelopment));
 builder.Services.AddSingleton<MachinesService>(sp =>
-    new MachinesService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
+    new MachinesService(sp.GetRequiredService<MainPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>(), isDevelopment));
 builder.Services.AddSingleton<SettingService>(sp =>
-    new SettingService(sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<SubPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>()));
+    new SettingService(sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<SubPlcService>(), connectionString, sp.GetRequiredService<ILogger<BaseService>>(), isDevelopment));
 
 // ── Background services (production only) ───────────────
 if (!builder.Environment.IsDevelopment())

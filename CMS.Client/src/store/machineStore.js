@@ -34,10 +34,9 @@ export const useMachineStore = defineStore('machine', {
         const machines = await res.json();
 
         this.machineData = machines;
-        const valid = machines.filter(m => m.machine_name !== 'TEST');
-        this.totalMachines = valid.length;
-        this.runningMachines = valid.filter(m => m.status_start).length;
-        this.stopMachines = valid.filter(m => !m.status_start).length;
+        this.totalMachines = machines.length;
+        this.runningMachines = machines.filter(m => m.status_start).length;
+        this.stopMachines = machines.filter(m => !m.status_start).length;
         return machines;
       } catch (err) {
         console.error('[store] loadMachineMaster:', err.message);
@@ -94,25 +93,12 @@ export const useMachineStore = defineStore('machine', {
         return [];
       }
     },
-
-    async loadPrevReport(date, shift) {
-      try {
-        const production_date = formatDate(date);
-        const res = await fetch(`/api/supervisor/prev-report?production_date=${production_date}&shift=${shift}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        this.ProdData = await res.json();
-        return this.ProdData;
-      } catch (err) {
-        console.error('[store] loadPrevReport:', err.message);
-        return [];
-      }
-    },
     // #endregion
 
     // #region Maintenance
     async checkMaintenance() {
       try {
-        const res = await fetch('/api/base/Maintenance');
+        const res = await fetch('/api/base/Maintenance', { cache: 'no-store' });
         if (!res.ok) return { active: false, shutdownAt: null };
         const ct = res.headers.get('content-type') || '';
         if (!ct.includes('application/json')) return { active: false, shutdownAt: null };

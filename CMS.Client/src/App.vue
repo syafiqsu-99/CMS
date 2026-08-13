@@ -1,5 +1,14 @@
 <template>
   <v-app>
+    <!-- Maintenance countdown banner (non-blocking, does not affect navigation) -->
+    <div v-if="maintenanceActive" class="maintenance-banner">
+      <v-icon size="20" class="mr-2">mdi-alert</v-icon>
+      <span>
+        System update in <strong>{{ countdownDisplay }}</strong>. Please save your work — the system will restart
+        briefly.
+      </span>
+    </div>
+
     <!-- Loading overlay -->
     <v-overlay v-model="isLoading" persistent class="align-center justify-center loading-overlay" style="z-index: 9999">
       <div class="text-center">
@@ -7,22 +16,6 @@
         <div class="mt-6 text-h5 font-weight-bold text-white">{{ loadingMessage }}</div>
         <div v-if="retryCount > 0" class="mt-3 text-body-1 text-white">
           Retry attempt: {{ retryCount }}
-        </div>
-      </div>
-    </v-overlay>
-
-    <!-- Maintenance countdown overlay -->
-    <v-overlay v-model="maintenanceActive" persistent class="align-center justify-center maintenance-overlay"
-      style="z-index: 10000">
-      <div class="text-center">
-        <v-progress-circular indeterminate size="80" width="8" color="white" />
-        <div class="mt-6 text-h4 font-weight-bold text-white">System update starting</div>
-        <div class="mt-4 text-h6 text-white">
-          The system will go offline for an update in
-        </div>
-        <div class="mt-2 text-h2 font-weight-bold text-white">{{ countdownDisplay }}</div>
-        <div class="mt-4 text-body-1 text-white">
-          Please save any work now. This page will show an update notice shortly.
         </div>
       </div>
     </v-overlay>
@@ -168,17 +161,20 @@ onUnmounted(() => {
   z-index: 2;
 }
 
-.maintenance-overlay::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  z-index: 1;
-}
-
-.maintenance-overlay .text-center {
-  position: relative;
-  z-index: 2;
+.maintenance-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 16px;
+  background-color: #e65100;
+  color: #fff;
+  font-size: 0.95rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
 .v-overlay :deep(.v-overlay__scrim) {

@@ -11,16 +11,23 @@ public class BaseService
 {
     protected readonly string _connectionString;
     protected readonly MainPlcService _plcService;
+    protected readonly bool _isDevelopment;
 
     private readonly ConcurrentDictionary<int, (dynamic plcData, DateOnly productionDate, int shift, int lastWrittenMeasureQc)> _lastMachineMaster = new();
     private readonly ILogger<BaseService> _logger;
 
-    public BaseService(string connectionString, MainPlcService plcService, ILogger<BaseService> logger)
+    public BaseService(string connectionString, MainPlcService plcService, ILogger<BaseService> logger, bool isDevelopment = false)
     {
         _connectionString = connectionString;
         _plcService = plcService;
         _logger = logger;
+        _isDevelopment = isDevelopment;
     }
+
+    // Test machine (id_machine = 0) is shown only in Development. In Production this
+    // returns a SQL predicate excluding it; in Development it returns an empty string.
+    protected string TestMachineFilter(string column = "id_machine")
+        => _isDevelopment ? string.Empty : $"{column} <> 0";
 
     // ── Connection factory ────────────────────────────────────────────────────
 
@@ -83,12 +90,12 @@ public class BaseService
 
     public static string GetColor(string? category) => category switch
     {
-        "PRODUCTION RUNNING"                                                    => "#00ff00",
-        "PRODUCT BUYOFF"                                                        => "#808080",
-        "NO OPERATOR" or "NO SCHEDULE" or "MATERIAL DRYING" or "OTHERS PROD"    => "#ffff00",
-        "QUALITY ISSUE" or "SAMPLE RUNNING" or "MOULD CHANGE" or "OTHERS TECH"  => "#ff0000",
-        "SCHEDULED MAINTENANCE" or "MACHINE BREAKDOWN" or "OTHERS MAIN"         => "#ffa500",
-        _                                                                       => "#808080"
+        "PRODUCTION RUNNING" => "#00ff00",
+        "PRODUCT BUYOFF" => "#808080",
+        "NO OPERATOR" or "NO SCHEDULE" or "MATERIAL DRYING" or "OTHERS PROD" => "#ffff00",
+        "QUALITY ISSUE" or "SAMPLE RUNNING" or "MOULD CHANGE" or "OTHERS TECH" => "#ff0000",
+        "SCHEDULED MAINTENANCE" or "MACHINE BREAKDOWN" or "OTHERS MAIN" => "#ffa500",
+        _ => "#808080"
     };
 
     public async Task<object> LoadTimeline()
@@ -97,6 +104,9 @@ public class BaseService
         var (productionDate, shift) = GetProductionDate(time);
 
         var logUnion = await BuildMachineLogUnionAsync("production_date = @production_date AND shift = @shift");
+
+        var testFilter = TestMachineFilter("tl.id_machine");
+        var timelineWhere = testFilter.Length == 0 ? "" : $"WHERE {testFilter}";
 
         var sql = $@"
                     WITH timeline AS(
@@ -143,6 +153,7 @@ public class BaseService
                     FROM timeline tl
                     LEFT JOIN machine_master mm
                         ON tl.id_machine = mm.id_machine
+                    {timelineWhere}
                     ORDER BY tl.start DESC;";
 
         var result = new List<object>();
@@ -298,18 +309,18 @@ public class BaseService
             return;
         }
 
-        bool shift_change           = prev.productionDate != productionDate || prev.shift != shift;
-        bool category               = prev.plcData.stop_category != plcData.stop_category;
-        bool mould_category_no      = prev.plcData.mould_category_no != plcData.mould_category_no;
-        bool mould_change_started   = prev.plcData.stop_category != plcData.stop_category && plcData.stop_category == "MOULD CHANGE";
-        bool remark_signal          = !prev.plcData.remark_signal && plcData.remark_signal;
-        bool reject_signal          = !prev.plcData.reject_signal && plcData.reject_signal;
-        bool qc_signal              = !prev.plcData.qc_signal && plcData.qc_signal;
-        bool done                   = !prev.plcData.done && plcData.done;
-        bool machine_started        = !prev.plcData.status_start && plcData.status_start;
-        bool machine_stopped        = prev.plcData.status_start && !plcData.status_start;
-        bool production_running     = !prev.plcData.production_running && plcData.production_running;
-        bool qc_reset               = !prev.plcData.qc_reset_signal && plcData.qc_reset_signal;
+        bool shift_change = prev.productionDate != productionDate || prev.shift != shift;
+        bool category = prev.plcData.stop_category != plcData.stop_category;
+        bool mould_category_no = prev.plcData.mould_category_no != plcData.mould_category_no;
+        bool mould_change_started = prev.plcData.stop_category != plcData.stop_category && plcData.stop_category == "MOULD CHANGE";
+        bool remark_signal = !prev.plcData.remark_signal && plcData.remark_signal;
+        bool reject_signal = !prev.plcData.reject_signal && plcData.reject_signal;
+        bool qc_signal = !prev.plcData.qc_signal && plcData.qc_signal;
+        bool done = !prev.plcData.done && plcData.done;
+        bool machine_started = !prev.plcData.status_start && plcData.status_start;
+        bool machine_stopped = prev.plcData.status_start && !plcData.status_start;
+        bool production_running = !prev.plcData.production_running && plcData.production_running;
+        bool qc_reset = !prev.plcData.qc_reset_signal && plcData.qc_reset_signal;
 
         var util_changed = new List<(string utility_name, bool status)>();
         if (prev.plcData.util_barrel != plcData.util_barrel) util_changed.Add(("BARREL", plcData.util_barrel));

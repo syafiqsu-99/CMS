@@ -32,20 +32,6 @@ public class SupervisorController : ControllerBase
         return Ok(new { message = "Report saved." });
     }
 
-    [HttpGet("prev-report")]
-    public async Task<IActionResult> PrevReport([FromQuery] DateOnly production_date, [FromQuery] int shift)
-        => Ok(await _supervisorService.LoadPrevReport(production_date, shift));
-
-    [HttpPut("prev-report")]
-    public async Task<IActionResult> UpdatePrevReport([FromBody] ReportUpdateDto dto)
-    {
-        if (dto.reportList is null || dto.reportList.Count == 0)
-            return BadRequest(new { error = "No report rows provided." });
-
-        await _supervisorService.UpsertPrevReport(dto.production_date, dto.shift, dto.reportList);
-        return Ok(new { message = "Previous report saved." });
-    }
-
     [HttpGet("export-report")]
     public async Task<IActionResult> ExportReport([FromQuery] string production_date, [FromQuery] int shift)
     {
