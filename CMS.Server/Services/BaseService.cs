@@ -443,28 +443,6 @@ public class BaseService
         var tableName = $"machine_log_{master.id_machine}";
 
         var sql = $@"
-                IF NOT EXISTS (
-                    SELECT 1 FROM calendar
-                    WHERE production_date = @production_date AND shift = @shift
-                )
-                BEGIN
-                    INSERT INTO calendar (production_date, shift, day_type, planned_hours, start, finish)
-                    VALUES (
-                        @production_date,
-                        @shift,
-                        'NORMAL',
-                        12,
-                        CASE @shift
-                            WHEN 1 THEN CAST(CAST(@production_date AS DATETIME) + CAST('06:00:00' AS DATETIME) AS DATETIME)
-                            ELSE        CAST(CAST(@production_date AS DATETIME) + CAST('18:00:00' AS DATETIME) AS DATETIME)
-                        END,
-                        CASE @shift
-                            WHEN 1 THEN CAST(CAST(@production_date AS DATETIME) + CAST('18:00:00' AS DATETIME) AS DATETIME)
-                            ELSE        CAST(CAST(DATEADD(DAY, 1, @production_date) AS DATETIME) + CAST('06:00:00' AS DATETIME) AS DATETIME)
-                        END
-                    );
-                END
-
                 -- Update Reject Table
                 IF NOT EXISTS (SELECT 1 FROM reject WHERE id_machine = @id_machine AND id_type = @id_type AND mould = @mould AND production_date = @production_date AND shift = @shift)
                 BEGIN

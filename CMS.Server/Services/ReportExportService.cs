@@ -118,8 +118,6 @@ public class ReportExportService
         }
     }
 
-    // Scheduled path: honours the auto-save toggle, writes the daily file and
-    // appends the shift into the monthly file.
     public async Task ExportShiftAsync(DateOnly productionDate, int shift, CancellationToken ct = default)
     {
         var enabledRaw = await _settingService.GetSettingAsync("report_auto_save_enabled") ?? "false";
@@ -132,8 +130,6 @@ public class ReportExportService
         await ExportShiftToFolderAsync(productionDate, shift, ct);
     }
 
-    // Manual "save to folder" path: writes the daily file, appends into the
-    // monthly file, and returns the daily file path.
     public async Task<string> ExportShiftToFolderAsync(DateOnly productionDate, int shift, CancellationToken ct = default)
     {
         var rootPath = await _settingService.GetSettingAsync("report_folder_path");
@@ -147,7 +143,7 @@ public class ReportExportService
         Directory.CreateDirectory(monthFolder);
 
         var dailyPath = Path.Combine(monthFolder, $"{productionDate:dd.MM.yyyy}.xlsx");
-        var monthlyPath = Path.Combine(monthFolder, $"{productionDate.Month:00}.{productionDate.Year} - {MonthNames[productionDate.Month - 1]}.xlsx");
+        var monthlyPath = Path.Combine(monthFolder, $"{MonthNames[productionDate.Month - 1]} {productionDate.Year} - .xlsx");
 
         var (morningRows, nightRows, sapRows) = await LoadAllAsync(productionDate);
 

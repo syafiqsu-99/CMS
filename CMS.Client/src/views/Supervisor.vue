@@ -24,10 +24,6 @@
       <v-tabs-window-item :value="3" style="height: 100%; overflow: hidden;">
         <ProductDatabase @refresh-data="store.loadSAP" />
       </v-tabs-window-item>
-
-      <v-tabs-window-item :value="4" style="height: 100%; overflow: hidden;">
-        <ShiftCalendar />
-      </v-tabs-window-item>
     </v-tabs-window>
   </div>
 </template>
@@ -41,7 +37,6 @@ import ProdSchedule from '@/components/Supervisor/ProdSchedule.vue';
 import MachineManagement from '@/components/Supervisor/MachineSchedule.vue';
 import StaffSchedule from '@/components/Supervisor/StaffSchedule.vue';
 import ProductDatabase from '@/components/Supervisor/SAPSchedule.vue';
-import ShiftCalendar from '@/components/Supervisor/ShiftCalendar.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -52,7 +47,6 @@ const tabs = [
   { label: 'Machine Management', icon: 'mdi-robot-industrial', route: 'supervisor-machine-management' },
   { label: 'Staff Assignment', icon: 'mdi-account-clock', route: 'supervisor-staff-assignment' },
   { label: 'Product Database', icon: 'mdi-archive', route: 'supervisor-product-database' },
-  { label: 'Shift Calendar', icon: 'mdi-calendar-clock', route: 'supervisor-shift-calendar' },
 ];
 
 const activeTab = ref(route.meta.tab ?? 0);

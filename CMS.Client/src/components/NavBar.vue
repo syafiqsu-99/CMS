@@ -81,7 +81,6 @@ const supervisorChildren = [
   { name: 'supervisor-machine-management', label: 'Machine Management', icon: 'mdi-robot-industrial' },
   { name: 'supervisor-staff-assignment', label: 'Staff Assignment', icon: 'mdi-account-clock' },
   { name: 'supervisor-product-database', label: 'Product Database', icon: 'mdi-archive' },
-  { name: 'supervisor-shift-calendar', label: 'Shift Calendar', icon: 'mdi-calendar-clock' },
 ];
 
 const settingChildren = [

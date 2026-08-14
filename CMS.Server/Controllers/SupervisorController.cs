@@ -225,20 +225,6 @@ public class SupervisorController : ControllerBase
         }
     }
 
-    [HttpGet("shift-calendar")]
-    public async Task<IActionResult> GetShiftCalendar([FromQuery] int year, [FromQuery] int month)
-        => Ok(await _supervisorService.LoadShiftCalendar(year, month));
-
-    [HttpPut("shift-calendar")]
-    public async Task<IActionResult> UpdateShiftCalendar([FromBody] List<Calendar> entries)
-    {
-        if (entries is null || entries.Count == 0)
-            return BadRequest(new { error = "No entries provided." });
-
-        await _supervisorService.UpsertShiftCalendar(entries);
-        return Ok(new { message = $"Saved {entries.Count} calendar entries." });
-    }
-
     [HttpGet("sap")]
     public async Task<IActionResult> SAP()
         => Ok(await _supervisorService.LoadSAP());

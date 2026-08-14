@@ -61,6 +61,7 @@ public class Report
     public double production_dt { get; set; }
     public double buyoff_dt { get; set; }
     public double planned_dt { get; set; }
+    public double avail_hour { get; set; }
 
     #endregion
 

@@ -39,7 +39,7 @@ namespace CMS.Server.Services
             var staticTables = new[]
             {
                 "machine_master", "reject", "report", "sap", "staff_list",
-                "utilities", "attendance", "calendar", "plc_passwords", "db_log", "app_setting",
+                "utilities", "attendance", "plc_passwords", "db_log", "app_setting",
                 "material_group"
             };
 
@@ -533,18 +533,6 @@ namespace CMS.Server.Services
                     machine_name NVARCHAR(MAX),
                     production_date DATE,
                     shift INT
-                )";
-
-            if (table == "calendar")
-                return @"
-                CREATE TABLE calendar(
-                    production_date DATE NOT NULL,
-                    shift INT NOT NULL,
-                    day_type NVARCHAR(MAX) NOT NULL,
-                    planned_hours FLOAT NOT NULL DEFAULT 12,
-                    start DATETIME NOT NULL,
-                    finish DATETIME NULL,
-                    PRIMARY KEY (production_date, shift)
                 )";
 
             if (table == "plc_passwords")

@@ -20,7 +20,6 @@ const routes = [
       { path: 'machine-management', name: 'supervisor-machine-management', component: Supervisor, meta: { requireAuth: true, tab: 1 } },
       { path: 'staff-assignment', name: 'supervisor-staff-assignment', component: Supervisor, meta: { requireAuth: true, tab: 2 } },
       { path: 'product-database', name: 'supervisor-product-database', component: Supervisor, meta: { requireAuth: true, tab: 3 } },
-      { path: 'shift-calendar', name: 'supervisor-shift-calendar', component: Supervisor, meta: { requireAuth: true, tab: 4 } },
     ],
   },
   {
