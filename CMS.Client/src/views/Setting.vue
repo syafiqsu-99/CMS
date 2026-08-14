@@ -9,7 +9,7 @@
 
     <v-window v-model="activeTab" class="setting-window flex-grow-1" style="min-height: 0;">
       <v-window-item v-for="t in tabs" :key="t.value" :value="t.value" class="setting-window-item">
-        <component :is="t.component" />
+        <component :is="t.component" :active="t.value === activeTab" />
       </v-window-item>
     </v-window>
   </div>

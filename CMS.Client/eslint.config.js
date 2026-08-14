@@ -21,4 +21,12 @@ export default defineConfig([
 
   js.configs.recommended,
   ...pluginVue.configs['flat/essential'],
+
+  {
+    name: 'app/custom-rules',
+    files: ['**/*.vue'],
+    rules: {
+      'vue/valid-v-slot': ['error', { allowModifiers: true }]
+    }
+  }
 ])

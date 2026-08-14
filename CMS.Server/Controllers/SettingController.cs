@@ -204,7 +204,22 @@ public class SettingController(SettingService settingService, ReportExportServic
             return StatusCode(500, new { error = "Failed to export report.", detail = ex.Message });
         }
     }
+
+    [HttpPost("report/test-path")]
+    public async Task<IActionResult> TestReportPath([FromBody] ReportTestPathDto? dto)
+    {
+        try
+        {
+            var result = await reportExportService.TestFolderPathAsync(dto?.folderPath);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { ok = false, message = ex.Message });
+        }
+    }
 }
 
 public record ReportConfigDto(string? folderPath, bool autoSaveEnabled);
 public record ReportRunDto(string production_date, int shift, string? destination);
+public record ReportTestPathDto(string? folderPath);

@@ -23,7 +23,8 @@ builder.Services.AddScoped<ReportExportService>(sp =>
     new ReportExportService(
         connectionString,
         sp.GetRequiredService<SettingService>(),
-        sp.GetRequiredService<ILogger<ReportExportService>>()));
+        sp.GetRequiredService<ILogger<ReportExportService>>(),
+        isDevelopment));
 
 builder.Services.AddSingleton<BaseService>(sp =>
     new BaseService(connectionString, sp.GetRequiredService<MainPlcService>(), sp.GetRequiredService<ILogger<BaseService>>(), isDevelopment));

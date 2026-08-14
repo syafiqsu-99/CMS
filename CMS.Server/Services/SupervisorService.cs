@@ -2,6 +2,7 @@
 using Microsoft.Data.SqlClient;
 using System.Globalization;
 using System.Text.Json;
+using ClosedXML.Excel;
 
 namespace CMS.Server.Services;
 
@@ -708,8 +709,6 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                     await rebuildLogsCmd.ExecuteNonQueryAsync();
                 }
 
-                // Rebuild reject totals from the imported report rows, for the exact
-                // (id_machine, production_date, shift) tuples that were imported.
                 string rejectTupleValues = string.Join(", ",
                     grouped.Select(g => $"({g.Key.IdMachine}, '{g.Key.Date:yyyy-MM-dd}', {g.Key.Shift})"));
 
@@ -749,6 +748,161 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
         var reloadShift = Convert.ToInt32(reportList.First()["shift"].GetDouble());
 
         return await LoadReportFromTable(reloadDate, reloadShift);
+    }
+
+    private static readonly HashSet<string> ImportComputedColumns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "shift_output", "inward", "qty_balance", "material_used", "runner",
+        "reject_startup_per", "reject_prod_per", "avail_hour",
+    };
+
+    private static readonly string[] ImportRawColumns =
+    {
+        "machine_name", "production_date", "shift", "packer", "material", "id_type",
+        "mould", "type", "jo_no", "qty_perct", "gross_weight", "part_weight", "shot",
+        "qty_order", "wip_opening", "wip_closing", "finish_good", "qty_accum",
+        "reject_startup", "reject_prod", "act_ct", "production_running", "sap_ct",
+        "change_full_set", "change_half_set", "change_parts", "maintenance_dt",
+        "technician_dt", "production_dt", "buyoff_dt", "planned_dt", "remark",
+        "part_scrap", "reject_labelling", "reject_purging", "reject_preform",
+        "reject_total_pcs",
+    };
+
+    private static readonly HashSet<string> ImportIntColumns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "shift", "id_type", "mould", "qty_perct", "shot", "qty_order", "wip_opening",
+        "wip_closing", "finish_good", "qty_accum", "reject_total_pcs",
+    };
+
+    private static readonly HashSet<string> ImportTextColumns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "machine_name", "packer", "material", "type", "jo_no", "remark",
+    };
+
+    public List<Dictionary<string, JsonElement>> ParseReportXlsx(Stream fileStream)
+    {
+        using var workbook = new XLWorkbook(fileStream);
+
+        IXLWorksheet? ws = null;
+        foreach (var name in new[] { "Daily Report", "Monthly Report" })
+            if (workbook.Worksheets.TryGetWorksheet(name, out var found)) { ws = found; break; }
+
+        ws ??= workbook.Worksheets.FirstOrDefault()
+            ?? throw new FormatException("The uploaded file has no worksheets.");
+
+        int headerRow = 1;
+        var headerCells = ws.Row(headerRow).CellsUsed().ToList();
+        var colByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var cell in headerCells)
+        {
+            var key = cell.GetString().Trim();
+            if (!string.IsNullOrEmpty(key) && !colByKey.ContainsKey(key))
+                colByKey[key] = cell.Address.ColumnNumber;
+        }
+
+        foreach (var required in new[] { "machine_name", "production_date", "shift" })
+            if (!colByKey.ContainsKey(required))
+                throw new FormatException($"The report is missing the required '{required}' column.");
+
+        var rows = new List<Dictionary<string, JsonElement>>();
+        int lastRow = ws.LastRowUsed()?.RowNumber() ?? headerRow;
+
+        for (int r = headerRow + 1; r <= lastRow; r++)
+        {
+            var nameCol = colByKey["machine_name"];
+            var nameCell = ws.Cell(r, nameCol);
+
+            if (nameCell.IsEmpty() || string.IsNullOrWhiteSpace(nameCell.GetString()))
+                continue;
+
+            var obj = new Dictionary<string, object?>();
+
+            foreach (var key in ImportRawColumns)
+            {
+                if (!colByKey.TryGetValue(key, out var col)) continue;
+                var cell = ws.Cell(r, col);
+
+                if (key == "production_date")
+                {
+                    obj[key] = cell.DataType == XLDataType.DateTime
+                        ? cell.GetDateTime().ToString("yyyy-MM-dd")
+                        : cell.GetString().Trim();
+                }
+                else if (ImportTextColumns.Contains(key))
+                {
+                    obj[key] = cell.GetString().Trim();
+                }
+                else if (ImportIntColumns.Contains(key))
+                {
+                    obj[key] = cell.IsEmpty() ? 0 : (int)Math.Round(ReadNumber(cell));
+                }
+                else
+                {
+                    obj[key] = cell.IsEmpty() ? 0.0 : ReadNumber(cell);
+                }
+            }
+
+            var json = JsonSerializer.SerializeToElement(obj);
+            var dict = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+            foreach (var prop in json.EnumerateObject())
+                dict[prop.Name] = prop.Value;
+
+            rows.Add(dict);
+        }
+
+        if (rows.Count == 0)
+            throw new FormatException("No data rows were found in the report.");
+
+        return rows;
+    }
+
+    public object PreviewReportXlsx(Stream fileStream)
+    {
+        var rows = ParseReportXlsx(fileStream);
+
+        var groups = rows
+            .GroupBy(r => (
+                date: r.TryGetValue("production_date", out var d) ? d.GetString() ?? "" : "",
+                shift: r.TryGetValue("shift", out var s) && s.TryGetInt32(out var sv) ? sv : 0,
+                machine: r.TryGetValue("machine_name", out var m) ? m.GetString() ?? "" : ""
+            ))
+            .Select(g => new
+            {
+                production_date = g.Key.date,
+                shift = g.Key.shift,
+                machine_name = g.Key.machine,
+                count = g.Count()
+            })
+            .OrderBy(g => g.production_date)
+            .ThenBy(g => g.shift)
+            .ThenBy(g => g.machine_name)
+            .ToList();
+
+        return new
+        {
+            totalRows = rows.Count,
+            groups,
+            rows
+        };
+    }
+
+    public async Task<object> ImportReportFromXlsx(Stream fileStream)
+    {
+        var rows = ParseReportXlsx(fileStream);
+
+        var firstDate = ParseProductionDate(rows[0]["production_date"]);
+        var firstShift = rows[0]["shift"].TryGetInt32(out var s) ? s : 1;
+
+        return await ImportReport(rows, firstDate, firstShift);
+    }
+
+    private static double ReadNumber(IXLCell cell)
+    {
+        if (cell.DataType == XLDataType.Number) return cell.GetDouble();
+        var text = cell.GetString().Trim().Replace(",", "");
+        if (string.IsNullOrEmpty(text) || text == "-") return 0;
+        return double.TryParse(text, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : 0;
     }
     #endregion
 

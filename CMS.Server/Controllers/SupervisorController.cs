@@ -59,6 +59,51 @@ public class SupervisorController : ControllerBase
         }
     }
 
+
+    [HttpPost("import-report-xlsx/preview")]
+    public async Task<IActionResult> PreviewImportReportXlsx(IFormFile file)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "No file uploaded." });
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            var result = _supervisorService.PreviewReportXlsx(stream);
+            return Ok(result);
+        }
+        catch (FormatException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Could not read the report.", detail = ex.Message });
+        }
+    }
+
+    [HttpPost("import-report-xlsx")]
+    public async Task<IActionResult> ImportReportXlsx(IFormFile file)
+    {
+        if (file is null || file.Length == 0)
+            return BadRequest(new { message = "No file uploaded." });
+
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            var result = await _supervisorService.ImportReportFromXlsx(stream);
+            return Ok(result);
+        }
+        catch (FormatException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Import failed.", detail = ex.Message });
+        }
+    }
+
     [HttpPost("import-report")]
     public async Task<IActionResult> ImportReport([FromBody] List<Dictionary<string, JsonElement>> reportList)
     {

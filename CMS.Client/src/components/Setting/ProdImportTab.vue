@@ -1,192 +1,114 @@
 <template>
-    <div class="d-flex flex-column h-100 pa-3" style="min-height: 0; overflow: hidden;">
+    <div class="d-flex flex-column pa-3" style="height: 100%; overflow: hidden;">
         <div class="d-flex align-center flex-shrink-0 mb-2">
             <v-icon color="primary" class="mr-2">mdi-upload</v-icon>
             <div>
                 <div class="text-subtitle-1 font-weight-medium">Import Production Report</div>
-                <div class="text-caption text-medium-emphasis">Upload a CSV to replace saved report rows for the
-                    matching production date, shift and machine.</div>
+                <div class="text-caption text-medium-emphasis">Upload a saved report file to review, then write its rows
+                    back to the database.</div>
             </div>
             <v-spacer />
-            <v-btn color="primary" size="small" prepend-icon="mdi-file-upload-outline" @click="triggerImport">
-                Select CSV
+            <v-btn color="primary" size="small" prepend-icon="mdi-file-upload-outline" :loading="parsing"
+                @click="triggerImport">
+                Select Report File
             </v-btn>
-            <input ref="csvFileInput" type="file" accept=".csv" style="display: none;" @change="onCsvFileSelected" />
+            <input ref="fileInput" type="file"
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display: none;"
+                @change="onFileSelected" />
         </div>
 
+        <v-alert type="warning" variant="tonal" density="compact" border="start" class="flex-shrink-0 mb-3">
+            Importing replaces every saved row that matches a production date, shift and machine present in the file.
+            Existing values for those combinations are deleted before the new rows are inserted. Combinations not
+            present
+            in the file are left untouched.
+        </v-alert>
+
         <div class="flex-grow-1 overflow-y-auto pr-1" style="min-height: 0;">
-            <v-row class="ma-0 mb-1">
-                <v-col cols="12" lg="6" class="pa-2">
-                    <v-card variant="outlined" class="pa-4 rounded-lg h-100">
-                        <div class="d-flex align-center mb-2">
-                            <v-icon size="small" color="primary" class="mr-2">mdi-information-outline</v-icon>
-                            <span class="text-subtitle-2 font-weight-bold">CSV format &amp; required columns</span>
-                        </div>
+            <v-card v-if="!preview" variant="outlined" class="pa-4 rounded-lg mb-3">
+                <div class="d-flex align-center mb-2">
+                    <v-icon size="small" color="primary" class="mr-2">mdi-information-outline</v-icon>
+                    <span class="text-subtitle-2 font-weight-bold">How this works</span>
+                </div>
 
-                        <p class="text-body-2 mb-3">
-                            The first row must be a header row using the exact keys below. Order does not matter and
-                            extra columns are ignored. Numbers may include thousands separators; blank cells and a
-                            single dash are read as zero. Dates accept <code>d/M/yyyy</code>, <code>dd/MM/yyyy</code> or
-                            <code>yyyy-MM-dd</code>. The <code>machine_name</code> must match a machine set up under
-                            Machine Names.
-                        </p>
+                <p class="text-body-2 mb-3">
+                    Upload the same <code>.xlsx</code> report the system saves to the report folder (or downloads to
+                    your
+                    PC). To make corrections, open a saved report, edit the values, save it, then upload it here. You'll
+                    see exactly what will be written and can confirm before anything changes.
+                </p>
 
-                        <div class="text-caption font-weight-bold mb-1">Required in every row</div>
-                        <v-table density="compact" class="border rounded">
-                            <thead>
-                                <tr>
-                                    <th class="text-left">Column</th>
-                                    <th class="text-left">Type</th>
-                                    <th class="text-left">Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="c in requiredColumns" :key="c.key">
-                                    <td><code>{{ c.key }}</code></td>
-                                    <td>{{ c.type }}</td>
-                                    <td class="text-medium-emphasis">{{ c.note }}</td>
-                                </tr>
-                            </tbody>
-                        </v-table>
-                    </v-card>
-                </v-col>
+                <div class="text-caption font-weight-bold mb-1">What gets read</div>
+                <ul class="text-body-2 mb-3" style="padding-left: 18px;">
+                    <li>The <strong>Daily Report</strong> or <strong>Monthly Report</strong> sheet, using the header row
+                        of column names.</li>
+                    <li>Rows are matched on <code>machine_name</code>, <code>production_date</code> and
+                        <code>shift</code>. The machine name must match a machine set up under Machine Names.
+                    </li>
+                    <li>Blank rows (including the yellow shift separator in daily files) are skipped.</li>
+                    <li>Computed columns (shift output, material used, availability, percentages, etc.) are ignored and
+                        recalculated by the database, so edits to them have no effect.</li>
+                </ul>
+            </v-card>
 
-                <v-col cols="12" lg="6" class="pa-2">
-                    <v-card variant="outlined" class="pa-4 rounded-lg h-100">
-                        <div class="d-flex align-center mb-2">
-                            <v-icon size="small" color="primary" class="mr-2">mdi-format-list-bulleted</v-icon>
-                            <span class="text-subtitle-2 font-weight-bold">Optional data columns</span>
-                        </div>
-
-                        <div class="text-body-2 mb-2">
-                            <v-chip v-for="k in optionalIntColumns" :key="k" size="x-small" label class="mr-1 mb-1"
-                                color="blue">{{ k }}</v-chip>
-                            <v-chip v-for="k in optionalFloatColumns" :key="k" size="x-small" label class="mr-1 mb-1"
-                                color="teal">{{ k }}</v-chip>
-                            <v-chip v-for="k in optionalTextColumns" :key="k" size="x-small" label class="mr-1 mb-1"
-                                color="grey">{{ k }}</v-chip>
-                        </div>
-
-                        <div class="text-caption text-medium-emphasis mb-4">
-                            Blue = whole number, teal = decimal, grey = text. Computed columns (shift output, material
-                            used, availability, etc.) are derived on the server and must not be included.
-                        </div>
-
-                        <v-btn size="small" variant="text" color="primary" prepend-icon="mdi-download"
-                            @click="downloadTemplate">
-                            Download blank template
-                        </v-btn>
-                    </v-card>
-                </v-col>
-            </v-row>
-
-            <div v-if="fileName" class="d-flex align-center mb-2 px-2">
-                <v-icon size="small" class="mr-1">mdi-file-delimited-outline</v-icon>
-                <span class="text-body-2 mr-2">{{ fileName }}</span>
-                <v-chip size="x-small" label color="success" class="mr-1">{{ validCount }} valid</v-chip>
-                <v-chip v-if="errorCount" size="x-small" label color="error">{{ errorCount }} with issues</v-chip>
-            </div>
-
-            <v-alert v-if="parseError" type="error" density="compact" variant="tonal" class="mb-2 mx-2">
+            <v-alert v-if="parseError" type="error" density="compact" variant="tonal" class="mb-2">
                 {{ parseError }}
             </v-alert>
 
-            <div v-if="preview.length" class="border rounded overflow-x-auto mx-2" style="max-height: 40vh;">
-                <table class="preview-table">
+            <template v-if="preview">
+                <div class="d-flex align-center mb-2">
+                    <v-icon size="small" class="mr-1">mdi-file-excel-outline</v-icon>
+                    <span class="text-body-2 mr-2">{{ fileName }}</span>
+                    <v-chip size="x-small" label color="primary" class="mr-1">{{ preview.totalRows }} row(s)</v-chip>
+                    <v-chip size="x-small" label color="deep-purple">{{ preview.groups.length }} group(s)</v-chip>
+                </div>
+
+                <div class="text-caption font-weight-bold mb-1">Data to be replaced</div>
+                <v-table density="compact" class="border rounded mb-3" style="max-width: 640px;">
                     <thead>
                         <tr>
-                            <th class="status-col">Row</th>
-                            <th v-for="key in previewColumns" :key="key">{{ key }}</th>
+                            <th class="text-left">Production Date</th>
+                            <th class="text-left">Shift</th>
+                            <th class="text-left">Machine</th>
+                            <th class="text-right">Rows</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="row in preview" :key="row._line" :class="{ 'error-row': row._errors.length }">
-                            <td class="status-col">
-                                <v-tooltip v-if="row._errors.length" location="right">
-                                    <template #activator="{ props }">
-                                        <v-icon v-bind="props" color="error" size="small">mdi-alert-circle</v-icon>
-                                    </template>
-                                    <div v-for="(e, idx) in row._errors" :key="idx">{{ e }}</div>
-                                </v-tooltip>
-                                <v-icon v-else color="success" size="small">mdi-check-circle</v-icon>
-                                <span class="ml-1 text-caption">{{ row._line }}</span>
-                            </td>
-                            <td v-for="key in previewColumns" :key="key"
-                                :class="{ 'cell-error': row._errorKeys.has(key) }">
-                                {{ formatCell(row.data[key]) }}
-                            </td>
+                        <tr v-for="(g, i) in preview.groups" :key="i">
+                            <td>{{ g.production_date }}</td>
+                            <td>{{ g.shift }}</td>
+                            <td>{{ g.machine_name }}</td>
+                            <td class="text-right">{{ g.count }}</td>
                         </tr>
                     </tbody>
-                </table>
-            </div>
+                </v-table>
+
+                <div class="text-caption font-weight-bold mb-1">Rows to import</div>
+                <div class="border rounded overflow-x-auto" style="max-height: 34vh;">
+                    <table class="preview-table">
+                        <thead>
+                            <tr>
+                                <th v-for="key in previewColumns" :key="key">{{ key }}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(row, i) in preview.rows" :key="i">
+                                <td v-for="key in previewColumns" :key="key">{{ formatCell(row[key]) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </template>
         </div>
 
-        <div v-if="preview.length" class="d-flex align-center flex-shrink-0 mt-3">
+        <div v-if="preview" class="d-flex align-center flex-shrink-0 mt-3">
             <v-spacer />
-            <v-btn variant="text" class="mr-2" @click="resetImport">Clear</v-btn>
-            <v-btn color="primary" :disabled="validCount === 0" :loading="importing" prepend-icon="mdi-database-import"
-                @click="startImport">
-                Import {{ validCount }} row(s)
+            <v-btn variant="text" class="mr-2" :disabled="importing" @click="resetImport">Clear</v-btn>
+            <v-btn color="error" variant="elevated" prepend-icon="mdi-database-import" :loading="importing"
+                @click="sendImport">
+                Confirm &amp; import {{ preview.totalRows }} row(s)
             </v-btn>
         </div>
-
-        <v-dialog v-model="errorDialog.visible" max-width="480" persistent>
-            <v-card>
-                <v-card-title class="text-warning">
-                    <v-icon start>mdi-alert</v-icon>
-                    {{ errorCount }} row(s) have issues
-                </v-card-title>
-                <v-card-text>
-                    <p class="text-body-2 mb-2">
-                        The file contains {{ errorCount }} row(s) with invalid or missing values. How would you like to
-                        proceed?
-                    </p>
-                    <p class="text-body-2 mb-0">
-                        <strong>Skip</strong> imports the {{ validCount }} valid row(s) and ignores the rest.
-                        <strong>Stop</strong> cancels the import so you can correct the file.
-                    </p>
-                </v-card-text>
-                <v-card-actions>
-                    <v-spacer />
-                    <v-btn variant="text" @click="errorDialog.visible = false">Stop</v-btn>
-                    <v-btn color="primary" variant="elevated" :disabled="validCount === 0"
-                        @click="confirmSkipAndImport">
-                        Skip bad rows &amp; import
-                    </v-btn>
-                </v-card-actions>
-            </v-card>
-        </v-dialog>
-
-        <v-dialog v-model="confirmDialog.visible" max-width="480" persistent>
-            <v-card>
-                <v-card-title class="text-error">
-                    <v-icon start>mdi-database-alert</v-icon>
-                    Replace existing data?
-                </v-card-title>
-                <v-card-text>
-                    <p class="text-body-2 mb-2">
-                        This import will delete and replace saved report and reject data for the following combinations
-                        of
-                        production date, shift and machine:
-                    </p>
-                    <div class="border rounded pa-2 mb-2" style="max-height: 180px; overflow-y: auto;">
-                        <div v-for="g in confirmDialog.groups" :key="g.label" class="text-caption">
-                            {{ g.label }} <span class="text-medium-emphasis">({{ g.count }} row{{ g.count === 1 ? '' :
-                                's'
-                            }})</span>
-                        </div>
-                    </div>
-                    <p class="text-body-2 mb-0">This action cannot be undone.</p>
-                </v-card-text>
-                <v-card-actions>
-                    <v-spacer />
-                    <v-btn variant="text" @click="confirmDialog.visible = false">Cancel</v-btn>
-                    <v-btn color="error" variant="elevated" :loading="importing" @click="sendImport">
-                        Replace &amp; import
-                    </v-btn>
-                </v-card-actions>
-            </v-card>
-        </v-dialog>
 
         <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="4000" location="bottom right">
             {{ snackbar.message }}
@@ -200,275 +122,90 @@
 <script setup>
 import { ref, computed } from 'vue';
 
-const csvFileInput = ref(null);
+const fileInput = ref(null);
 const fileName = ref('');
+const selectedFile = ref(null);
+const parsing = ref(false);
 const importing = ref(false);
 const parseError = ref('');
-const preview = ref([]);
-const knownMachineNames = ref(new Set());
+const preview = ref(null);
 
 const snackbar = ref({ show: false, message: '', color: 'success' });
-const errorDialog = ref({ visible: false });
-const confirmDialog = ref({ visible: false, groups: [] });
 
-const requiredColumns = [
-    { key: 'machine_name', type: 'text', note: 'Must match a machine under Machine Names' },
-    { key: 'production_date', type: 'date', note: 'd/M/yyyy, dd/MM/yyyy or yyyy-MM-dd' },
-    { key: 'shift', type: 'whole number', note: '1 = Morning, 2 = Night' },
-    { key: 'id_type', type: 'whole number', note: 'SAP product code' },
-    { key: 'mould', type: 'whole number', note: 'mould number' },
-];
-
-const optionalIntColumns = ['qty_perct', 'shot', 'qty_order', 'wip_opening', 'wip_closing', 'finish_good', 'qty_accum', 'reject_total_pcs'];
-const optionalFloatColumns = ['gross_weight', 'part_weight', 'sap_ct', 'act_ct', 'production_running', 'reject_startup', 'reject_prod', 'reject_purging', 'reject_preform', 'change_full_set', 'change_half_set', 'change_parts', 'maintenance_dt', 'technician_dt', 'production_dt', 'buyoff_dt', 'planned_dt'];
-const optionalTextColumns = ['packer', 'jo_no', 'remark'];
-
-const REQUIRED_KEYS = requiredColumns.map(c => c.key);
-const INT_KEYS = new Set(['shift', 'id_type', 'mould', ...optionalIntColumns]);
-const FLOAT_KEYS = new Set(optionalFloatColumns);
-const DATE_KEYS = new Set(['production_date']);
-const TEXT_REQUIRED_KEYS = new Set(['machine_name']);
-const TEMPLATE_KEYS = ['machine_name', 'production_date', 'shift', 'id_type', 'mould', ...optionalIntColumns, ...optionalFloatColumns, ...optionalTextColumns];
-
-const validCount = computed(() => preview.value.filter(r => r._errors.length === 0).length);
-const errorCount = computed(() => preview.value.filter(r => r._errors.length > 0).length);
+// Column order for the preview table: identity keys first, then whatever else the
+// server returned. Server already dropped computed columns.
+const KEY_ORDER = ['machine_name', 'production_date', 'shift', 'id_type', 'mould'];
 
 const previewColumns = computed(() => {
+    if (!preview.value?.rows?.length) return [];
     const seen = new Set();
     const cols = [];
-    for (const key of [...REQUIRED_KEYS, ...optionalIntColumns, ...optionalFloatColumns, ...optionalTextColumns]) {
-        if (preview.value.some(r => key in r.data) && !seen.has(key)) { seen.add(key); cols.push(key); }
+    for (const key of KEY_ORDER) {
+        if (preview.value.rows.some(r => key in r) && !seen.has(key)) { seen.add(key); cols.push(key); }
     }
-    for (const row of preview.value) {
-        for (const key of Object.keys(row.data)) {
+    for (const row of preview.value.rows) {
+        for (const key of Object.keys(row)) {
             if (!seen.has(key)) { seen.add(key); cols.push(key); }
         }
     }
     return cols;
 });
 
-async function loadMachineNames() {
-    try {
-        const res = await fetch('/api/setting/machines');
-        if (!res.ok) return;
-        const data = await res.json();
-        knownMachineNames.value = new Set(data.map(d => String(d.machine_name ?? '').trim().toLowerCase()));
-    } catch {
-        knownMachineNames.value = new Set();
-    }
-}
-
 function triggerImport() {
-    if (csvFileInput.value) {
-        csvFileInput.value.value = '';
-        csvFileInput.value.click();
+    if (fileInput.value) {
+        fileInput.value.value = '';
+        fileInput.value.click();
     }
 }
 
-function parseCsv(text) {
-    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
-    if (lines.length < 2) return { headers: [], rows: [] };
-
-    const splitLine = (line) => {
-        const values = [];
-        let current = '';
-        let inQuotes = false;
-        for (let i = 0; i < line.length; i++) {
-            const ch = line[i];
-            if (ch === '"') {
-                inQuotes = !inQuotes;
-            } else if (ch === ',' && !inQuotes) {
-                values.push(current.trim());
-                current = '';
-            } else {
-                current += ch;
-            }
-        }
-        values.push(current.trim());
-        return values;
-    };
-
-    const headers = splitLine(lines[0]).map(h => h.trim());
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-        const values = splitLine(lines[i]);
-        if (!values.some(v => v !== '')) continue;
-        const row = {};
-        headers.forEach((h, idx) => { row[h] = values[idx] ?? ''; });
-        rows.push({ line: i + 1, raw: row });
-    }
-    return { headers, rows };
-}
-
-const DATE_RE = /^(\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{2}-\d{2})$/;
-
-function normaliseNumber(str) {
-    return str.replace(/^(-?\d{1,3})(,\d{3})+(\.\d+)?$/, m => m.replace(/,/g, ''));
-}
-
-function validateAndBuildRow(entry) {
-    const errors = [];
-    const errorKeys = new Set();
-    const data = {};
-
-    for (const [rawKey, rawVal] of Object.entries(entry.raw)) {
-        const key = rawKey.trim();
-        if (!key) continue;
-
-        const trimmed = String(rawVal ?? '').trim();
-        const blank = trimmed === '' || trimmed === '-';
-
-        if (DATE_KEYS.has(key)) {
-            if (blank || !DATE_RE.test(trimmed)) {
-                errors.push(`${key}: invalid or missing date`);
-                errorKeys.add(key);
-            }
-            data[key] = trimmed;
-            continue;
-        }
-
-        if (TEXT_REQUIRED_KEYS.has(key)) {
-            if (blank) {
-                errors.push(`${key}: required`);
-                errorKeys.add(key);
-            } else if (!knownMachineNames.value.has(trimmed.toLowerCase())) {
-                errors.push(`${key}: '${trimmed}' is not a known machine`);
-                errorKeys.add(key);
-            }
-            data[key] = trimmed;
-            continue;
-        }
-
-        if (INT_KEYS.has(key)) {
-            if (blank) {
-                if (REQUIRED_KEYS.includes(key)) { errors.push(`${key}: required`); errorKeys.add(key); }
-                data[key] = 0;
-            } else {
-                const num = Number(normaliseNumber(trimmed));
-                if (!Number.isFinite(num) || !Number.isInteger(num)) {
-                    errors.push(`${key}: not a whole number`);
-                    errorKeys.add(key);
-                    data[key] = trimmed;
-                } else {
-                    data[key] = num;
-                }
-            }
-            continue;
-        }
-
-        if (FLOAT_KEYS.has(key)) {
-            if (blank) {
-                data[key] = 0;
-            } else {
-                const num = Number(normaliseNumber(trimmed));
-                if (!Number.isFinite(num)) {
-                    errors.push(`${key}: not a number`);
-                    errorKeys.add(key);
-                    data[key] = trimmed;
-                } else {
-                    data[key] = num;
-                }
-            }
-            continue;
-        }
-
-        data[key] = blank ? '' : trimmed;
-    }
-
-    for (const key of REQUIRED_KEYS) {
-        if (!(key in data)) {
-            errors.push(`${key}: column missing`);
-            errorKeys.add(key);
-        }
-    }
-
-    if ('shift' in data && !errorKeys.has('shift') && data.shift !== 1 && data.shift !== 2) {
-        errors.push('shift: must be 1 or 2');
-        errorKeys.add('shift');
-    }
-
-    return { _line: entry.line, data, _errors: errors, _errorKeys: errorKeys };
-}
-
-async function onCsvFileSelected(event) {
+async function onFileSelected(event) {
     const file = event.target.files?.[0];
     if (!file) return;
 
     resetImport();
+    selectedFile.value = file;
     fileName.value = file.name;
 
-    await loadMachineNames();
-
+    parsing.value = true;
     try {
-        const text = await file.text();
-        const { headers, rows } = parseCsv(text);
+        const form = new FormData();
+        form.append('file', file);
 
-        if (!rows.length) {
-            parseError.value = 'The file is empty or could not be parsed.';
-            return;
-        }
+        const res = await fetch('/api/supervisor/import-report-xlsx/preview', {
+            method: 'POST',
+            body: form,
+        });
 
-        const missingRequired = REQUIRED_KEYS.filter(k => !headers.includes(k));
-        if (missingRequired.length) {
-            parseError.value = `Missing required column(s): ${missingRequired.join(', ')}. See the format guide above.`;
-            return;
-        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || `Server responded with ${res.status}`);
 
-        preview.value = rows.map(validateAndBuildRow);
+        preview.value = data;
     } catch (err) {
-        parseError.value = `Could not read the file: ${err.message}`;
+        parseError.value = `Could not read the report: ${err.message}`;
+        selectedFile.value = null;
+    } finally {
+        parsing.value = false;
     }
-}
-
-function buildGroups(rows) {
-    const map = new Map();
-    for (const r of rows) {
-        const key = `${r.data.production_date}|${r.data.shift}|${r.data.machine_name}`;
-        const label = `${r.data.production_date} · Shift ${r.data.shift} · ${r.data.machine_name}`;
-        if (!map.has(key)) map.set(key, { label, count: 0 });
-        map.get(key).count += 1;
-    }
-    return [...map.values()].sort((a, b) => a.label.localeCompare(b.label));
-}
-
-function startImport() {
-    if (errorCount.value > 0) {
-        errorDialog.value.visible = true;
-        return;
-    }
-    openConfirm();
-}
-
-function confirmSkipAndImport() {
-    errorDialog.value.visible = false;
-    openConfirm();
-}
-
-function openConfirm() {
-    const validRows = preview.value.filter(r => r._errors.length === 0);
-    confirmDialog.value = { visible: true, groups: buildGroups(validRows) };
 }
 
 async function sendImport() {
+    if (!selectedFile.value) return;
+
     importing.value = true;
     try {
-        const payload = preview.value.filter(r => r._errors.length === 0).map(r => r.data);
+        const form = new FormData();
+        form.append('file', selectedFile.value);
 
-        const response = await fetch('/api/supervisor/import-report', {
+        const res = await fetch('/api/supervisor/import-report-xlsx', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: form,
         });
 
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.message || `Server responded with ${response.status}`);
-        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.message || `Server responded with ${res.status}`);
 
-        const updated = await response.json();
-        const count = Array.isArray(updated) ? updated.length : payload.length;
-        showSnackbar(`Import complete — ${count} row(s) written.`, 'success');
-        confirmDialog.value.visible = false;
+        const count = Array.isArray(data) ? data.length : (data?.updated ?? preview.value?.totalRows ?? '');
+        showSnackbar(`Import complete${count !== '' ? ` \u2014 ${count} row(s) written.` : '.'}`, 'success');
         resetImport();
     } catch (err) {
         showSnackbar(`Import failed: ${err.message}`, 'error');
@@ -477,23 +214,11 @@ async function sendImport() {
     }
 }
 
-function downloadTemplate() {
-    const csv = TEMPLATE_KEYS.join(',') + '\n';
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = Object.assign(document.createElement('a'), { href: url, download: 'production_report_template.csv' });
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
-
 function resetImport() {
     fileName.value = '';
+    selectedFile.value = null;
     parseError.value = '';
-    preview.value = [];
-    errorDialog.value.visible = false;
-    confirmDialog.value = { visible: false, groups: [] };
+    preview.value = null;
 }
 
 function formatCell(v) {
@@ -527,28 +252,6 @@ function showSnackbar(message, color = 'success') {
     background: #8EA9DB;
     color: #000;
     z-index: 2;
-    font-weight: 600;
-}
-
-.preview-table .status-col {
-    position: sticky;
-    left: 0;
-    background: #f5f5f5;
-    z-index: 1;
-    text-align: center;
-}
-
-.preview-table thead .status-col {
-    z-index: 3;
-    background: #8EA9DB;
-}
-
-.error-row td {
-    background: #ffebee;
-}
-
-.cell-error {
-    background: #ef9a9a !important;
     font-weight: 600;
 }
 </style>

@@ -32,12 +32,16 @@
 
                         <div class="text-caption text-medium-emphasis mt-2">
                             Files are saved as
-                            <code>&lt;path&gt;\&lt;month&gt;. &lt;Month&gt;\dd.MM.yyyy.xlsx</code>.
+                            <code>&lt;path&gt;\&lt;month&gt;. &lt;Month&gt;\dd.MM.yyyy.xlsx</code>, with a monthly
+                            roll-up in the same folder.
                         </div>
 
                         <div class="d-flex align-center mt-4 ga-3 flex-wrap">
-                            <v-btn variant="outlined" @click="loadConfig">Reset</v-btn>
                             <v-btn color="primary" :loading="saving" @click="saveConfig">Save</v-btn>
+                            <v-btn variant="outlined" color="primary" :loading="testing"
+                                prepend-icon="mdi-folder-search-outline" @click="testPath">
+                                Test Path
+                            </v-btn>
                             <span v-if="statusMessage" :class="statusColor" class="text-body-2">
                                 {{ statusMessage }}
                             </span>
@@ -111,6 +115,7 @@ const folderPath = ref('');
 const autoSaveEnabled = ref(false);
 const loading = ref(false);
 const saving = ref(false);
+const testing = ref(false);
 const statusMessage = ref('');
 const statusColor = ref('text-success');
 
@@ -183,6 +188,37 @@ async function saveConfig() {
         if (showSnackbar) showSnackbar(`Failed to save: ${err.message}`, 'error');
     } finally {
         saving.value = false;
+    }
+}
+
+async function testPath() {
+    if (!folderPath.value.trim()) {
+        statusMessage.value = '✗ Enter a folder path to test.';
+        statusColor.value = 'text-error';
+        return;
+    }
+
+    testing.value = true;
+    statusMessage.value = '';
+    try {
+        const res = await fetch('/api/setting/report/test-path', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ folderPath: folderPath.value.trim() }),
+        });
+        const data = await res.json().catch(() => ({ ok: false, message: res.statusText }));
+        if (data.ok) {
+            statusMessage.value = `✓ ${data.message}`;
+            statusColor.value = 'text-success';
+        } else {
+            statusMessage.value = `✗ ${data.message}`;
+            statusColor.value = 'text-error';
+        }
+    } catch (err) {
+        statusMessage.value = `✗ Path test failed: ${err.message}`;
+        statusColor.value = 'text-error';
+    } finally {
+        testing.value = false;
     }
 }
 
