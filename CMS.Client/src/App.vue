@@ -1,6 +1,5 @@
 <template>
   <v-app>
-    <!-- Maintenance countdown banner (non-blocking, does not affect navigation) -->
     <div v-if="maintenanceActive" class="maintenance-banner">
       <v-icon size="20" class="mr-2">mdi-alert</v-icon>
       <span>
@@ -91,6 +90,7 @@ const now = ref(Date.now());
 
 let maintenancePollTimer = null;
 let countdownTimer = null;
+let wasMaintenance = false;
 
 const countdownDisplay = computed(() => {
   if (!shutdownAt.value) return '--';
@@ -105,7 +105,13 @@ async function pollMaintenance() {
   if (result.active) {
     shutdownAt.value = result.shutdownAt;
     maintenanceActive.value = true;
+    wasMaintenance = true;
   } else {
+    // Falling edge: a maintenance window just ended — reload once to pick up the new bundle
+    if (wasMaintenance) {
+      window.location.reload();
+      return;
+    }
     maintenanceActive.value = false;
     shutdownAt.value = null;
   }

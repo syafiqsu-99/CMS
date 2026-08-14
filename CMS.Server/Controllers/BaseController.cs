@@ -8,12 +8,10 @@ namespace CMS.Server.Controllers;
 public class BaseController : ControllerBase
 {
     private readonly BaseService _baseService;
-    private readonly IWebHostEnvironment _env;
 
-    public BaseController(BaseService baseService, IWebHostEnvironment env)
+    public BaseController(BaseService baseService)
     {
         _baseService = baseService;
-        _env = env;
     }
 
     [HttpGet("Health")]
@@ -41,7 +39,7 @@ public class BaseController : ControllerBase
     [HttpGet("Maintenance")]
     public IActionResult Maintenance()
     {
-        var flagPath = Path.Combine(_env.ContentRootPath, "maintenance.flag");
+        var flagPath = Path.Combine(AppContext.BaseDirectory, "maintenance.flag");
 
         if (!System.IO.File.Exists(flagPath))
             return Ok(new { active = false, shutdownAt = (long?)null });

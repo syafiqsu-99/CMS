@@ -33,7 +33,7 @@
                         return r.json();
                     })
                     .then(function (d) {
-                        if (d && d.status === 'Ready') { window.location.href = '/'; }
+                        if (d && d.status === 'Ready') { window.location.replace('/?_=' + Date.now()); }
                         else { setTimeout(check, POLL); }
                     })
                     .catch(function () { setTimeout(check, POLL); });
