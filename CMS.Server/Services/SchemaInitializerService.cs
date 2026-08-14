@@ -39,7 +39,8 @@ namespace CMS.Server.Services
             var staticTables = new[]
             {
                 "machine_master", "reject", "report", "sap", "staff_list",
-                "utilities", "attendance", "calendar", "plc_passwords", "db_log", "app_setting"
+                "utilities", "attendance", "calendar", "plc_passwords", "db_log", "app_setting",
+                "material_group"
             };
 
             foreach (var table in staticTables)
@@ -60,6 +61,9 @@ namespace CMS.Server.Services
 
                     if (table == "app_setting")
                         await SeedAppSettingAsync(conn);
+
+                    if (table == "material_group")
+                        await SeedMaterialGroupAsync(conn);
                 }
                 else
                 {
@@ -67,6 +71,9 @@ namespace CMS.Server.Services
 
                     if (table == "app_setting")
                         await SeedAppSettingAsync(conn);
+
+                    if (table == "material_group")
+                        await SeedMaterialGroupAsync(conn);
                 }
             }
 
@@ -186,9 +193,7 @@ namespace CMS.Server.Services
                     {
                         var cols = line.Substring(pStart + 1, pEnd - pStart - 1).Split(',');
                         foreach (var c in cols)
-                        {
                             pkColumns.Add(c.Trim().Trim('[', ']'));
-                        }
                     }
                 }
             }
@@ -197,64 +202,29 @@ namespace CMS.Server.Services
             {
                 string line = rawLine.Trim().TrimEnd(',');
                 if (string.IsNullOrWhiteSpace(line)) continue;
-
                 if (line.StartsWith("PRIMARY KEY", StringComparison.OrdinalIgnoreCase)) continue;
-                if (line.StartsWith("CONSTRAINT", StringComparison.OrdinalIgnoreCase)) continue;
                 if (line.Contains(" AS ", StringComparison.OrdinalIgnoreCase)) continue;
 
-                string colName, remainder;
+                int firstSpace = line.IndexOf(' ');
+                if (firstSpace <= 0) continue;
 
-                if (line.StartsWith("["))
-                {
-                    int close = line.IndexOf(']');
-                    if (close < 0) continue;
-                    colName = line.Substring(1, close - 1);
-                    remainder = line.Substring(close + 1).Trim();
-                }
-                else
-                {
-                    int space = line.IndexOf(' ');
-                    if (space < 0) continue;
-                    colName = line.Substring(0, space);
-                    remainder = line.Substring(space + 1).Trim();
-                }
+                string columnName = line.Substring(0, firstSpace).Trim().Trim('[', ']');
+                string def = line.Substring(firstSpace + 1).Trim();
 
-                string typeDef = remainder;
-                string fullDef = remainder;
+                if (columnName.Equals("PRIMARY", StringComparison.OrdinalIgnoreCase)) continue;
+                if (def.Contains("IDENTITY", StringComparison.OrdinalIgnoreCase)) continue;
+                if (pkColumns.Contains(columnName)) continue;
 
-                bool isNotNull = typeDef.IndexOf("NOT NULL", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 typeDef.IndexOf("PRIMARY KEY", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 typeDef.IndexOf("IDENTITY", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 pkColumns.Contains(colName);
+                string cleanDef = def
+                    .Replace("PRIMARY KEY", "", StringComparison.OrdinalIgnoreCase)
+                    .Trim();
 
-                int pkIdx = typeDef.IndexOf("PRIMARY KEY", StringComparison.OrdinalIgnoreCase);
-                if (pkIdx >= 0) typeDef = typeDef.Substring(0, pkIdx).Trim();
-
-                int identityIdx = typeDef.IndexOf("IDENTITY", StringComparison.OrdinalIgnoreCase);
-                if (identityIdx >= 0) typeDef = typeDef.Substring(0, identityIdx).Trim();
-
-                int defaultIdx = typeDef.IndexOf("DEFAULT", StringComparison.OrdinalIgnoreCase);
-                if (defaultIdx >= 0) typeDef = typeDef.Substring(0, defaultIdx).Trim();
-
-                int notNullIdx = typeDef.IndexOf("NOT NULL", StringComparison.OrdinalIgnoreCase);
-                if (notNullIdx >= 0) typeDef = typeDef.Substring(0, notNullIdx).Trim();
-
-                int nullIdx = typeDef.IndexOf("NULL", StringComparison.OrdinalIgnoreCase);
-                if (nullIdx >= 0) typeDef = typeDef.Substring(0, nullIdx).Trim();
-
-                typeDef = typeDef.Trim();
-
-                if (isNotNull)
-                    typeDef += " NOT NULL";
-                else
-                    typeDef += " NULL";
-
-                if (!string.IsNullOrWhiteSpace(colName) && !string.IsNullOrWhiteSpace(typeDef))
-                    result[colName] = (typeDef, fullDef);
+                result[columnName] = (cleanDef, def);
             }
 
             return result;
         }
+
         private static bool ColumnTypeMatches(string columnDef, string dbType, int? dbMaxLength, string dbNullable)
         {
             string def = columnDef.ToUpper().Trim();
@@ -306,6 +276,50 @@ namespace CMS.Server.Services
             await cmd.ExecuteNonQueryAsync();
         }
 
+        private static async Task SeedMaterialGroupAsync(SqlConnection conn)
+        {
+            using var countCmd = new SqlCommand("SELECT COUNT(*) FROM material_group", conn);
+            int count = (int)(await countCmd.ExecuteScalarAsync() ?? 0);
+            if (count > 0) return;
+
+            string? legacyJson;
+            using (var getCmd = new SqlCommand("SELECT [Value] FROM app_setting WHERE [Key] = 'material_groups'", conn))
+            {
+                var raw = await getCmd.ExecuteScalarAsync();
+                legacyJson = raw is null or DBNull ? null : (string?)raw;
+            }
+
+            if (string.IsNullOrWhiteSpace(legacyJson)) return;
+
+            Dictionary<string, List<string>>? legacy = null;
+            try
+            {
+                legacy = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, List<string>>>(legacyJson);
+            }
+            catch
+            {
+                legacy = null;
+            }
+
+            if (legacy is null) return;
+
+            const string insertSql = @"
+                IF NOT EXISTS (SELECT 1 FROM material_group WHERE material = @material)
+                    INSERT INTO material_group (material, group_name) VALUES (@material, @group_name);";
+
+            foreach (var (groupName, materials) in legacy)
+            {
+                foreach (var material in materials)
+                {
+                    if (string.IsNullOrWhiteSpace(material)) continue;
+                    using var insCmd = new SqlCommand(insertSql, conn);
+                    insCmd.Parameters.AddWithValue("@material", material.Trim());
+                    insCmd.Parameters.AddWithValue("@group_name", groupName);
+                    await insCmd.ExecuteNonQueryAsync();
+                }
+            }
+        }
+
         private static async Task<bool> TableExistsAsync(SqlConnection conn, string tableName)
         {
             using var cmd = new SqlCommand(
@@ -343,6 +357,14 @@ namespace CMS.Server.Services
                 [Key] NVARCHAR(100) NOT NULL PRIMARY KEY,
                 [Value] NVARCHAR(1000) NULL,
                 [updated_at] DATETIME NOT NULL DEFAULT GETDATE()
+            )";
+
+            if (table == "material_group")
+                return @"
+            CREATE TABLE material_group(
+                material NVARCHAR(255) NOT NULL PRIMARY KEY,
+                group_name NVARCHAR(20) NOT NULL,
+                updated_at DATETIME NOT NULL DEFAULT GETDATE()
             )";
 
             if (table == "machine_master")
@@ -446,6 +468,7 @@ namespace CMS.Server.Services
                     production_dt FLOAT,
                     buyoff_dt FLOAT,
                     planned_dt FLOAT,
+                    avail_hour AS (COALESCE([production_running],0)+COALESCE([change_full_set],0)+COALESCE([change_half_set],0)+COALESCE([change_parts],0)+COALESCE([maintenance_dt],0)+COALESCE([technician_dt],0)+COALESCE([production_dt],0)+COALESCE([buyoff_dt],0)+COALESCE([planned_dt],0)) PERSISTED,
                     remark NVARCHAR(MAX),
                     part_scrap FLOAT,
                     reject_labelling FLOAT,

@@ -1,6 +1,5 @@
 ﻿using CMS.Server.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.SqlClient;
 using System.Text.Json;
 
 namespace CMS.Server.Controllers;
@@ -74,6 +73,56 @@ public class SettingController(SettingService settingService, ReportExportServic
         }
     }
 
+    // ── Machine names ────────────────────────────────────────────────────────────
+
+    [HttpGet("machines")]
+    public async Task<IActionResult> GetMachineNames()
+    {
+        try
+        {
+            var result = await settingService.LoadMachineNames();
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to load machine names.", detail = ex.Message });
+        }
+    }
+
+    [HttpPut("machines")]
+    public async Task<IActionResult> UpdateMachineNames([FromBody] Dictionary<string, JsonElement> payload)
+    {
+        try
+        {
+            var names = new Dictionary<int, string>();
+            foreach (var (key, element) in payload)
+            {
+                if (!int.TryParse(key, out int idMachine))
+                    return BadRequest(new { error = $"Invalid machine id '{key}'." });
+
+                string name = element.ValueKind == JsonValueKind.String
+                    ? element.GetString() ?? string.Empty
+                    : element.ToString();
+
+                names[idMachine] = name;
+            }
+
+            if (names.Count == 0)
+                return BadRequest(new { error = "No machine names supplied." });
+
+            var result = await settingService.UpdateMachineNames(names);
+            return Ok(result);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to update machine names.", detail = ex.Message });
+        }
+    }
+
     // ── Logs ───────────────────────────────────────────────────────────────────
 
     [HttpGet("db-log")]
@@ -143,7 +192,6 @@ public class SettingController(SettingService settingService, ReportExportServic
                 return Ok(new { message = "Report saved to folder.", filePath });
             }
 
-            // Default: download to the user's PC.
             var (bytes, fileName) = await reportExportService.BuildWorkbookBytesAsync(parsedDate, dto.shift, HttpContext.RequestAborted);
             return File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }

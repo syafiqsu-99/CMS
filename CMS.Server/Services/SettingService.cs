@@ -162,4 +162,56 @@ public class SettingService(MainPlcService mainPlcService, SubPlcService subPlcS
 
         return new { folderPath, autoSaveEnabled };
     }
+
+    public async Task<List<object>> LoadMachineNames()
+    {
+        const string sql = @"
+            SELECT id_machine, COALESCE(machine_name, '') AS machine_name
+            FROM machine_master
+            ORDER BY id_machine";
+
+        var result = new List<object>();
+        using var conn = await CreateConnectionAsync();
+        await using var cmd = new SqlCommand(sql, conn);
+        using var reader = await cmd.ExecuteReaderAsync();
+
+        while (await reader.ReadAsync())
+            result.Add(new
+            {
+                id_machine = reader.GetInt32(0),
+                machine_name = reader.GetString(1),
+            });
+
+        return result;
+    }
+
+    public async Task<object> UpdateMachineNames(Dictionary<int, string> names)
+    {
+        const string updateSql = @"
+            UPDATE machine_master
+            SET machine_name = @machine_name
+            WHERE id_machine = @id_machine;";
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (_, rawName) in names)
+        {
+            var trimmed = (rawName ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(trimmed))
+                throw new ArgumentException("Machine name cannot be empty.");
+            if (!seen.Add(trimmed))
+                throw new ArgumentException($"Duplicate machine name: '{trimmed}'. Names must be unique.");
+        }
+
+        using var conn = await CreateConnectionAsync();
+        int updated = 0;
+        foreach (var (idMachine, rawName) in names)
+        {
+            await using var cmd = new SqlCommand(updateSql, conn);
+            cmd.Parameters.AddWithValue("@id_machine", idMachine);
+            cmd.Parameters.AddWithValue("@machine_name", rawName.Trim());
+            updated += await cmd.ExecuteNonQueryAsync();
+        }
+
+        return new { success = true, updated };
+    }
 }

@@ -67,18 +67,28 @@ public class SupervisorController : ControllerBase
 
         foreach (var row in reportList)
         {
-            if (!row.ContainsKey("production_date") || !row.ContainsKey("shift"))
-                return BadRequest(new { message = "Each row must contain 'production_date' and 'shift'." });
+            if (!row.ContainsKey("machine_name") || !row.ContainsKey("production_date") || !row.ContainsKey("shift"))
+                return BadRequest(new { message = "Each row must contain 'machine_name', 'production_date' and 'shift'." });
         }
+
+        var firstDate = reportList[0].TryGetValue("production_date", out var dEl) && dEl.ValueKind == JsonValueKind.String
+            ? dEl.GetString()
+            : null;
+        var firstShift = reportList[0].TryGetValue("shift", out var sEl) && sEl.TryGetInt32(out var s) ? s : 1;
 
         try
         {
-            var data = await _supervisorService.ImportReport(reportList, DateOnly.MinValue, 0);
-            return Ok(data);
+            var parsedDate = DateOnly.TryParse(firstDate, out var pd) ? pd : DateOnly.MinValue;
+            var result = await _supervisorService.ImportReport(reportList, parsedDate, firstShift);
+            return Ok(result);
+        }
+        catch (FormatException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { error = ex.Message });
+            return StatusCode(500, new { message = "Import failed.", detail = ex.Message });
         }
     }
 

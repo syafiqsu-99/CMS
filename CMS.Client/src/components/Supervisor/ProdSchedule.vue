@@ -45,11 +45,6 @@
           <v-icon size="small">mdi-download</v-icon>
           Export
         </v-btn>
-        <v-btn color="info" @click="triggerImport" size="small" :loading="importing">
-          <v-icon size="small">mdi-upload</v-icon>
-          Import
-        </v-btn>
-        <input ref="csvFileInput" type="file" accept=".csv" style="display: none;" @change="onCsvFileSelected" />
       </div>
     </div>
     <v-snackbar v-model="snackbar.show" :color="snackbar.color" :timeout="3000" location="bottom right">
@@ -82,8 +77,6 @@ const snackbar = ref({
 const store = useMachineStore();
 const dailyReport = ref([]);
 const loading = ref(false);
-const importing = ref(false);
-const csvFileInput = ref(null);
 
 const productHeaders = [
   { title: 'M/C No', key: 'machine_name', width: '100px', backgroundColor: '#8EA9DB' },
@@ -181,20 +174,18 @@ function sanitizeRow(row) {
   return clean;
 }
 
+function roundFloats(row) {
+  const clean = { ...row };
+  for (const key of FLOAT_FIELDS) if (key in clean) clean[key] = f(clean[key]);
+  return clean;
+}
+
 const production_date = ref(null);
 const shift = ref(null);
 
 const f = (v, d = 2) => parseFloat((parseFloat(v) || 0).toFixed(d));
 const n = (v) => parseFloat(v) || 0;
 const i = (v) => parseInt(v) || 0;
-
-function roundFloats(row) {
-  const out = { ...row };
-  for (const key of FLOAT_FIELDS) {
-    if (key in out && out[key] !== null && out[key] !== '') out[key] = f(out[key]);
-  }
-  return out;
-}
 
 function getDate() {
   return new Date().toISOString().split('T')[0];
@@ -363,10 +354,11 @@ async function saveReport() {
       ...row,
       _orig_id_type: row.id_type,
       _orig_mould: row.mould
-    }))
+    }));
+    showSnackbar('Report saved.', 'success');
   } catch (err) {
     console.error('Save error:', err);
-    throw err;
+    showSnackbar(`Save failed: ${err.message}`, 'error');
   } finally {
     loading.value = false;
   }
@@ -375,8 +367,6 @@ async function saveReport() {
 async function exportProducts() {
   loading.value = true;
   try {
-    loading.value = true;
-
     const selectedDate = formatDate(production_date.value);
     const response = await fetch(
       `/api/supervisor/export-report?production_date=${selectedDate}&shift=${shift.value}`,
@@ -395,129 +385,9 @@ async function exportProducts() {
     setTimeout(() => { document.body.removeChild(link); window.URL.revokeObjectURL(url); }, 100);
   } catch (err) {
     console.error('Export error:', err);
+    showSnackbar(`Export failed: ${err.message}`, 'error');
   } finally {
     loading.value = false;
-  }
-}
-
-function triggerImport() {
-  if (csvFileInput.value) {
-    csvFileInput.value.value = '';
-    csvFileInput.value.click();
-  }
-}
-
-function parseCsv(text) {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
-  if (lines.length < 2) return [];
-
-  const headers = lines[0].split(',').map(h => h.trim());
-
-  return lines.slice(1).map(line => {
-    const values = [];
-    let current = '';
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') {
-        inQuotes = !inQuotes;
-      } else if (ch === ',' && !inQuotes) {
-        values.push(current.trim());
-        current = '';
-      } else {
-        current += ch;
-      }
-    }
-    values.push(current.trim());
-
-    const row = {};
-    headers.forEach((h, idx) => {
-      row[h] = values[idx] ?? '';
-    });
-    return row;
-  }).filter(row => Object.values(row).some(v => v !== ''));
-}
-
-const CSV_INT_FIELDS = new Set([
-  'id_machine', 'id_type', 'mould', 'shift',
-  'qty_perct',
-  'shot',
-  'qty_order', 'wip_opening', 'wip_closing',
-  'finish_good', 'qty_accum', 'reject_total_pcs'
-])
-
-const CSV_FLOAT_FIELDS = new Set([
-  'gross_weight', 'part_weight',
-  'reject_startup', 'reject_prod',
-  'act_ct', 'production_running', 'sap_ct',
-  'change_full_set', 'change_half_set', 'change_parts',
-  'maintenance_dt', 'technician_dt', 'production_dt', 'buyoff_dt', 'planned_dt',
-  'reject_purging', 'reject_preform'
-])
-
-function sanitiseCsvRow(row) {
-  const clean = {}
-  for (const [rawKey, rawVal] of Object.entries(row)) {
-    const key = rawKey
-
-    const strVal = (rawVal == null || String(rawVal).trim() === '-' || String(rawVal).trim() === '')
-      ? ''
-      : String(rawVal).trim()
-
-    const numStr = strVal.replace(/^(-?\d{1,3})(,\d{3})+(\.\d+)?$/, m => m.replace(/,/g, ''))
-
-    if (CSV_INT_FIELDS.has(key)) {
-      clean[key] = parseInt(numStr) || 0
-    } else if (CSV_FLOAT_FIELDS.has(key)) {
-      clean[key] = parseFloat(numStr) || 0
-    } else {
-      clean[key] = strVal
-    }
-  }
-  return clean
-}
-
-async function onCsvFileSelected(event) {
-  const file = event.target.files?.[0];
-  if (!file) return;
-
-  importing.value = true;
-  try {
-    const text = await file.text();
-    const rawRows = parseCsv(text);
-
-    if (!rawRows.length) {
-      showSnackbar('CSV file is empty or could not be parsed.', 'error');
-      return;
-    }
-
-    const rows = rawRows.map(sanitiseCsvRow)
-
-    const response = await fetch('/api/supervisor/import-report', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(rows)
-    });
-
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.message || `HTTP error! status: ${response.status}`);
-    }
-
-    const updated = await response.json();
-
-    dailyReport.value = updated.map(row => ({
-      ...row,
-      _orig_id_type: row.id_type,
-      _orig_mould: row.mould
-    }));
-
-    showSnackbar(`Import successful — ${updated.length} row(s) updated.`, 'success');
-  } catch (err) {
-    console.error('Import error:', err);
-    showSnackbar(`Import failed: ${err.message}`, 'error');
-  } finally {
-    importing.value = false;
   }
 }
 

@@ -474,16 +474,36 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
                 @maintenance_dt, @technician_dt, @production_dt, @buyoff_dt, @planned_dt,
                 @remark, @reject_purging, @reject_preform, @reject_total_pcs
             );";
-        // NOTE: @new_id_type / @new_mould retained as the CSV's id_type / mould.
 
         using var conn = await CreateConnectionAsync();
 
         var machineList = await GetMachineIdsAsync();
-        var machineNameMap = machineList.ToDictionary(m => m.id, m => m.name);
+        var nameToId = machineList.ToDictionary(
+            m => m.name.Trim(),
+            m => (id: m.id, canonical: m.name),
+            StringComparer.OrdinalIgnoreCase);
+
+        int ResolveMachineId(Dictionary<string, JsonElement> row)
+        {
+            if (!row.TryGetValue("machine_name", out var nameEl) || nameEl.ValueKind != JsonValueKind.String)
+                throw new FormatException("Each row must contain a 'machine_name' value.");
+
+            var name = (nameEl.GetString() ?? string.Empty).Trim();
+            if (!nameToId.TryGetValue(name, out var hit))
+                throw new FormatException($"Unknown machine name: '{name}'. It does not match any machine in machine_master.");
+
+            return hit.id;
+        }
+
+        string ResolveMachineName(Dictionary<string, JsonElement> row)
+        {
+            var name = (row["machine_name"].GetString() ?? string.Empty).Trim();
+            return nameToId.TryGetValue(name, out var hit) ? hit.canonical : name;
+        }
 
         var grouped = reportList
             .GroupBy(r => (
-                IdMachine: Convert.ToInt32(r["id_machine"].GetDouble()),
+                IdMachine: ResolveMachineId(r),
                 Date: ParseProductionDate(r["production_date"]),
                 Shift: Convert.ToInt32(r["shift"].GetDouble())
             ))
@@ -554,7 +574,7 @@ public class SupervisorService(MainPlcService mainPlcService, string connectionS
 
                     await using var cmd = new SqlCommand(insertSql, conn);
                     cmd.Parameters.AddWithValue("@id_machine", idMachine);
-                    cmd.Parameters.AddWithValue("@machine_name", machineNameMap.TryGetValue(idMachine, out var mName) ? mName : string.Empty);
+                    cmd.Parameters.AddWithValue("@machine_name", ResolveMachineName(csvRow));
                     cmd.Parameters.AddWithValue("@production_date", rowDate);
                     cmd.Parameters.AddWithValue("@shift", rowShift);
                     cmd.Parameters.AddWithValue("@packer", packer);

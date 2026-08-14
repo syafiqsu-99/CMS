@@ -1,64 +1,79 @@
 <template>
-    <div class="d-flex flex-column h-100 pa-2" style="min-height: 0;">
-        <div class="text-subtitle-1 font-weight-bold mb-2 flex-shrink-0">
-            Daily Report Auto-Save
+    <div class="d-flex flex-column h-100 pa-3" style="min-height: 0;">
+        <div class="d-flex align-center flex-shrink-0 mb-3">
+            <v-icon color="primary" class="mr-2">mdi-file-excel-outline</v-icon>
+            <div>
+                <div class="text-subtitle-1 font-weight-medium">Daily Report Auto-Save</div>
+                <div class="text-caption text-medium-emphasis">Configure automatic shift exports and run manual exports.
+                </div>
+            </div>
         </div>
 
-        <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-4" />
+        <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-2 flex-shrink-0" />
 
-        <div class="flex-grow-1 overflow-auto" style="min-height: 0;">
-            <v-card variant="outlined" class="pa-4 rounded-lg mb-4" style="max-width: 720px;">
-                <v-switch v-model="autoSaveEnabled"
-                    :label="autoSaveEnabled ? 'Auto-save enabled' : 'Auto-save disabled'" color="primary" hide-details
-                    class="mb-2" @update:model-value="onToggle" />
+        <div class="flex-grow-1 overflow-y-auto" style="min-height: 0;">
+            <v-row class="ma-0">
+                <v-col cols="12" lg="6">
+                    <v-card variant="outlined" class="pa-2 rounded-lg">
+                        <div class="text-subtitle-2 font-weight-bold mb-3">Auto-Save</div>
 
-                <div class="text-caption text-medium-emphasis mb-4">
-                    When enabled, a report file is written to the folder below after each shift
-                    (06:00 and 18:00). A folder path is required to enable auto-save.
-                </div>
+                        <v-switch v-model="autoSaveEnabled"
+                            :label="autoSaveEnabled ? 'Auto-save enabled' : 'Auto-save disabled'" color="primary"
+                            hide-details class="mb-2" @update:model-value="onToggle" />
 
-                <v-text-field v-model="folderPath" label="Report Folder Path" placeholder="\\server\share\Reports"
-                    variant="outlined" density="compact" hide-details prepend-inner-icon="mdi-folder-outline" />
+                        <div class="text-caption text-medium-emphasis mb-4">
+                            When enabled, a report file is written to the folder below after each shift
+                            (06:00 and 18:00). A folder path is required to enable auto-save.
+                        </div>
 
-                <div class="text-caption text-medium-emphasis mt-2">
-                    Files are saved as
-                    <code>&lt;path&gt;\&lt;month&gt;. &lt;Month&gt;\dd.MM.yyyy.xlsx</code>.
-                </div>
+                        <v-text-field v-model="folderPath" label="Report Folder Path"
+                            placeholder="\\server\share\Reports" variant="outlined" density="compact" hide-details
+                            prepend-inner-icon="mdi-folder-outline" />
 
-                <div class="d-flex align-center mt-4 ga-3">
-                    <v-btn variant="outlined" @click="loadConfig">Reset</v-btn>
-                    <v-btn color="primary" :loading="saving" @click="saveConfig">Save</v-btn>
-                    <span v-if="statusMessage" :class="statusColor" class="text-body-2">
-                        {{ statusMessage }}
-                    </span>
-                </div>
-            </v-card>
+                        <div class="text-caption text-medium-emphasis mt-2">
+                            Files are saved as
+                            <code>&lt;path&gt;\&lt;month&gt;. &lt;Month&gt;\dd.MM.yyyy.xlsx</code>.
+                        </div>
 
-            <v-card variant="outlined" class="pa-4 rounded-lg" style="max-width: 720px;">
-                <div class="text-subtitle-2 font-weight-bold mb-1">Manual Export</div>
-                <div class="text-caption text-medium-emphasis mb-4">
-                    Generate the file for a chosen production date and shift now. If a folder path is
-                    set you can choose to save there or download to your PC; otherwise it downloads to
-                    your PC.
-                </div>
+                        <div class="d-flex align-center mt-4 ga-3 flex-wrap">
+                            <v-btn variant="outlined" @click="loadConfig">Reset</v-btn>
+                            <v-btn color="primary" :loading="saving" @click="saveConfig">Save</v-btn>
+                            <span v-if="statusMessage" :class="statusColor" class="text-body-2">
+                                {{ statusMessage }}
+                            </span>
+                        </div>
+                    </v-card>
+                </v-col>
 
-                <div class="d-flex align-center flex-wrap ga-3">
-                    <v-text-field v-model="runDate" label="Production Date" type="date" variant="outlined"
-                        density="compact" hide-details style="max-width: 200px;" />
+                <v-col cols="12" lg="6">
+                    <v-card variant="outlined" class="pa-2 rounded-lg">
+                        <div class="text-subtitle-2 font-weight-bold mb-1">Manual Export</div>
+                        <div class="text-caption text-medium-emphasis mb-4">
+                            Generate the file for a chosen production date and shift now. If a folder path is
+                            set you can choose to save there or download to your PC; otherwise it downloads to
+                            your PC.
+                        </div>
 
-                    <v-select v-model="runShift" :items="shiftOptions" item-title="label" item-value="value"
-                        label="Shift" variant="outlined" density="compact" hide-details style="max-width: 180px;" />
+                        <div class="d-flex align-center flex-wrap ga-3">
+                            <v-text-field v-model="runDate" label="Production Date" type="date" variant="outlined"
+                                density="compact" hide-details style="max-width: 200px;" />
 
-                    <v-btn color="success" :loading="running" prepend-icon="mdi-file-export-outline"
-                        @click="onExportClick">
-                        Export Now
-                    </v-btn>
-                </div>
+                            <v-select v-model="runShift" :items="shiftOptions" item-title="label" item-value="value"
+                                label="Shift" variant="outlined" density="compact" hide-details
+                                style="max-width: 180px;" />
 
-                <div v-if="runMessage" :class="runColor" class="text-body-2 mt-3">
-                    {{ runMessage }}
-                </div>
-            </v-card>
+                            <v-btn color="success" :loading="running" prepend-icon="mdi-file-export-outline"
+                                @click="onExportClick">
+                                Export Now
+                            </v-btn>
+                        </div>
+
+                        <div v-if="runMessage" :class="runColor" class="text-body-2 mt-3">
+                            {{ runMessage }}
+                        </div>
+                    </v-card>
+                </v-col>
+            </v-row>
         </div>
 
         <v-dialog v-model="destDialog" max-width="440px">
@@ -178,7 +193,6 @@ function onExportClick() {
         return;
     }
 
-    // If a folder path is configured, let the user choose; otherwise download to PC.
     if (folderPath.value.trim()) {
         destDialog.value = true;
     } else {

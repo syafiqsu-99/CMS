@@ -1384,34 +1384,92 @@ public class OEEService(MainPlcService mainPlcService, string connectionString, 
 
     // ── Config: material groups ──────────────────────────────────────────────────
 
+    // ── Config: material groups ──────────────────────────────────────────────────
+
     public async Task<object> GetMaterialGroupsAsync()
     {
         var (mapping, available) = await LoadMaterialGroupsInternalAsync();
         return new { mapping, available };
     }
 
-    // Private: consumed by LoadWastageAsync (needs the raw tuple).
     private async Task<(Dictionary<string, List<string>> mapping, List<string> available)> LoadMaterialGroupsInternalAsync()
     {
-        string? json = await GetAppSettingAsync("material_groups");
-        var mapping = string.IsNullOrWhiteSpace(json)
-            ? new Dictionary<string, List<string>> { ["PET"] = new(), ["PE"] = new(), ["PP"] = new() }
-            : JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json)
-              ?? new Dictionary<string, List<string>> { ["PET"] = new(), ["PE"] = new(), ["PP"] = new() };
+        var mapping = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["PET"] = new(),
+            ["PE"] = new(),
+            ["PP"] = new(),
+        };
+
+        await using var conn = await CreateConnectionAsync();
+
+        await using (var mapCmd = new SqlCommand(
+            "SELECT material, group_name FROM material_group WHERE material IS NOT NULL AND LTRIM(RTRIM(material)) <> '' ORDER BY group_name, material", conn))
+        await using (var mapReader = await mapCmd.ExecuteReaderAsync())
+        {
+            while (await mapReader.ReadAsync())
+            {
+                string material = Convert.ToString(mapReader["material"])!;
+                string group = Convert.ToString(mapReader["group_name"]) ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(group)) continue;
+
+                if (!mapping.TryGetValue(group, out var list))
+                {
+                    list = new List<string>();
+                    mapping[group] = list;
+                }
+                list.Add(material);
+            }
+        }
 
         var available = new List<string>();
-        await using var conn = await CreateConnectionAsync();
-        await using var cmd = new SqlCommand(
-            "SELECT DISTINCT material FROM sap WHERE material IS NOT NULL AND LTRIM(RTRIM(material)) <> '' ORDER BY material", conn);
-        await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-            available.Add(Convert.ToString(reader["material"])!);
+        await using (var availCmd = new SqlCommand(
+            "SELECT DISTINCT material FROM sap WHERE material IS NOT NULL AND LTRIM(RTRIM(material)) <> '' ORDER BY material", conn))
+        await using (var availReader = await availCmd.ExecuteReaderAsync())
+        {
+            while (await availReader.ReadAsync())
+                available.Add(Convert.ToString(availReader["material"])!);
+        }
 
         return (mapping, available);
     }
 
     public async Task SaveMaterialGroupsAsync(Dictionary<string, List<string>> groups)
-        => await UpsertAppSettingAsync("material_groups", JsonSerializer.Serialize(groups));
+    {
+        await using var conn = await CreateConnectionAsync();
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync();
+
+        try
+        {
+            await using (var clearCmd = new SqlCommand("DELETE FROM material_group;", conn, tx))
+                await clearCmd.ExecuteNonQueryAsync();
+
+            const string insertSql = @"
+                IF NOT EXISTS (SELECT 1 FROM material_group WHERE material = @material)
+                    INSERT INTO material_group (material, group_name, updated_at)
+                    VALUES (@material, @group_name, GETDATE());";
+
+            foreach (var (groupName, materials) in groups)
+            {
+                if (materials is null) continue;
+                foreach (var material in materials)
+                {
+                    if (string.IsNullOrWhiteSpace(material)) continue;
+                    await using var insCmd = new SqlCommand(insertSql, conn, tx);
+                    insCmd.Parameters.AddWithValue("@material", material.Trim());
+                    insCmd.Parameters.AddWithValue("@group_name", groupName);
+                    await insCmd.ExecuteNonQueryAsync();
+                }
+            }
+
+            await tx.CommitAsync();
+        }
+        catch
+        {
+            await tx.RollbackAsync();
+            throw;
+        }
+    }
 
     // ── Config: mould setup targets ──────────────────────────────────────────────
 

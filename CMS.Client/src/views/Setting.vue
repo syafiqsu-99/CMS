@@ -1,65 +1,74 @@
-<!-- eslint-disable vue/multi-word-component-names -->
 <template>
-  <v-container fluid class="pa-2 h-100 d-flex flex-column">
-    <v-row no-gutters align="center" justify="center">
-      <v-col cols="12" class="text-center">
-        <h2 class="font-weight-bold">SETTINGS</h2>
-      </v-col>
-    </v-row>
+  <div class="setting-page d-flex flex-column" style="height: 100%; min-height: 0; overflow: hidden;">
+    <v-tabs v-model="activeTab" color="primary" density="compact" show-arrows class="flex-shrink-0 border-b">
+      <v-tab v-for="t in tabs" :key="t.value" :value="t.value" @click="goTo(t.route)">
+        <v-icon start>{{ t.icon }}</v-icon>
+        {{ t.label }}
+      </v-tab>
+    </v-tabs>
 
-    <v-row no-gutters class="flex-grow-1 flex-shrink-1" style="height: 90vh;">
-      <v-col cols="12" class="pa-1 d-flex" style="height: 100%;">
-        <v-card variant="text" class="d-flex flex-column" elevation="2"
-          style="width: 100%; height: 100%; overflow: hidden;">
-          <v-card-text class="d-flex flex-column pa-2" style="height: 100%; overflow: hidden;">
-
-            <v-tabs v-model="activeTab" color="primary" density="compact" class="flex-shrink-0">
-              <v-tab value="password">
-                <v-icon start>mdi-lock-outline</v-icon>
-                Password
-              </v-tab>
-              <v-tab value="signals">
-                <v-icon start>mdi-sine-wave</v-icon>
-                PLC Signals
-              </v-tab>
-              <v-tab value="report">
-                <v-icon start>mdi-file-excel-outline</v-icon>
-                Report
-              </v-tab>
-              <v-tab value="dblog">
-                <v-icon start>mdi-database-eye</v-icon>
-                DB Log
-              </v-tab>
-            </v-tabs>
-
-            <v-window v-model="activeTab" class="flex-grow-1 h-100" style="min-height: 0;">
-              <v-window-item value="password" class="h-100 overflow-auto">
-                <PasswordTab />
-              </v-window-item>
-              <v-window-item value="signals" class="h-100 overflow-hidden">
-                <PlcSignalMonitor />
-              </v-window-item>
-              <v-window-item value="report" class="h-100 overflow-auto">
-                <ReportTab />
-              </v-window-item>
-              <v-window-item value="dblog" class="h-100 overflow-hidden">
-                <DbLogTab />
-              </v-window-item>
-            </v-window>
-
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
-  </v-container>
+    <v-window v-model="activeTab" class="setting-window flex-grow-1" style="min-height: 0;">
+      <v-window-item v-for="t in tabs" :key="t.value" :value="t.value" class="setting-window-item">
+        <component :is="t.component" />
+      </v-window-item>
+    </v-window>
+  </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch, markRaw } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import PasswordTab from '@/components/Setting/PasswordTab.vue';
 import PlcSignalMonitor from '@/components/Setting/PlcSignalMonitor.vue';
 import ReportTab from '@/components/Setting/ReportTab.vue';
+import ProdImportTab from '@/components/Setting/ProdImportTab.vue';
+import MachineNameTab from '@/components/Setting/MachineNameTab.vue';
+import MaterialGroupTab from '@/components/Setting/MaterialGroupTab.vue';
 import DbLogTab from '@/components/Setting/DbLogTab.vue';
 
-const activeTab = ref('password');
+const route = useRoute();
+const router = useRouter();
+
+const tabs = [
+  { value: 'password', label: 'Password', icon: 'mdi-lock-outline', route: 'setting-password', component: markRaw(PasswordTab) },
+  { value: 'signals', label: 'PLC Signals', icon: 'mdi-sine-wave', route: 'setting-plc-signals', component: markRaw(PlcSignalMonitor) },
+  { value: 'report', label: 'Report', icon: 'mdi-file-excel-outline', route: 'setting-report', component: markRaw(ReportTab) },
+  { value: 'import', label: 'Import Report', icon: 'mdi-upload', route: 'setting-import-report', component: markRaw(ProdImportTab) },
+  { value: 'machines', label: 'Machine Names', icon: 'mdi-tag-text-outline', route: 'setting-machine-names', component: markRaw(MachineNameTab) },
+  { value: 'material', label: 'Material Groups', icon: 'mdi-shape-outline', route: 'setting-material-groups', component: markRaw(MaterialGroupTab) },
+  { value: 'dblog', label: 'DB Log', icon: 'mdi-database-eye', route: 'setting-db-log', component: markRaw(DbLogTab) },
+];
+
+const activeTab = ref(route.meta.tab ?? 'password');
+
+watch(() => route.meta.tab, (tab) => {
+  if (tab && tab !== activeTab.value) activeTab.value = tab;
+});
+
+function goTo(name) {
+  if (route.name !== name) router.push({ name });
+}
 </script>
+
+<style scoped>
+.setting-window,
+.setting-window :deep(.v-window__container) {
+  height: 100%;
+  min-height: 0;
+}
+
+.setting-window :deep(.v-window-item) {
+  height: 100%;
+  min-height: 0;
+}
+
+.setting-window-item {
+  height: 100%;
+  min-height: 0;
+}
+
+.setting-window-item> :deep(*) {
+  height: 100%;
+  min-height: 0;
+}
+</style>

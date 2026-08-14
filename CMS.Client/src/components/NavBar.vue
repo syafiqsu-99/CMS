@@ -1,31 +1,43 @@
 <template>
   <v-layout class="h-screen">
     <v-navigation-drawer expand-on-hover permanent rail class="nav-bar" @update:rail="isRail = $event">
-      <v-list>
+      <v-list class="flex-shrink-0">
         <v-list-item prepend-avatar="/JJlogo.png" subtitle="CMS" title="Central Monitoring System"></v-list-item>
       </v-list>
 
       <v-divider></v-divider>
 
-      <v-list>
-        <v-list-item prepend-icon="mdi-monitor-dashboard" title="Dashboard" :to="{ name: 'dashboard' }"
-          link></v-list-item>
+      <div class="nav-scroll flex-grow-1">
+        <v-list nav>
+          <v-list-item prepend-icon="mdi-monitor-dashboard" title="Dashboard" :to="{ name: 'dashboard' }"
+            link></v-list-item>
 
-        <v-list-item prepend-icon="mdi-view-comfy" title="Machines" :to="{ name: 'machines' }" link></v-list-item>
+          <v-list-item prepend-icon="mdi-view-comfy" title="Machines" :to="{ name: 'machines' }" link></v-list-item>
 
-        <v-list-item prepend-icon="mdi-database" title="OEE" :to="{ name: 'oee' }" link></v-list-item>
+          <v-list-item prepend-icon="mdi-database" title="OEE" :to="{ name: 'oee' }" link></v-list-item>
 
-        <v-list-item v-if="loggedIn" prepend-icon="mdi-account" title="Supervisor" :to="{ name: 'supervisor' }"
-          link></v-list-item>
+          <v-list-group v-if="loggedIn" value="supervisor">
+            <template #activator="{ props }">
+              <v-list-item v-bind="props" prepend-icon="mdi-account" title="Supervisor" />
+            </template>
+            <v-list-item v-for="item in supervisorChildren" :key="item.name" :prepend-icon="item.icon"
+              :title="item.label" :to="{ name: item.name }" link />
+          </v-list-group>
 
-        <v-list-item v-if="loggedIn" prepend-icon="mdi-cog" title="Setting" :to="{ name: 'setting' }"
-          link></v-list-item>
-      </v-list>
+          <v-list-group v-if="loggedIn" value="setting">
+            <template #activator="{ props }">
+              <v-list-item v-bind="props" prepend-icon="mdi-cog" title="Setting" />
+            </template>
+            <v-list-item v-for="item in settingChildren" :key="item.name" :prepend-icon="item.icon" :title="item.label"
+              :to="{ name: item.name }" link />
+          </v-list-group>
+        </v-list>
+      </div>
 
       <template #append>
         <v-divider />
 
-        <v-list>
+        <v-list class="flex-shrink-0">
           <v-list-item prepend-icon="mdi-login" title="Login" v-if="!loggedIn" @click="dialog = true" />
 
           <v-list-item prepend-icon="mdi-logout" title="Logout" v-else @click="logout" />
@@ -62,6 +74,25 @@ const showSnackbar = inject("showSnackbar");
 const dialog = ref(false);
 const password = ref('');
 const loggedIn = ref(localStorage.getItem('logged_in') === 'true');
+const isRail = ref(true);
+
+const supervisorChildren = [
+  { name: 'supervisor-prod-report', label: 'Production Report', icon: 'mdi-cog-outline' },
+  { name: 'supervisor-machine-management', label: 'Machine Management', icon: 'mdi-robot-industrial' },
+  { name: 'supervisor-staff-assignment', label: 'Staff Assignment', icon: 'mdi-account-clock' },
+  { name: 'supervisor-product-database', label: 'Product Database', icon: 'mdi-archive' },
+  { name: 'supervisor-shift-calendar', label: 'Shift Calendar', icon: 'mdi-calendar-clock' },
+];
+
+const settingChildren = [
+  { name: 'setting-password', label: 'Password', icon: 'mdi-lock-outline' },
+  { name: 'setting-plc-signals', label: 'PLC Signals', icon: 'mdi-sine-wave' },
+  { name: 'setting-report', label: 'Report', icon: 'mdi-file-excel-outline' },
+  { name: 'setting-import-report', label: 'Import Report', icon: 'mdi-upload' },
+  { name: 'setting-machine-names', label: 'Machine Names', icon: 'mdi-tag-text-outline' },
+  { name: 'setting-material-groups', label: 'Material Groups', icon: 'mdi-shape-outline' },
+  { name: 'setting-db-log', label: 'DB Log', icon: 'mdi-database-eye' },
+];
 
 const login = () => {
   if (password.value === ADMIN_PASSWORD) {
@@ -83,3 +114,32 @@ const logout = () => {
   }
 };
 </script>
+
+<style scoped>
+.nav-bar :deep(.v-navigation-drawer__content) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nav-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+.nav-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.nav-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.nav-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+</style>
