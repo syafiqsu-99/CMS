@@ -34,6 +34,7 @@ const routes = [
       { path: 'import-report', name: 'setting-import-report', component: Setting, meta: { requireAuth: true, tab: 'import' } },
       { path: 'machine-names', name: 'setting-machine-names', component: Setting, meta: { requireAuth: true, tab: 'machines' } },
       { path: 'material-groups', name: 'setting-material-groups', component: Setting, meta: { requireAuth: true, tab: 'material' } },
+      { path: 'network', name: 'setting-network', component: Setting, meta: { requireAuth: true, tab: 'network' } },
       { path: 'db-log', name: 'setting-db-log', component: Setting, meta: { requireAuth: true, tab: 'dblog' } },
     ],
   },

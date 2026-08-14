@@ -90,6 +90,7 @@ const settingChildren = [
   { name: 'setting-import-report', label: 'Import Report', icon: 'mdi-upload' },
   { name: 'setting-machine-names', label: 'Machine Names', icon: 'mdi-tag-text-outline' },
   { name: 'setting-material-groups', label: 'Material Groups', icon: 'mdi-shape-outline' },
+  { name: 'setting-network', label: 'Network', icon: 'mdi-lan' },
   { name: 'setting-db-log', label: 'DB Log', icon: 'mdi-database-eye' },
 ];
 

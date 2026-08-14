@@ -25,6 +25,7 @@ import ProdImportTab from '@/components/Setting/ProdImportTab.vue';
 import MachineNameTab from '@/components/Setting/MachineNameTab.vue';
 import MaterialGroupTab from '@/components/Setting/MaterialGroupTab.vue';
 import DbLogTab from '@/components/Setting/DbLogTab.vue';
+import NetworkDiagramTab from '@/components/Setting/NetworkDiagramTab.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -37,6 +38,7 @@ const tabs = [
   { value: 'machines', label: 'Machine Names', icon: 'mdi-tag-text-outline', route: 'setting-machine-names', component: markRaw(MachineNameTab) },
   { value: 'material', label: 'Material Groups', icon: 'mdi-shape-outline', route: 'setting-material-groups', component: markRaw(MaterialGroupTab) },
   { value: 'dblog', label: 'DB Log', icon: 'mdi-database-eye', route: 'setting-db-log', component: markRaw(DbLogTab) },
+  { value: 'network', label: 'Network Diagram', icon: 'mdi-network', route: 'setting-network-diagram', component: markRaw(NetworkDiagramTab) }
 ];
 
 const activeTab = ref(route.meta.tab ?? 'password');
