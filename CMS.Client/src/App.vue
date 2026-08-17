@@ -1,5 +1,5 @@
 <template>
-  <v-app>
+  <v-app :class="{ 'maintenance-offset': maintenanceActive }">
     <div v-if="maintenanceActive" class="maintenance-banner">
       <v-icon size="20" class="mr-2">mdi-alert</v-icon>
       <span>
@@ -37,6 +37,7 @@
 import { ref, computed, provide, onMounted, onUnmounted } from 'vue';
 import NavBar from '@/components/NavBar.vue';
 import { useMachineStore } from '@/store/machineStore';
+import loadingBg from '@/assets/jjbackground.png';
 
 const store = useMachineStore();
 
@@ -107,7 +108,6 @@ async function pollMaintenance() {
     maintenanceActive.value = true;
     wasMaintenance = true;
   } else {
-    // Falling edge: a maintenance window just ended — reload once to pick up the new bundle
     if (wasMaintenance) {
       window.location.reload();
       return;
@@ -148,8 +148,12 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.maintenance-offset :deep(.v-application__wrap) {
+  padding-top: 44px;
+}
+
 .loading-overlay {
-  background-image: url('../dist/jjbackground.png');
+  background-image: v-bind('`url(${loadingBg})`');
   background-size: cover;
   background-position: center;
 }
@@ -177,6 +181,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: 10px 16px;
+  height: 44px;
   background-color: #e65100;
   color: #fff;
   font-size: 0.95rem;
