@@ -143,7 +143,7 @@ public class ReportExportService
         Directory.CreateDirectory(monthFolder);
 
         var dailyPath = Path.Combine(monthFolder, $"{productionDate:dd.MM.yyyy}.xlsx");
-        var monthlyPath = Path.Combine(monthFolder, $"{MonthNames[productionDate.Month - 1]} {productionDate.Year} - .xlsx");
+        var monthlyPath = Path.Combine(monthFolder, $"{MonthNames[productionDate.Month - 1]} {productionDate.Year}.xlsx");
 
         var (morningRows, nightRows, sapRows) = await LoadAllAsync(productionDate);
 
@@ -287,7 +287,8 @@ public class ReportExportService
             var nameCell = ws.Cell(r, ColumnIndex("machine_name"));
             if (nameCell.IsEmpty()) continue;
 
-            var pd = ws.Cell(r, ColumnIndex("production_date")).GetValue<DateTime>();
+            var pd = ReadDateCell(ws.Cell(r, ColumnIndex("production_date")));
+            if (pd is null) continue;
             var sh = (int)ws.Cell(r, ColumnIndex("shift")).GetValue<double>();
 
             var values = new Dictionary<string, IXLCell>();
@@ -295,13 +296,24 @@ public class ReportExportService
                 values[col.Key] = ws.Cell(r, ColumnIndex(col.Key));
 
             result.Add(new MonthlyRow(
-                DateOnly.FromDateTime(pd),
+                DateOnly.FromDateTime(pd.Value),
                 sh,
                 idMachine: FindIdMachineHidden(ws, r),
                 cells: values));
         }
 
         return result;
+    }
+
+    // Reads a production_date cell whether it kept its date format or was flattened
+    // to a General-formatted serial by an earlier copy. A hard GetValue<DateTime>()
+    // on a General numeric cell throws and would abort the whole monthly merge.
+    private static DateTime? ReadDateCell(IXLCell cell)
+    {
+        if (cell.IsEmpty()) return null;
+        if (cell.TryGetValue<DateTime>(out var dt)) return dt;
+        if (cell.TryGetValue<double>(out var serial)) return DateTime.FromOADate(serial);
+        return null;
     }
 
     private static int HiddenIdColumn => LastColumn + 1;
@@ -341,8 +353,13 @@ public class ReportExportService
         {
             var target = ws.Cell(row, i + 1);
             if (mr.Cells is not null && mr.Cells.TryGetValue(col.Key, out var src))
+            {
                 target.Value = src.Value;
+                target.Style.NumberFormat.Format = src.Style.NumberFormat.Format;
+                target.Style.NumberFormat.NumberFormatId = src.Style.NumberFormat.NumberFormatId;
+            }
         }
+        ws.Cell(row, ColumnIndex("production_date")).Style.DateFormat.Format = "dd/MM/yyyy";
     }
 
     // ── Shared writers ─────────────────────────────────────────────────────────

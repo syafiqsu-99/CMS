@@ -378,7 +378,7 @@ async function exportProducts() {
     const url = window.URL.createObjectURL(await response.blob());
     const link = Object.assign(document.createElement('a'), {
       href: url,
-      download: `DailyReport_${selectedDate}_Shift${shift.value}.xlsx`
+      download: `${selectedDate.split('-').reverse().join('.')}.xlsx`
     });
     document.body.appendChild(link);
     link.click();

@@ -9,13 +9,13 @@ namespace CMS.Server.Controllers;
 [Route("api/[controller]")]
 public class SupervisorController : ControllerBase
 {
-    private readonly ExcelGenerationService _excelService;
+    private readonly ReportExportService _reportExportService;
     private readonly SupervisorService _supervisorService;
 
-    public SupervisorController(SupervisorService supervisorService, ExcelGenerationService excelService)
+    public SupervisorController(SupervisorService supervisorService, ReportExportService reportExportService)
     {
         _supervisorService = supervisorService;
-        _excelService = excelService;
+        _reportExportService = reportExportService;
     }
 
     [HttpGet("daily-report")]
@@ -50,8 +50,8 @@ public class SupervisorController : ControllerBase
             if (reportData is null || reportData.Count == 0)
                 return NotFound(new { message = "No data found for the specified date and shift." });
 
-            var excelBytes = _excelService.GenerateExcelReport(reportData, parsedDate, shift);
-            return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"report_{parsedDate:yyyy-MM-dd}_shift{shift}.xlsx");
+            var (excelBytes, fileName) = await _reportExportService.BuildWorkbookBytesAsync(parsedDate, shift, HttpContext.RequestAborted);
+            return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
         }
         catch (Exception ex)
         {
